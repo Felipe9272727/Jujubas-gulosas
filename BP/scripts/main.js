@@ -25,6 +25,9 @@ const DP = {
 const BASE_SPEED_AMPLIFIER = 1; // speed 2 pra todo personagem
 const REGEN_AMPLIFIER = 1; // regen 2 pra todo personagem
 
+// declarado antes do CHARACTERS porque o registro referencia esse valor
+const HOLLOW_MASK_DURATION_TICKS = 600; // 30s
+
 // item que fica sempre locked no ultimo slot da hotbar (slot 8)
 const SELECTOR_ITEM = "multiversal:character_selector";
 const SELECTOR_SLOT = 8;
@@ -58,7 +61,7 @@ const CHARACTERS = {
       hollowMask: {
         triggerItem: "ichigo:tensa_m1", // agachado + usar a zangetsu bankai
         healthThreshold: 50,
-        durationTicks: 600, // 30s
+        durationTicks: HOLLOW_MASK_DURATION_TICKS,
         bigRegenTicks: 120, // 6s
         bigRegenAmplifier: 5, // regen 6
         cooldownHalvedItems: [
@@ -215,12 +218,48 @@ function addAwakening(player, amount) {
 }
 
 function tickOf(player, key) {
-  return player.getDynamicProperty(key) ?? 0;
+  const value = player.getDynamicProperty(key);
+  return typeof value === "number" ? value : undefined;
 }
 
+// Os cooldowns sao gravados como "tick absoluto do ultimo uso", mas o
+// system.currentTick volta pra zero toda vez que o mundo recarrega enquanto a
+// dynamic property sobrevive. Sem esse tratamento acontecem duas coisas:
+//   - skill nunca usada fica travada no comeco do mundo (now - 0 < duracao);
+//   - skill ja usada fica travada pra sempre depois de um reload, porque o
+//     stamp gravado fica "no futuro" e a subtracao da negativo.
+// Um stamp maior que o tick atual so pode ter vindo de outra sessao.
 function onCooldown(player, key, durationTicks, currentTick) {
   const last = tickOf(player, key);
+  if (last === undefined) return false;
+  if (last > currentTick) {
+    player.setDynamicProperty(key, undefined);
+    return false;
+  }
   return currentTick - last < durationTicks;
+}
+
+// mesma historia pros "fins" absolutos (coating / mascara): qualquer deadline
+// mais distante que a duracao maxima do efeito e lixo de uma sessao anterior
+function readTickDeadline(player, key, maxDurationTicks) {
+  const end = player.getDynamicProperty(key);
+  if (typeof end !== "number" || end <= 0) return 0;
+  if (end > system.currentTick + maxDurationTicks) {
+    player.setDynamicProperty(key, 0);
+    return 0;
+  }
+  return end;
+}
+
+// zera tudo que e medido em tick absoluto - chamado quando o player entra no
+// mundo, ja que o contador de ticks reinicia junto com o mundo
+function clearSessionTimers(player) {
+  for (const itemId in SKILL_COOLDOWN_TICKS) {
+    player.setDynamicProperty(cdKeyForSkill(itemId), undefined);
+  }
+  player.setDynamicProperty(DP.dashCd, undefined);
+  player.setDynamicProperty(DP.coatingEnd, 0);
+  player.setDynamicProperty(DP.maskEnd, 0);
 }
 
 function setCooldown(player, key, currentTick) {
@@ -266,13 +305,17 @@ function isAwakened(player) {
 }
 
 function isCoated(player) {
-  const end = player.getDynamicProperty(DP.coatingEnd) ?? 0;
-  return system.currentTick < end;
+  return (
+    system.currentTick <
+    readTickDeadline(player, DP.coatingEnd, COATING_DURATION_TICKS)
+  );
 }
 
 function isMasked(player) {
-  const end = player.getDynamicProperty(DP.maskEnd) ?? 0;
-  return system.currentTick < end;
+  return (
+    system.currentTick <
+    readTickDeadline(player, DP.maskEnd, HOLLOW_MASK_DURATION_TICKS)
+  );
 }
 
 function dmgMultiplier(player) {
@@ -333,28 +376,69 @@ function removeSenkeiZoneOwnedBy(ownerId) {
   }
 }
 
-// empurra de volta pra dentro da area qualquer entidade que tente sair do senkei
-function containSenkeiZone(zone) {
-  const entities = zone.dimension.getEntities({
-    location: zone.center,
-    maxDistance: zone.radius + 10,
-  });
-  for (const entity of entities) {
-    if (entity.id === zone.ownerId) continue;
-    const dx = entity.location.x - zone.center.x;
-    const dz = entity.location.z - zone.center.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist > zone.radius - 0.5) {
-      const ratio = (zone.radius - 1) / (dist || 1);
-      const clamped = {
+// margem de busca em volta da arena. o scan antigo era radius + 10, e quem
+// saisse alem disso entre dois ticks de contencao (dash, knockback forte,
+// pearl) simplesmente nunca mais era encontrado e escapava de vez.
+const SENKEI_SCAN_MARGIN = 48;
+
+function pullBackIntoSenkei(zone, entity) {
+  if (entity.id === zone.ownerId) return;
+
+  const dx = entity.location.x - zone.center.x;
+  const dz = entity.location.z - zone.center.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+
+  if (dist <= zone.radius) {
+    // entrou (ou continua) na area: passa a ser responsabilidade da arena
+    zone.trapped.add(entity.id);
+    return;
+  }
+
+  // quem nunca esteve dentro nao e puxado pra dentro - so quem tenta fugir
+  if (!zone.trapped.has(entity.id)) return;
+
+  const ratio = (zone.radius - 1) / (dist || 1);
+  try {
+    entity.teleport(
+      {
         x: zone.center.x + dx * ratio,
         y: entity.location.y,
         z: zone.center.z + dz * ratio,
-      };
-      try {
-        entity.teleport(clamped, { keepVelocity: false });
-      } catch (e) {}
-    }
+      },
+      { keepVelocity: false }
+    );
+  } catch (e) {}
+}
+
+// empurra de volta pra dentro da area qualquer entidade que tente sair do senkei
+function containSenkeiZone(zone) {
+  const nearby = zone.dimension.getEntities({
+    location: zone.center,
+    maxDistance: zone.radius + SENKEI_SCAN_MARGIN,
+  });
+
+  const seen = new Set();
+  for (const entity of nearby) {
+    seen.add(entity.id);
+    pullBackIntoSenkei(zone, entity);
+  }
+
+  // alguem preso sumiu do scan largo: fugiu longe demais ou morreu. so nesse
+  // caso (raro) vale a varredura completa da dimensao.
+  let escaped;
+  for (const id of zone.trapped) {
+    if (!seen.has(id)) (escaped ??= []).push(id);
+  }
+  if (!escaped) return;
+
+  const all = zone.dimension.getEntities();
+  const alive = new Set();
+  for (const entity of all) {
+    alive.add(entity.id);
+    if (escaped.includes(entity.id)) pullBackIntoSenkei(zone, entity);
+  }
+  for (const id of escaped) {
+    if (!alive.has(id)) zone.trapped.delete(id);
   }
 }
 
@@ -563,7 +647,11 @@ function activateHollowMask(player, character) {
 }
 
 function deactivateHollowMask(player) {
-  if (!isMasked(player)) return;
+  // de proposito NAO usa isMasked(): o runTimeout dispara exatamente no tick do
+  // fim, e nesse tick isMasked() ja e false. Com o guard antigo a limpeza nunca
+  // acontecia e a abobora ficava presa na cabeca do player pra sempre.
+  const end = player.getDynamicProperty(DP.maskEnd);
+  if (typeof end !== "number" || end <= 0) return;
   player.setDynamicProperty(DP.maskEnd, 0);
 
   try {
@@ -633,6 +721,9 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
 
   if (initialSpawn) {
     player.runCommand("hud @s hide health");
+    // o contador de ticks reinicia com o mundo, entao todo cooldown/deadline
+    // gravado numa sessao anterior tem que morrer aqui
+    clearSessionTimers(player);
     const inv = getInv(player);
     forceGiveLockedItem(inv, SELECTOR_SLOT, SELECTOR_ITEM);
   } else {
@@ -780,7 +871,8 @@ function tryUseSkill(player, itemId) {
   }
 
   if (onCooldown(player, key, duration, now)) {
-    const remaining = Math.ceil((duration - (now - tickOf(player, key))) / 20);
+    const last = tickOf(player, key) ?? now;
+    const remaining = Math.ceil((duration - (now - last)) / 20);
     player.onScreenDisplay.setTitle("", {
       subtitle: `§cRecarregando... §7(${remaining}s)`,
       fadeInDuration: 0,
@@ -1377,8 +1469,12 @@ function activateSenkei(player, character) {
     if (elapsed >= cfg.maxDurationTicks) {
       // trava de seguranca: se ninguem desativar manualmente, acaba sozinho
       removeSenkeiZoneOwnedBy(player.id);
-      player.setDynamicProperty(DP.byakuyaWeapon, "base");
-      world.sendMessage(`§7O Senkei de ${player.name} se dissipou.`);
+      try {
+        player.setDynamicProperty(DP.byakuyaWeapon, "base");
+        world.sendMessage(`§7O Senkei de ${player.name} se dissipou.`);
+      } catch (e) {
+        // dono saiu do mundo no meio do senkei: a arena ja foi removida acima
+      }
     }
   }, 20);
 
@@ -1388,6 +1484,7 @@ function activateSenkei(player, character) {
     radius: cfg.radius,
     dimension: dim,
     intervalId,
+    trapped: new Set(),
   });
 }
 
@@ -1722,3 +1819,17 @@ system.runInterval(() => {
     }
   }
 }, 20);
+
+/* ---------------------------------------------------------
+   Saida do mundo: limpa estado preso ao playerId
+   (sem isso, um Byakuya que desconecta no meio do Senkei
+   deixa a arena aberta prendendo todo mundo pra sempre)
+   --------------------------------------------------------- */
+
+world.afterEvents.playerLeave.subscribe((ev) => {
+  const playerId = ev.playerId;
+  removeSenkeiZoneOwnedBy(playerId);
+  senkeiChargeTicks.delete(playerId);
+  senkeiChargeReady.delete(playerId);
+  wasSneakJumping.delete(playerId);
+});
