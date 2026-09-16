@@ -1445,6 +1445,13 @@ intruso.teleport({ x: 604, y: 64, z: 600 }); // dentro do raio 10
 advanceTicks(20, "enigma-pega-intruso");
 check("dentro da Enigma a regeneração é anulada", !intruso.getEffect("regeneration"));
 
+intruso.teleport({ x: 640, y: 64, z: 600 }); // sai da zona
+advanceTicks(20, "enigma-saiu");
+check("quem sai da zona recupera a regeneração na hora", !!intruso.getEffect("regeneration"));
+intruso.teleport({ x: 604, y: 64, z: 600 }); // volta pra dentro
+advanceTicks(20, "enigma-voltou");
+check("e perde de novo ao voltar", !intruso.getEffect("regeneration"));
+
 const msgsBeforeBlock = log.worldMessages.length;
 useItem(intruso, "mayuri:poison_slash");
 advanceTicks(5, "enigma-bloqueia");

@@ -3396,14 +3396,29 @@ system.runInterval(() => {
     if (zone.traps) containZone(zone);
     if (!zone.blocksRegen) continue;
 
+    const inside = new Set();
     for (const entity of zone.dimension.getEntities({
       location: zone.center,
       maxDistance: zone.radius,
     })) {
       if (!zone.blocksOwnerSkills && entity.id === zone.ownerId) continue;
+      inside.add(entity.id);
       try {
         entity.removeEffect("regeneration");
         zone.stripped?.add(entity.id);
+      } catch (e) {}
+    }
+
+    // quem saiu da area recupera a regeneracao na hora. Sem isso so o fim da
+    // zona devolvia, e quem fugisse ficava ate 20s sem regenerar.
+    if (!zone.stripped) continue;
+    for (const id of [...zone.stripped]) {
+      if (inside.has(id)) continue;
+      zone.stripped.delete(id);
+      const escapee = world.getPlayers().find((p) => p.id === id);
+      if (!escapee) continue;
+      try {
+        reapplyFormEffects(escapee);
       } catch (e) {}
     }
   }
