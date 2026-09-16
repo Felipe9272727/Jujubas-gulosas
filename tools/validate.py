@@ -236,12 +236,28 @@ notes.append(f"particulas customizadas: {', '.join(sorted(particle_ids)) or 'nen
 main_js = (BP / "scripts" / "main.js").read_text(encoding="utf-8")
 
 referenced = set(re.findall(r'"([a-z_]+:[a-z0-9_]+)"', main_js))
-KNOWN_NON_ITEM_PREFIXES = ("minecraft:", "sakura:", "mv:")
+
+# Identificadores de particula sao pegos pelo uso real, nao por prefixo: o
+# namespace de uma particula customizada e o mesmo do personagem dono dela
+# (grimmjow:cero, mayuri:toxic_fog), entao adivinhar por prefixo confunde
+# particula com item.
+particle_refs = set(re.findall(r'spawnParticle\(\s*"([^"]+)"', main_js))
+particle_refs |= set(re.findall(r'(?:particle|burst|particleId)\s*:\s*"([^"]+)"', main_js))
+
+for particle in sorted(particle_refs):
+    if particle.startswith("minecraft:"):
+        continue
+    if particle not in particle_ids:
+        fail(f"main.js usa a particula '{particle}' mas ela nao esta definida em RP/particles")
+
+for particle in sorted(particle_ids):
+    if particle not in particle_refs:
+        notes.append(f"aviso: a particula {particle} esta definida mas o main.js nunca usa")
+
 referenced_items = {
     i for i in referenced
-    if not i.startswith(KNOWN_NON_ITEM_PREFIXES) and not i.startswith("multiversal:")
+    if not i.startswith(("minecraft:", "mv:")) and i not in particle_refs
 }
-referenced_items |= {i for i in referenced if i.startswith("multiversal:")}
 
 for identifier in sorted(referenced_items):
     if identifier not in bp_items:
@@ -250,11 +266,6 @@ for identifier in sorted(referenced_items):
 unused = sorted(set(bp_items) - referenced_items)
 for identifier in unused:
     notes.append(f"aviso: {identifier} existe no BP mas o main.js nunca cita")
-
-used_particles = {p for p in referenced if p.startswith("sakura:")}
-for particle in sorted(used_particles):
-    if particle not in particle_ids:
-        fail(f"main.js usa a particula '{particle}' mas ela nao esta definida em RP/particles")
 
 # cooldown do item (visual) x cooldown do script
 for identifier, path in sorted(bp_items.items()):

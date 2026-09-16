@@ -3,7 +3,10 @@
 Addon de PvP pra Minecraft Bedrock (BP + RP). Cada player escolhe um personagem
 num menu, ganha vida, itens e skills próprias, e luta contra os outros.
 
-Personagens atuais:
+O seletor é **separado por arcos**: ele mostra um arco por vez, e **agachar +
+usar o seletor** passa pro próximo (dá a volta no último).
+
+### Invasão à Soul Society
 
 | Personagem | Vida | Awakening |
 |---|---|---|
@@ -11,6 +14,12 @@ Personagens atuais:
 | **Byakuya Kuchiki** (Shikai) | 200 | Super ataque: Kageyoshi ou Senkei |
 | **Zaraki Kenpachi** | 300 | Pressão (tapa-olho removido): burst + 50% de dano |
 | **Mayuri Kurotsuchi** (Shikai) | 180 | Super ataque: Konjiki Ashisogi Jizō (Bankai) |
+
+### Arrancar / Hueco Mundo
+
+| Personagem | Vida | Awakening |
+|---|---|---|
+| **Grimmjow Jaegerjaquez** | 800 | Resurrección: La Pantera (1200 de vida, speed 5, regen 4) |
 
 ## Layout
 
@@ -21,7 +30,7 @@ BP/                     behavior pack
   scripts/main.js       TODO o gameplay (@minecraft/server 2.0 + server-ui)
 RP/                     resource pack
   manifest.json
-  particles/            partículas customizadas (sakura:leaf)
+  particles/            partículas customizadas (sakura:leaf, mayuri:poison_fog, grimmjow:cero)
   textures/items/*.png  uma textura por item
   textures/item_texture.json
 tools/
@@ -85,7 +94,7 @@ O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
 personagens, ativa awakening/máscara/Kageyoshi/Senkei/Pressão, mata alvos no
 meio de um DoT, simula reload do mundo e desconexão, e roda 2000 ticks livres
 no fim. São
-212 checks — qualquer exceção em qualquer callback é capturada e reportada.
+271 checks — qualquer exceção em qualquer callback é capturada e reportada.
 
 Foi assim que apareceram os bugs de cooldown pós-reload, a máscara que nunca
 era removida e o buraco na contenção do Senkei.
@@ -101,6 +110,10 @@ era removida e o buraco na contenção do Senkei.
 | `MELEE_WEAPONS[].combo` | Efeito a cada N acertos da arma (`everyHits`, `effect`, `amplifier`, `durationTicks`) |
 | `spawnPoisonCloud(player, cfg)` | Neblina venenosa parada onde foi solta — Toxic Fog e Konjiki Ashisogi Jizō são a mesma, com raio e intensidade diferentes |
 | `superAttack.onTrigger` | Agachar + m1 com o medidor em 100%. Cada personagem escolhe seu efeito (`"byakuya"` → Kageyoshi/Senkei, `"konjiki"` → Bankai do Mayuri) |
+| `awakening.onActivate` | Efeito de entrada da forma desperta (`"pressure"` → Kenpachi, `"resurreccion"` → Grimmjow) |
+| `fireEnergySphere(player, opts)` | Esfera de energia que viaja pela direção da visão e some no primeiro alvo ou no fim do alcance (Gran Rey Cero) |
+| `reapplyFormEffects(player)` | Devolve os efeitos permanentes da forma atual. Buff temporário **sobrescreve** o permanente em vez de somar, então todo buff que mexe em speed/regen precisa chamar isso ao acabar |
+| `ARCS` | Agrupamento do seletor. Personagem que não estiver num arco **não aparece no menu** |
 | `MELEE_WEAPONS` | Toda arma de m1: `baseDamage`, `particle`, `dot`, `awardsAwakening`, `onHit` — centraliza o hit corpo-a-corpo |
 | `applyDot(entity, player, perSecond, totalSeconds)` | Dano por segundo (sangramento), limpa sozinho se o alvo morre |
 | `dmgMultiplier(player)` | Multiplicador de dano por buff ativo (hoje só o Sakura's Coating, +20%) |
@@ -124,6 +137,8 @@ guardar um novo prazo em tick absoluto, use esses helpers.
 1. **Registrar em `CHARACTERS`** (`BP/scripts/main.js`) com `id`, `name`,
    `health`, `items` (slots 0–4) e, se tiver, `awakening` ou `superAttack`.
    O slot 8 é sempre do seletor.
+   **E registrar o id em `ARCS`**, no arco dele — quem fica fora de todo arco
+   não aparece no seletor. A simulação falha se alguém sumir do elenco.
 2. **Criar os itens** em `BP/items/<nome>.json` — copie um existente; o ícone é
    uma string `"namespace:item"`, e a arma de m1 leva `minecraft:damage` igual
    ao dano desejado **menos 1** (o jogo soma 1 de soco).

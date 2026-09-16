@@ -20,6 +20,7 @@ const DP = {
   coatingEnd: "mv:coating_end",
   maskEnd: "mv:mask_end",
   byakuyaWeapon: "mv:byakuya_weapon", // "base" | "senkei" | "finisher"
+  arc: "mv:arc", // indice do arco escolhido no seletor
 };
 
 const BASE_SPEED_AMPLIFIER = 1; // speed 2 pra todo personagem
@@ -163,12 +164,54 @@ const CHARACTERS = {
       },
     },
   },
+  grimmjow: {
+    id: "grimmjow",
+    name: "Grimmjow Jaegerjaquez",
+    health: 800,
+    items: {
+      0: "grimmjow:m1_zanpakuto",
+      1: "grimmjow:desgarra",
+      2: "grimmjow:raza",
+      3: "grimmjow:gran_rey_cero",
+    },
+    awakening: {
+      name: "Resurrección: La Pantera",
+      triggerItem: "grimmjow:m1_zanpakuto",
+      health: 1200,
+      speedAmplifier: 4, // speed 5
+      regenAmplifier: 3, // regen 4
+      onActivate: "resurreccion",
+      chatLine: "Rasgue, La Pantera!",
+      items: {
+        0: "grimmjow:m1_garras",
+        1: "grimmjow:destruir",
+        2: "grimmjow:rugido",
+        3: "grimmjow:arrancar_corazon",
+        4: "grimmjow:disparo",
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
 const BYAKUYA_ALT_WEAPONS = [
   "byakuya:m1_senbonzakura_senkei",
   "byakuya:m1_senbonzakura_finisher",
+];
+
+// O seletor mostra um arco por vez. Agachar + usar o seletor passa pro proximo.
+// Personagem novo tem que entrar no arco dele aqui, senao nao aparece no menu.
+const ARCS = [
+  {
+    id: "soul_society",
+    name: "Invasão à Soul Society",
+    characters: ["ichigo", "byakuya", "kenpachi", "mayuri"],
+  },
+  {
+    id: "hueco_mundo",
+    name: "Arrancar / Hueco Mundo",
+    characters: ["grimmjow"],
+  },
 ];
 
 // mapa reverso: itemId -> personagem dono (pra saber o que pode ser dropado/travado)
@@ -214,6 +257,13 @@ const SKILL_COOLDOWN_TICKS = {
   "kenpachi:hells_cut": 400, // 20% a menos que o Getsuga Tenshou (500)
   "mayuri:poison_slash": 300, // 15s
   "mayuri:toxic_fog": 600, // 30s
+  "grimmjow:desgarra": 300, // 15s
+  "grimmjow:raza": 400, // 20s
+  "grimmjow:gran_rey_cero": 600, // 30s
+  "grimmjow:destruir": 400, // 20s - nao especificado
+  "grimmjow:rugido": 500, // 25s - nao especificado
+  "grimmjow:arrancar_corazon": 2400, // 2 min
+  "grimmjow:disparo": 200, // 10s
 };
 
 const SKILL_NAMES = {
@@ -235,6 +285,13 @@ const SKILL_NAMES = {
   "kenpachi:hells_cut": "Hell's Cut",
   "mayuri:poison_slash": "Poison Slash",
   "mayuri:toxic_fog": "Toxic Fog",
+  "grimmjow:desgarra": "Desgarra de la Pantera",
+  "grimmjow:raza": "Raza de la Pantera",
+  "grimmjow:gran_rey_cero": "Gran Rey Cero",
+  "grimmjow:destruir": "Destruir de La Pantera",
+  "grimmjow:rugido": "Rugido de La Pantera",
+  "grimmjow:arrancar_corazon": "Arrancar Corazón",
+  "grimmjow:disparo": "Disparo de La Pantera",
 };
 
 // dano aumentado
@@ -265,6 +322,16 @@ const DAMAGE = {
   // Mayuri Kurotsuchi
   mayuriM1: 8,
   poisonSlash: 20,
+  // Grimmjow Jaegerjaquez
+  grimmjowM1: 20,
+  desgarra: 100,
+  raza: 200,
+  granReyCero: 350,
+  // La Pantera (Resurreccion)
+  garras: 40,
+  destruir: 270,
+  rugido: [100, 150, 200], // tres sequencias
+  arrancarCorazon: 700,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -301,6 +368,21 @@ const POISON_SLASH = {
   slownessAmplifier: 255, // "lentidao inf": no maximo o alvo nao sai do lugar
   slownessTicks: 40, // 2s
 };
+// Grimmjow Jaegerjaquez
+const DESGARRA = { forward: 5, width: 7, verticalReach: 2.5 };
+const RAZA = { distance: 20, steps: 10 }; // 2 blocos por tick = dobro do Getsuga Run
+const GRAN_REY_CERO = { radius: 2, range: 28, speed: 1.2 }; // raio 2 = tamanho de ghast
+const DESTRUIR = { forward: 6, width: 5, verticalReach: 4, cuts: 3, gapTicks: 6 };
+const RUGIDO = { radius: 6, gapTicks: 14 };
+const ARRANCAR_CORAZON = {
+  dashDistance: 5,
+  dashSteps: 5,
+  searchRadius: 2.2,
+  holdDistance: 1.6,
+  grabTicks: 40, // 2s segurando antes de arrancar
+};
+const DISPARO = { speedAmplifier: 9, durationTicks: 100 }; // speed 10 por 5s
+
 const TOXIC_FOG = {
   radius: 5, // area 10x10
   height: 2.2,
@@ -404,7 +486,12 @@ function healToMax(player, maxHealth) {
   }
 }
 
-function applyCharacterEffects(player, maxHealth, speedAmplifier) {
+function applyCharacterEffects(
+  player,
+  maxHealth,
+  speedAmplifier,
+  regenAmplifier = REGEN_AMPLIFIER
+) {
   const level = HEALTH_BOOST_LEVEL_FOR(maxHealth);
   player.addEffect("health_boost", 20000000, {
     amplifier: level,
@@ -415,9 +502,25 @@ function applyCharacterEffects(player, maxHealth, speedAmplifier) {
     showParticles: false,
   });
   player.addEffect("regeneration", 20000000, {
-    amplifier: REGEN_AMPLIFIER,
+    amplifier: regenAmplifier,
     showParticles: false,
   });
+}
+
+// Reaplica os efeitos permanentes da forma atual. Um buff temporario (o Disparo
+// de La Pantera, por exemplo) SOBRESCREVE o efeito permanente em vez de somar,
+// entao quando ele acaba o player ficaria sem nada se ninguem reaplicasse.
+function reapplyFormEffects(player) {
+  const character = getActiveCharacter(player);
+  if (!character) return;
+
+  const form = isAwakened(player) ? character.awakening : undefined;
+  applyCharacterEffects(
+    player,
+    form?.health ?? character.health,
+    form?.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+    form?.regenAmplifier ?? REGEN_AMPLIFIER
+  );
 }
 
 function isAwakened(player) {
@@ -674,7 +777,12 @@ function activateAwakening(player, character) {
   const items = form.items ?? character.items;
 
   player.setDynamicProperty(DP.awakened, true);
-  applyCharacterEffects(player, health, form.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
+  applyCharacterEffects(
+    player,
+    health,
+    form.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+    form.regenAmplifier ?? REGEN_AMPLIFIER
+  );
 
   const inv = getInv(player);
   for (const slot in items) {
@@ -690,8 +798,13 @@ function activateAwakening(player, character) {
   world.sendMessage(`§d§l${player.name} despertou: ${form.name}!`);
   player.sendMessage(`§d§lAwakening ativado! §r§dVocê é agora ${form.name}.`);
 
-  if (form.onActivate === "pressure") {
-    activateSpiritualPressure(player, form.pressure);
+  switch (form.onActivate) {
+    case "pressure":
+      activateSpiritualPressure(player, form.pressure);
+      break;
+    case "resurreccion":
+      announceResurreccion(player, form);
+      break;
   }
 }
 
@@ -815,18 +928,49 @@ function deactivateHollowMask(player) {
    Menu do seletor de personagens
    --------------------------------------------------------- */
 
+function getArcIndex(player) {
+  const stored = player.getDynamicProperty(DP.arc);
+  if (typeof stored !== "number" || stored < 0 || stored >= ARCS.length) return 0;
+  return stored;
+}
+
+function cycleArc(player) {
+  const next = (getArcIndex(player) + 1) % ARCS.length;
+  player.setDynamicProperty(DP.arc, next);
+
+  const arc = ARCS[next];
+  player.sendMessage(
+    `§6Arco: §e${arc.name} §7(${arc.characters.length} personagem${
+      arc.characters.length === 1 ? "" : "s"
+    })`
+  );
+  player.onScreenDisplay.setTitle("", {
+    subtitle: `§6${arc.name}`,
+    fadeInDuration: 0,
+    fadeOutDuration: 5,
+    staySeconds: 10,
+  });
+  player.dimension.playSound("random.orb", player.location, {
+    volume: 0.7,
+    pitch: 1.4,
+  });
+}
+
 function openCharacterMenu(player) {
   const active = getActiveCharacter(player);
+  const arc = ARCS[getArcIndex(player)];
 
   const form = new ActionFormData()
-    .title("Combates Multiversais")
+    .title("Bleach battlegrounds")
     .body(
-      active
-        ? `Personagem atual: §6${active.name}§r\n\nDesative antes de escolher outro.`
-        : "Escolha seu personagem:"
+      `§6Arco: §e${arc.name}§r\n§7(agache + use o seletor para trocar de arco)\n\n` +
+        (active
+          ? `Personagem atual: §6${active.name}§r\n\nDesative antes de escolher outro.`
+          : "Escolha seu personagem:")
     );
 
-  const ids = Object.keys(CHARACTERS);
+  // so os personagens do arco atual - o indice do botao e relativo a esta lista
+  const ids = arc.characters.filter((id) => CHARACTERS[id]);
   for (const id of ids) {
     form.button(CHARACTERS[id].name);
   }
@@ -894,7 +1038,11 @@ world.afterEvents.itemUse.subscribe((ev) => {
   if (!player || player.typeId !== "minecraft:player") return;
 
   if (itemStack.typeId === SELECTOR_ITEM) {
-    openCharacterMenu(player);
+    if (player.isSneaking) {
+      cycleArc(player);
+    } else {
+      openCharacterMenu(player);
+    }
     return;
   }
 
@@ -1014,6 +1162,27 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "mayuri:toxic_fog":
       castToxicFog(player);
+      break;
+    case "grimmjow:desgarra":
+      castDesgarra(player);
+      break;
+    case "grimmjow:raza":
+      castRaza(player);
+      break;
+    case "grimmjow:gran_rey_cero":
+      castGranReyCero(player);
+      break;
+    case "grimmjow:destruir":
+      castDestruir(player);
+      break;
+    case "grimmjow:rugido":
+      castRugido(player);
+      break;
+    case "grimmjow:arrancar_corazon":
+      castArrancarCorazon(player);
+      break;
+    case "grimmjow:disparo":
+      castDisparo(player);
       break;
   }
 });
@@ -1612,8 +1781,7 @@ function castKenpachiStomp(player) {
   damageNearbyEntities(player, loc, STOMP_RADIUS, DAMAGE.stomp);
 }
 
-function nearestPlayer(player, maxDistance) {
-  const origin = player.location;
+function nearestPlayer(player, maxDistance, origin = player.location) {
   let best;
   let bestDistance = Infinity;
 
@@ -1776,7 +1944,7 @@ function castPoisonSlash(player) {
     const along = 0.5 + t * (POISON_SLASH.forward - 0.5);
     const lateral = Math.cos(t * Math.PI) * half;
     try {
-      dim.spawnParticle("mayuri:toxic_fog", {
+      dim.spawnParticle("mayuri:poison_fog", {
         x: origin.x + dir.x * along + perp.x * lateral,
         y: origin.y + 1 + Math.sin(t * Math.PI) * 0.5,
         z: origin.z + dir.z * along + perp.z * lateral,
@@ -1812,7 +1980,7 @@ function spawnPoisonCloud(player, cfg) {
       // sqrt espalha por area; sem ele a neblina fica amontoada no centro
       const dist = cfg.radius * Math.sqrt(Math.random());
       try {
-        dim.spawnParticle("mayuri:toxic_fog", {
+        dim.spawnParticle("mayuri:poison_fog", {
           x: center.x + Math.cos(angle) * dist,
           y: center.y + 0.2 + Math.random() * cfg.height,
           z: center.z + Math.sin(angle) * dist,
@@ -1897,6 +2065,384 @@ function tryTriggerSuperAttack(player, character) {
       tryTriggerKonjiki(player, character);
       break;
   }
+}
+
+/* ---------------------------------------------------------
+   Skills do Grimmjow Jaegerjaquez
+   --------------------------------------------------------- */
+
+// Esfera de energia que viaja pra frente e some no primeiro alvo ou no fim do
+// alcance. Usa a direcao 3D da visao, entao da pra mirar pra cima e pra baixo.
+function fireEnergySphere(player, options) {
+  const {
+    radius,
+    range,
+    speed = 1.5,
+    damage,
+    particle = "grimmjow:cero",
+    shellParticles = 22,
+  } = options;
+
+  const dim = player.dimension;
+  const view = player.getViewDirection();
+  const length =
+    Math.sqrt(view.x * view.x + view.y * view.y + view.z * view.z) || 1;
+  const step = { x: view.x / length, y: view.y / length, z: view.z / length };
+  const origin = player.location;
+
+  let travelled = radius;
+  const hitEntities = new Set();
+
+  const interval = system.runInterval(() => {
+    const center = {
+      x: origin.x + step.x * travelled,
+      y: origin.y + 1.4 + step.y * travelled,
+      z: origin.z + step.z * travelled,
+    };
+
+    // casca da esfera: pontos espalhados na superficie
+    for (let i = 0; i < shellParticles; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = radius * (0.72 + Math.random() * 0.28);
+      try {
+        dim.spawnParticle(particle, {
+          x: center.x + r * Math.sin(phi) * Math.cos(theta),
+          y: center.y + r * Math.cos(phi),
+          z: center.z + r * Math.sin(phi) * Math.sin(theta),
+        });
+      } catch (e) {}
+    }
+
+    const finalDamage = damage * dmgMultiplier(player);
+    for (const entity of dim.getEntities({ location: center, maxDistance: radius })) {
+      if (entity.id === player.id || hitEntities.has(entity.id)) continue;
+      if (!entity.getComponent("minecraft:health")) continue;
+      hitEntities.add(entity.id);
+      entity.applyDamage(finalDamage, {
+        cause: EntityDamageCause.entityAttack,
+        damagingEntity: player,
+      });
+    }
+
+    travelled += speed;
+    if (travelled >= range) {
+      system.clearRun(interval);
+    }
+  }, 1);
+}
+
+// Corte reto desenhado na frente, cobrindo a mesma caixa que da dano.
+function drawSweep(player, box, particle, vertical) {
+  const dim = player.dimension;
+  const dir = forwardDirection(player);
+  const perp = { x: -dir.z, z: dir.x };
+  const origin = player.location;
+  const half = box.width / 2;
+
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    const lateral = vertical ? 0 : -half + t * box.width;
+    const height = vertical ? 0.2 + t * box.verticalReach : 1.1;
+    const along = box.forward * (vertical ? 0.75 : 0.55);
+    try {
+      dim.spawnParticle(particle, {
+        x: origin.x + dir.x * along + perp.x * lateral,
+        y: origin.y + height,
+        z: origin.z + dir.z * along + perp.z * lateral,
+      });
+    } catch (e) {}
+  }
+}
+
+function castDesgarra(player) {
+  if (!tryUseSkill(player, "grimmjow:desgarra")) return;
+
+  world.sendMessage(`§b${player.name} §7usou §9Desgarra de la Pantera§7!`);
+  player.dimension.playSound("mob.wither.shoot", player.location, {
+    volume: 1.3,
+    pitch: 1.4,
+  });
+
+  drawSweep(player, DESGARRA, "grimmjow:cero", false);
+
+  const finalDamage = DAMAGE.desgarra * dmgMultiplier(player);
+  for (const entity of entitiesInFrontBox(player, DESGARRA)) {
+    entity.applyDamage(finalDamage, {
+      cause: EntityDamageCause.entityAttack,
+      damagingEntity: player,
+    });
+  }
+}
+
+function castRaza(player) {
+  if (!tryUseSkill(player, "grimmjow:raza")) return;
+
+  world.sendMessage(`§b${player.name} §7usou §9Raza de la Pantera§7!`);
+  player.dimension.playSound("mob.enderdragon.flap", player.location, {
+    volume: 1.2,
+    pitch: 1.8,
+  });
+
+  // mesmo deslize do Getsuga Run, com o dobro da velocidade
+  performDashStrike(player, {
+    distance: RAZA.distance,
+    steps: RAZA.steps,
+    damage: DAMAGE.raza,
+    particle: "grimmjow:cero",
+    burst: null,
+  });
+}
+
+function castGranReyCero(player) {
+  if (!tryUseSkill(player, "grimmjow:gran_rey_cero")) return;
+
+  world.sendMessage(`§9§l${player.name}: GRAN REY CERO!`);
+  player.dimension.playSound("mob.wither.death", player.location, {
+    volume: 1.8,
+    pitch: 0.6,
+  });
+
+  fireEnergySphere(player, {
+    radius: GRAN_REY_CERO.radius,
+    range: GRAN_REY_CERO.range,
+    speed: GRAN_REY_CERO.speed,
+    damage: DAMAGE.granReyCero,
+  });
+}
+
+/* ---------------------------------------------------------
+   La Pantera (Resurreccion)
+   --------------------------------------------------------- */
+
+function announceResurreccion(player, form) {
+  // no chat, como se o proprio Grimmjow estivesse falando
+  world.sendMessage(`<${player.name}> ${form.chatLine}`);
+  player.dimension.playSound("mob.enderdragon.growl", player.location, {
+    volume: 1.8,
+    pitch: 1.3,
+  });
+
+  const loc = player.location;
+  for (let i = 0; i < 40; i++) {
+    const angle = (i / 40) * Math.PI * 2;
+    try {
+      player.dimension.spawnParticle("grimmjow:cero", {
+        x: loc.x + Math.cos(angle) * 2.2,
+        y: loc.y + 0.2 + (i % 8) * 0.35,
+        z: loc.z + Math.sin(angle) * 2.2,
+      });
+    } catch (e) {}
+  }
+}
+
+function castDestruir(player) {
+  if (!tryUseSkill(player, "grimmjow:destruir")) return;
+
+  world.sendMessage(`§b${player.name} §7usou §9Destruir de La Pantera§7!`);
+  player.dimension.playSound("mob.wither.shoot", player.location, {
+    volume: 1.5,
+    pitch: 0.9,
+  });
+
+  // tres cortes verticais em sequencia; o dano e o da skill inteira, aplicado
+  // uma vez so junto com o primeiro corte
+  for (let cut = 0; cut < DESTRUIR.cuts; cut++) {
+    system.runTimeout(() => {
+      try {
+        drawSweep(player, DESTRUIR, "grimmjow:cero", true);
+        player.dimension.playSound("mob.wither.shoot", player.location, {
+          volume: 0.9,
+          pitch: 1.2 + cut * 0.2,
+        });
+      } catch (e) {}
+    }, cut * DESTRUIR.gapTicks + 1);
+  }
+
+  const finalDamage = DAMAGE.destruir * dmgMultiplier(player);
+  for (const entity of entitiesInFrontBox(player, DESTRUIR)) {
+    entity.applyDamage(finalDamage, {
+      cause: EntityDamageCause.entityAttack,
+      damagingEntity: player,
+    });
+  }
+}
+
+function castRugido(player) {
+  if (!tryUseSkill(player, "grimmjow:rugido")) return;
+
+  world.sendMessage(`§b${player.name} §7usou §9Rugido de La Pantera§7!`);
+
+  // tres sequencias de explosao em volta, cada uma mais forte que a anterior
+  DAMAGE.rugido.forEach((damage, index) => {
+    system.runTimeout(() => {
+      let loc;
+      try {
+        loc = player.location;
+        player.dimension.playSound("random.explode", loc, {
+          volume: 1.5,
+          pitch: 1.1 - index * 0.2,
+        });
+      } catch (e) {
+        return; // player saiu do mundo no meio da sequencia
+      }
+
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const dist = RUGIDO.radius * (0.4 + Math.random() * 0.6);
+        try {
+          player.dimension.spawnParticle("minecraft:large_explosion", {
+            x: loc.x + Math.cos(angle) * dist,
+            y: loc.y + 0.3 + Math.random() * 1.5,
+            z: loc.z + Math.sin(angle) * dist,
+          });
+        } catch (e) {}
+      }
+
+      damageNearbyEntities(player, loc, RUGIDO.radius, damage);
+    }, index * RUGIDO.gapTicks + 1);
+  });
+}
+
+// segura o alvo na frente do Grimmjow e arranca o coracao
+function seizeAndRipHeart(player, victim) {
+  const dim = player.dimension;
+
+  world.sendMessage(`§4§l${player.name} agarrou ${victim.name}!`);
+  dim.playSound("mob.enderdragon.growl", player.location, {
+    volume: 1.5,
+    pitch: 1.7,
+  });
+
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed++;
+
+    let heldAt;
+    try {
+      const dir = forwardDirection(player);
+      const anchor = player.location;
+      heldAt = {
+        x: anchor.x + dir.x * ARRANCAR_CORAZON.holdDistance,
+        y: anchor.y,
+        z: anchor.z + dir.z * ARRANCAR_CORAZON.holdDistance,
+      };
+      // preso de frente pro Grimmjow, sem conseguir sair
+      victim.teleport(heldAt, { keepVelocity: false, facingLocation: anchor });
+      victim.addEffect("slowness", 20, { amplifier: 255, showParticles: false });
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    for (let i = 0; i < 4; i++) {
+      try {
+        dim.spawnParticle("minecraft:blood_particle", {
+          x: heldAt.x + (Math.random() - 0.5) * 0.8,
+          y: heldAt.y + 0.9 + Math.random() * 0.7,
+          z: heldAt.z + (Math.random() - 0.5) * 0.8,
+        });
+      } catch (e) {}
+    }
+
+    if (elapsed < ARRANCAR_CORAZON.grabTicks) return;
+
+    system.clearRun(interval);
+    try {
+      victim.removeEffect("slowness");
+      for (let i = 0; i < 30; i++) {
+        dim.spawnParticle("minecraft:blood_particle", {
+          x: heldAt.x + (Math.random() - 0.5) * 1.4,
+          y: heldAt.y + 0.6 + Math.random() * 1.4,
+          z: heldAt.z + (Math.random() - 0.5) * 1.4,
+        });
+      }
+      victim.applyDamage(DAMAGE.arrancarCorazon * dmgMultiplier(player), {
+        cause: EntityDamageCause.entityAttack,
+        damagingEntity: player,
+      });
+      world.sendMessage(
+        `§4§l${player.name} arrancou o coração de ${victim.name}!`
+      );
+    } catch (e) {
+      // alvo saiu do mundo antes do golpe final
+    }
+  }, 1);
+}
+
+function castArrancarCorazon(player) {
+  if (!tryUseSkill(player, "grimmjow:arrancar_corazon")) return;
+  const dim = player.dimension;
+  const dir = forwardDirection(player);
+
+  world.sendMessage(`§b${player.name} §7usou §9Arrancar Corazón§7!`);
+  dim.playSound("mob.enderdragon.flap", player.location, {
+    volume: 1.2,
+    pitch: 0.8,
+  });
+
+  const perStep = ARRANCAR_CORAZON.dashDistance / ARRANCAR_CORAZON.dashSteps;
+  let steps = 0;
+
+  const interval = system.runInterval(() => {
+    steps++;
+
+    let position;
+    try {
+      const base = player.location;
+      position = {
+        x: base.x + dir.x * perStep,
+        y: base.y,
+        z: base.z + dir.z * perStep,
+      };
+      player.teleport(position, { keepVelocity: false });
+      dim.spawnParticle("grimmjow:cero", {
+        x: position.x,
+        y: position.y + 1,
+        z: position.z,
+      });
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    // so agarra player, como pedido
+    const victim = nearestPlayer(player, ARRANCAR_CORAZON.searchRadius, position);
+    if (victim) {
+      system.clearRun(interval);
+      seizeAndRipHeart(player, victim);
+      return;
+    }
+
+    if (steps >= ARRANCAR_CORAZON.dashSteps) {
+      system.clearRun(interval);
+      player.sendMessage("§7Você avançou, mas não agarrou ninguém.");
+    }
+  }, 1);
+}
+
+function castDisparo(player) {
+  if (!tryUseSkill(player, "grimmjow:disparo")) return;
+
+  world.sendMessage(`§b${player.name} §7usou §9Disparo de La Pantera§7!`);
+  player.dimension.playSound("random.orb", player.location, {
+    volume: 1.2,
+    pitch: 1.9,
+  });
+
+  player.addEffect("speed", DISPARO.durationTicks, {
+    amplifier: DISPARO.speedAmplifier,
+    showParticles: true,
+  });
+
+  // o buff SOBRESCREVE o speed permanente da forma, entao tem que devolver
+  system.runTimeout(() => {
+    try {
+      reapplyFormEffects(player);
+    } catch (e) {
+      // player saiu do mundo
+    }
+  }, DISPARO.durationTicks);
 }
 
 /* ---------------------------------------------------------
@@ -2192,9 +2738,19 @@ const MELEE_WEAPONS = {
     particle: "minecraft:crit_particle",
     dot: null,
   },
+  "grimmjow:m1_zanpakuto": {
+    baseDamage: DAMAGE.grimmjowM1,
+    particle: "grimmjow:cero",
+    dot: null,
+  },
+  "grimmjow:m1_garras": {
+    baseDamage: DAMAGE.garras,
+    particle: "grimmjow:cero",
+    dot: null,
+  },
   "mayuri:m1_ashisogi_jizo": {
     baseDamage: DAMAGE.mayuriM1,
-    particle: "mayuri:toxic_fog",
+    particle: "mayuri:poison_fog",
     dot: null,
     // a cada 3 acertos a lamina "corta os tendoes" e derruba a velocidade
     combo: {

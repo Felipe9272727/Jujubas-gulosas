@@ -2,10 +2,10 @@
   "format_version": "1.10.0",
   "particle_effect": {
     "description": {
-      "identifier": "mayuri:poison_fog",
+      "identifier": "grimmjow:cero",
       "basic_render_parameters": {
         "material": "particles_blend",
-        "texture": "textures/particle/toxic_fog"
+        "texture": "textures/particle/cero"
       }
     },
     "components": {
@@ -28,21 +28,21 @@
         ]
       },
       "minecraft:particle_lifetime_expression": {
-        "max_lifetime": "1.6"
+        "max_lifetime": "0.55"
       },
-      "minecraft:particle_initial_speed": 0.05,
+      "minecraft:particle_initial_speed": 0.08,
       "minecraft:particle_motion_dynamic": {
         "linear_acceleration": [
           0,
-          0.15,
+          0.1,
           0
         ],
-        "linear_drag_coefficient": 1.4
+        "linear_drag_coefficient": 1.8
       },
       "minecraft:particle_appearance_billboard": {
         "size": [
-          0.75,
-          0.75
+          0.42,
+          0.42
         ],
         "facing_camera_mode": "lookat_xyz",
         "uv": {

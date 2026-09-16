@@ -49,8 +49,42 @@ function noNewErrors(label, mark) {
   );
 }
 
-// ids na mesma ordem do registro CHARACTERS (o menu usa Object.keys)
-const CHARACTER_IDS = { ichigo: 0, byakuya: 1, kenpachi: 2, mayuri: 3 };
+// espelho do registro ARCS do main.js: o menu so mostra o arco atual, entao o
+// indice do botao e relativo ao arco, nao ao CHARACTERS inteiro
+const ROSTER = [
+  { name: "Invasão à Soul Society", ids: ["ichigo", "byakuya", "kenpachi", "mayuri"] },
+  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow"] },
+];
+
+function locate(id) {
+  for (let arcIndex = 0; arcIndex < ROSTER.length; arcIndex++) {
+    const buttonIndex = ROSTER[arcIndex].ids.indexOf(id);
+    if (buttonIndex !== -1) return { arcIndex, buttonIndex };
+  }
+  throw new Error(`personagem fora de qualquer arco: ${id}`);
+}
+
+// leva o player ate o arco certo (agachar + seletor) e escolhe o personagem
+async function pickCharacter(player, id) {
+  const { arcIndex, buttonIndex } = locate(id);
+  const current = player.getDynamicProperty("mv:arc") ?? 0;
+  const steps = (arcIndex - current + ROSTER.length) % ROSTER.length;
+
+  player.isSneaking = true;
+  for (let i = 0; i < steps; i++) useItem(player, "multiversal:character_selector");
+  player.isSneaking = false;
+
+  queueFormResponse(buttonIndex);
+  useItem(player, "multiversal:character_selector");
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+// o botao "Desativar" fica logo depois dos personagens do arco atual
+function deactivateButtonIndex(player) {
+  const arcIndex = player.getDynamicProperty("mv:arc") ?? 0;
+  return ROSTER[arcIndex].ids.length;
+}
 
 const DP = {
   character: "mv:character",
@@ -122,16 +156,18 @@ check(
 
 scenario("Menu do seletor");
 mark = errors.length;
-queueFormResponse(0); // Ichigo
-useItem(ichigo, "multiversal:character_selector");
-await Promise.resolve();
-await Promise.resolve();
+await pickCharacter(ichigo, "ichigo");
 advanceTicks(20, "ativar ichigo");
 noNewErrors("abrir menu + escolher personagem sem erro", mark);
 check(
-  "form lista os 3 personagens",
-  shownForms.length === 1 && shownForms[0].buttons.length === Object.keys(CHARACTER_IDS).length,
+  "form lista só os personagens do arco atual",
+  shownForms.length === 1 && shownForms[0].buttons.length === ROSTER[0].ids.length,
   `${shownForms[0]?.buttons.length} botões`
+);
+check(
+  "form mostra o nome do arco",
+  (shownForms[0]?.body ?? "").includes(ROSTER[0].name),
+  shownForms[0]?.body
 );
 check("personagem salvo", ichigo.getDynamicProperty(DP.character) === "ichigo");
 check("vida maxima 200", hp(ichigo).effectiveMax === 200, `${hp(ichigo).effectiveMax}`);
@@ -149,10 +185,7 @@ check(
   JSON.stringify(slotIds(ichigo, 5))
 );
 
-queueFormResponse(1); // Byakuya
-useItem(byakuya, "multiversal:character_selector");
-await Promise.resolve();
-await Promise.resolve();
+await pickCharacter(byakuya, "byakuya");
 advanceTicks(20, "ativar byakuya");
 check("Byakuya ativado", byakuya.getDynamicProperty(DP.character) === "byakuya");
 
@@ -444,10 +477,7 @@ mark = errors.length;
 emit("playerSpawn", { player: kenpachi, initialSpawn: true });
 emit("playerSpawn", { player: victim, initialSpawn: true });
 advanceTicks(20, "spawn-kenpachi");
-queueFormResponse(CHARACTER_IDS.kenpachi);
-useItem(kenpachi, "multiversal:character_selector");
-await Promise.resolve();
-await Promise.resolve();
+await pickCharacter(kenpachi, "kenpachi");
 advanceTicks(20, "ativar-kenpachi");
 noNewErrors("ativar Kenpachi sem erro", mark);
 check("personagem salvo", kenpachi.getDynamicProperty(DP.character) === "kenpachi");
@@ -721,10 +751,7 @@ const cobaia = createDummy("Cobaia", { x: 203, y: 64, z: 200 }, 5000);
 mark = errors.length;
 emit("playerSpawn", { player: mayuri, initialSpawn: true });
 advanceTicks(20, "spawn-mayuri");
-queueFormResponse(CHARACTER_IDS.mayuri);
-useItem(mayuri, "multiversal:character_selector");
-await Promise.resolve();
-await Promise.resolve();
+await pickCharacter(mayuri, "mayuri");
 advanceTicks(20, "ativar-mayuri");
 noNewErrors("ativar Mayuri sem erro", mark);
 check("personagem salvo", mayuri.getDynamicProperty(DP.character) === "mayuri");
@@ -813,7 +840,7 @@ check("Mayuri não se envenena", !mayuri.getEffect("poison"));
 const fogParticles = log.particles.slice(partBeforeFog);
 check(
   "neblina roxa desenhada com a partícula customizada",
-  fogParticles.length > 20 && fogParticles.every((p) => p.particleId === "mayuri:toxic_fog"),
+  fogParticles.length > 20 && fogParticles.every((p) => p.particleId === "mayuri:poison_fog"),
   `${fogParticles.length} partículas`
 );
 
@@ -886,7 +913,7 @@ const bankaiParticles = log.particles.slice(partBeforeBankai);
 check(
   "neblina densa desenhada com a partícula customizada",
   bankaiParticles.length > 150 &&
-    bankaiParticles.every((p) => p.particleId === "mayuri:toxic_fog"),
+    bankaiParticles.every((p) => p.particleId === "mayuri:poison_fog"),
   `${bankaiParticles.length} partículas`
 );
 
@@ -905,6 +932,307 @@ check("Mayuri não vira forma persistente", !mayuri.getDynamicProperty(DP.awaken
 check("vida maxima continua 180", hp(mayuri).effectiveMax === 180);
 naFrente.kill();
 foraDaNevoa.kill();
+
+/* ================= arcos do seletor ================= */
+
+scenario("Seletor separado por arcos");
+const explorador = createPlayer("Explorador", { x: -300, y: 64, z: -300 }, 400);
+emit("playerSpawn", { player: explorador, initialSpawn: true });
+advanceTicks(20, "spawn-explorador");
+
+mark = errors.length;
+useItem(explorador, "multiversal:character_selector"); // sem resposta na fila = cancela
+let shown = shownForms[shownForms.length - 1];
+check("começa no primeiro arco", shown.body.includes(ROSTER[0].name), shown.body);
+check(
+  `primeiro arco lista ${ROSTER[0].ids.length} personagens`,
+  shown.buttons.length === ROSTER[0].ids.length,
+  `${shown.buttons.length} botões`
+);
+
+explorador.isSneaking = true;
+useItem(explorador, "multiversal:character_selector");
+explorador.isSneaking = false;
+check("agachar + seletor avança pro próximo arco", explorador.getDynamicProperty("mv:arc") === 1);
+check(
+  "avisa em qual arco entrou",
+  log.worldMessages.some((m) => m.to === "Explorador" && m.message.includes(ROSTER[1].name))
+);
+
+useItem(explorador, "multiversal:character_selector");
+shown = shownForms[shownForms.length - 1];
+check(
+  `segundo arco lista ${ROSTER[1].ids.length} personagem`,
+  shown.buttons.length === ROSTER[1].ids.length,
+  `${shown.buttons.length} botões`
+);
+check("segundo arco é o do Grimmjow", shown.buttons[0].includes("Grimmjow"), shown.buttons.join(", "));
+
+explorador.isSneaking = true;
+useItem(explorador, "multiversal:character_selector");
+explorador.isSneaking = false;
+check("dá a volta depois do último arco", explorador.getDynamicProperty("mv:arc") === 0);
+noNewErrors("trocar de arco sem erro", mark);
+
+// varre todos os arcos: ninguém pode ficar de fora nem aparecer duas vezes
+const todosOsBotoes = [];
+for (let a = 0; a < ROSTER.length; a++) {
+  useItem(explorador, "multiversal:character_selector");
+  todosOsBotoes.push(...shownForms[shownForms.length - 1].buttons);
+  explorador.isSneaking = true;
+  useItem(explorador, "multiversal:character_selector");
+  explorador.isSneaking = false;
+}
+const totalEsperado = ROSTER.reduce((n, arc) => n + arc.ids.length, 0);
+check(
+  "os arcos juntos cobrem todo o elenco, sem repetição",
+  todosOsBotoes.length === totalEsperado && new Set(todosOsBotoes).size === totalEsperado,
+  `${todosOsBotoes.length} botões, ${new Set(todosOsBotoes).size} únicos`
+);
+
+/* ================= Grimmjow Jaegerjaquez ================= */
+
+scenario("Grimmjow Jaegerjaquez: ativação");
+const grimmjow = createPlayer("GrimmjowPlayer", { x: -300, y: 64, z: 300 });
+const presaG = createDummy("PresaG", { x: -297, y: 64, z: 300 }, 50000);
+emit("playerSpawn", { player: grimmjow, initialSpawn: true });
+advanceTicks(20, "spawn-grimmjow");
+
+mark = errors.length;
+await pickCharacter(grimmjow, "grimmjow");
+advanceTicks(20, "ativar-grimmjow");
+noNewErrors("ativar Grimmjow sem erro", mark);
+check("vida maxima 800", hp(grimmjow).effectiveMax === 800, `${hp(grimmjow).effectiveMax}`);
+check(
+  "4 itens nos slots 0-3",
+  JSON.stringify(slotIds(grimmjow, 4)) ===
+    JSON.stringify([
+      "grimmjow:m1_zanpakuto",
+      "grimmjow:desgarra",
+      "grimmjow:raza",
+      "grimmjow:gran_rey_cero",
+    ]),
+  JSON.stringify(slotIds(grimmjow, 4))
+);
+check("slot 4 livre na forma base", inv(grimmjow).getItem(4) === undefined);
+
+scenario("Desgarra de la Pantera");
+mark = errors.length;
+grimmjow.teleport({ x: -300, y: 64, z: 300 });
+grimmjow._view = { x: 1, y: 0, z: 0 };
+presaG.teleport({ x: -297, y: 64, z: 300 });
+const naLargura = createDummy("NaLargura", { x: -297, y: 64, z: 303 }, 500); // 3 de lado
+const foraDoCorte = createDummy("ForaDoCorte", { x: -293, y: 64, z: 300 }, 500); // 7 à frente
+dmgBefore = log.damages.length;
+useItem(grimmjow, "grimmjow:desgarra");
+advanceTicks(10, "desgarra");
+noNewErrors("Desgarra executa limpo", mark);
+let hits = log.damages.slice(dmgBefore);
+check("100 de dano na frente", hits.some((d) => d.target === "PresaG" && d.amount === 100));
+check("corte é largo: pega 3 blocos de lado", hits.some((d) => d.target === "NaLargura"));
+check("não pega a 7 blocos (alcance é 5)", !hits.some((d) => d.target === "ForaDoCorte"));
+naLargura.kill();
+foraDoCorte.kill();
+
+scenario("Raza de la Pantera");
+mark = errors.length;
+grimmjow.teleport({ x: -300, y: 64, z: 300 });
+presaG.teleport({ x: -295, y: 64, z: 300 });
+dmgBefore = log.damages.length;
+useItem(grimmjow, "grimmjow:raza");
+advanceTicks(11, "raza"); // 10 passos de 2 blocos
+noNewErrors("Raza executa limpo", mark);
+check(
+  "200 de dano em quem está no caminho",
+  log.damages.slice(dmgBefore).some((d) => d.target === "PresaG" && d.amount === 200)
+);
+check(
+  "percorre os 20 blocos em 10 ticks (dobro da velocidade do Getsuga Run)",
+  grimmjow.location.x >= -300 + 19.9,
+  `andou ${(grimmjow.location.x + 300).toFixed(1)} blocos`
+);
+
+scenario("Gran Rey Cero");
+mark = errors.length;
+grimmjow.teleport({ x: -300, y: 64, z: 300 });
+grimmjow._view = { x: 1, y: 0, z: 0 };
+presaG.teleport({ x: -290, y: 64, z: 300 }); // 10 blocos à frente
+const foraDoAlcance = createDummy("ForaDoAlcance", { x: -260, y: 64, z: 300 }, 500); // 40
+dmgBefore = log.damages.length;
+const partBeforeCero = log.particles.length;
+useItem(grimmjow, "grimmjow:gran_rey_cero");
+advanceTicks(40, "cero");
+noNewErrors("Gran Rey Cero executa limpo", mark);
+hits = log.damages.slice(dmgBefore);
+check("350 de dano no alvo", hits.some((d) => d.target === "PresaG" && d.amount === 350));
+check("não passa do alcance de 28 blocos", !hits.some((d) => d.target === "ForaDoAlcance"));
+check(
+  "esfera desenhada com a partícula azul do cero",
+  log.particles.slice(partBeforeCero).some((p) => p.particleId === "grimmjow:cero")
+);
+check(
+  "atinge cada alvo uma vez só",
+  hits.filter((d) => d.target === "PresaG").length === 1,
+  `${hits.filter((d) => d.target === "PresaG").length} acertos`
+);
+foraDoAlcance.kill();
+
+scenario("Resurrección: La Pantera");
+mark = errors.length;
+grimmjow.teleport({ x: -300, y: 64, z: 300 });
+hp(grimmjow).setCurrentValue(500);
+grimmjow.setDynamicProperty(DP.awakening, 100);
+const msgsBeforeRes = log.worldMessages.length;
+grimmjow.isSneaking = true;
+useItem(grimmjow, "grimmjow:m1_zanpakuto");
+grimmjow.isSneaking = false;
+advanceTicks(20, "resurreccion");
+noNewErrors("Resurrección sem erro", mark);
+check("awakened = true", grimmjow.getDynamicProperty(DP.awakened) === true);
+check(
+  'grita "Rasgue, La Pantera!" no chat',
+  log.worldMessages
+    .slice(msgsBeforeRes)
+    .some((m) => m.message === "<GrimmjowPlayer> Rasgue, La Pantera!")
+);
+check("vida maxima 1200", hp(grimmjow).effectiveMax === 1200, `${hp(grimmjow).effectiveMax}`);
+check("speed 5 (amplifier 4)", grimmjow.getEffect("speed")?.amplifier === 4, `${grimmjow.getEffect("speed")?.amplifier}`);
+check("regen 4 (amplifier 3)", grimmjow.getEffect("regeneration")?.amplifier === 3, `${grimmjow.getEffect("regeneration")?.amplifier}`);
+check(
+  "5 itens de La Pantera",
+  JSON.stringify(slotIds(grimmjow, 5)) ===
+    JSON.stringify([
+      "grimmjow:m1_garras",
+      "grimmjow:destruir",
+      "grimmjow:rugido",
+      "grimmjow:arrancar_corazon",
+      "grimmjow:disparo",
+    ]),
+  JSON.stringify(slotIds(grimmjow, 5))
+);
+
+scenario("Destruir de La Pantera");
+mark = errors.length;
+grimmjow.teleport({ x: -300, y: 64, z: 300 });
+grimmjow._view = { x: 1, y: 0, z: 0 };
+presaG.teleport({ x: -296, y: 64, z: 300 });
+dmgBefore = log.damages.length;
+useItem(grimmjow, "grimmjow:destruir");
+advanceTicks(30, "destruir");
+noNewErrors("Destruir executa limpo", mark);
+check(
+  "270 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "PresaG" && d.amount === 270)
+);
+check(
+  "três cortes desenhados",
+  log.sounds.slice(-6).filter((s) => s.soundId === "mob.wither.shoot").length >= 3
+);
+
+scenario("Rugido de La Pantera");
+mark = errors.length;
+grimmjow.teleport({ x: -300, y: 64, z: 300 });
+presaG.teleport({ x: -298, y: 64, z: 300 });
+dmgBefore = log.damages.length;
+useItem(grimmjow, "grimmjow:rugido");
+advanceTicks(45, "rugido");
+noNewErrors("Rugido executa limpo", mark);
+const rugidoHits = log.damages
+  .slice(dmgBefore)
+  .filter((d) => d.target === "PresaG")
+  .map((d) => d.amount);
+check(
+  "três sequências: 100, 150 e 200",
+  JSON.stringify(rugidoHits) === JSON.stringify([100, 150, 200]),
+  JSON.stringify(rugidoHits)
+);
+
+scenario("Arrancar Corazón");
+mark = errors.length;
+grimmjow.teleport({ x: -300, y: 64, z: 300 });
+grimmjow._view = { x: 1, y: 0, z: 0 };
+presaG.teleport({ x: 900, y: 64, z: 900 }); // dummy longe: a skill só pega player
+const vitima = createPlayer("Vitima", { x: -297, y: 64, z: 300 }, 20000);
+dmgBefore = log.damages.length;
+const partBeforeHeart = log.particles.length;
+useItem(grimmjow, "grimmjow:arrancar_corazon");
+advanceTicks(10, "corazon-agarra");
+check(
+  "agarra o player no caminho",
+  log.worldMessages.some((m) => m.message.includes(`agarrou ${vitima.name}`))
+);
+const grabDist = Math.hypot(
+  vitima.location.x - grimmjow.location.x,
+  vitima.location.z - grimmjow.location.z
+);
+check("segura a vítima na frente do Grimmjow", grabDist <= 2, `dist=${grabDist.toFixed(2)}`);
+check("vítima não consegue se mexer", vitima.getEffect("slowness")?.amplifier === 255);
+check(
+  "partículas de sangue saindo da vítima",
+  log.particles.slice(partBeforeHeart).some((p) => p.particleId === "minecraft:blood_particle")
+);
+check("ainda não causou o dano", !log.damages.slice(dmgBefore).some((d) => d.amount === 700));
+
+advanceTicks(40, "corazon-arranca");
+noNewErrors("Arrancar Corazón executa limpo", mark);
+check(
+  "700 de dano ao arrancar o coração",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Vitima" && d.amount === 700)
+);
+check("solta a vítima no fim", !vitima.getEffect("slowness"));
+
+mark = errors.length;
+grimmjow.setDynamicProperty("mv:cd_grimmjow_arrancar_corazon", undefined);
+vitima.teleport({ x: 900, y: 64, z: 900 });
+grimmjow.teleport({ x: -300, y: 64, z: 300 });
+dmgBefore = log.damages.length;
+useItem(grimmjow, "grimmjow:arrancar_corazon");
+advanceTicks(15, "corazon-sem-alvo");
+noNewErrors("avanço sem alvo não lança", mark);
+check(
+  "sem player no caminho, avisa e não agarra",
+  log.worldMessages.some(
+    (m) => m.to === "GrimmjowPlayer" && m.message.includes("não agarrou ninguém")
+  ) && !log.damages.slice(dmgBefore).some((d) => d.amount === 700)
+);
+
+scenario("Disparo de La Pantera");
+mark = errors.length;
+useItem(grimmjow, "grimmjow:disparo");
+advanceTicks(5, "disparo");
+noNewErrors("Disparo executa limpo", mark);
+check("speed 10 (amplifier 9)", grimmjow.getEffect("speed")?.amplifier === 9, `${grimmjow.getEffect("speed")?.amplifier}`);
+
+advanceTicks(110, "disparo-acaba");
+check(
+  "quando o buff acaba, volta pro speed 5 da forma (não fica sem speed)",
+  grimmjow.getEffect("speed")?.amplifier === 4,
+  `${grimmjow.getEffect("speed")?.amplifier}`
+);
+check("e a vida maxima continua 1200", hp(grimmjow).effectiveMax === 1200);
+
+scenario("Fim da Resurrección");
+mark = errors.length;
+grimmjow.setDynamicProperty(DP.awakening, 2);
+hp(grimmjow).setCurrentValue(600);
+advanceTicks(90, "drenar-resurreccion");
+noNewErrors("reversão sem erro", mark);
+check("awakened = false", grimmjow.getDynamicProperty(DP.awakened) === false);
+check("vida maxima volta pra 800", hp(grimmjow).effectiveMax === 800, `${hp(grimmjow).effectiveMax}`);
+check("speed volta pro 2 base", grimmjow.getEffect("speed")?.amplifier === 1, `${grimmjow.getEffect("speed")?.amplifier}`);
+check("regen volta pro 2 base", grimmjow.getEffect("regeneration")?.amplifier === 1, `${grimmjow.getEffect("regeneration")?.amplifier}`);
+check("NÃO curou ao reverter", hp(grimmjow).currentValue <= 600, `${hp(grimmjow).currentValue}`);
+check(
+  "itens base restaurados",
+  JSON.stringify(slotIds(grimmjow, 4)) ===
+    JSON.stringify([
+      "grimmjow:m1_zanpakuto",
+      "grimmjow:desgarra",
+      "grimmjow:raza",
+      "grimmjow:gran_rey_cero",
+    ]),
+  JSON.stringify(slotIds(grimmjow, 4))
+);
 
 /* ================= dash universal ================= */
 
@@ -976,7 +1304,7 @@ check("alvo frágil morreu", !frail.isValid);
 
 scenario("Desativar personagem");
 mark = errors.length;
-queueFormResponse(Object.keys(CHARACTER_IDS).length); // botao "Desativar personagem"
+queueFormResponse(deactivateButtonIndex(ichigo)); // botao "Desativar personagem"
 useItem(ichigo, "multiversal:character_selector");
 await Promise.resolve();
 await Promise.resolve();
@@ -1030,10 +1358,7 @@ check("a partícula customizada sakura:leaf foi realmente usada", usedParticles.
 
 scenario("Reload do mundo (o tick volta a zero, a dynamic property não)");
 mark = errors.length;
-queueFormResponse(0);
-useItem(ichigo, "multiversal:character_selector");
-await Promise.resolve();
-await Promise.resolve();
+await pickCharacter(ichigo, "ichigo");
 advanceTicks(20, "reativar-ichigo");
 check("Ichigo reativado pro teste", ichigo.getDynamicProperty(DP.character) === "ichigo");
 

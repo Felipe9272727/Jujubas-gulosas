@@ -79,6 +79,33 @@
     },
     "mayuri:toxic_fog": {
       "textures": "textures/items/mayuri_toxic_fog"
+    },
+    "grimmjow:m1_zanpakuto": {
+      "textures": "textures/items/grimmjow_m1_zanpakuto"
+    },
+    "grimmjow:desgarra": {
+      "textures": "textures/items/grimmjow_desgarra"
+    },
+    "grimmjow:raza": {
+      "textures": "textures/items/grimmjow_raza"
+    },
+    "grimmjow:gran_rey_cero": {
+      "textures": "textures/items/grimmjow_gran_rey_cero"
+    },
+    "grimmjow:m1_garras": {
+      "textures": "textures/items/grimmjow_m1_garras"
+    },
+    "grimmjow:destruir": {
+      "textures": "textures/items/grimmjow_destruir"
+    },
+    "grimmjow:rugido": {
+      "textures": "textures/items/grimmjow_rugido"
+    },
+    "grimmjow:arrancar_corazon": {
+      "textures": "textures/items/grimmjow_arrancar_corazon"
+    },
+    "grimmjow:disparo": {
+      "textures": "textures/items/grimmjow_disparo"
     }
   }
 }
