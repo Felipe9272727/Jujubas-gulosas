@@ -70,6 +70,15 @@
     },
     "kenpachi:hells_cut": {
       "textures": "textures/items/kenpachi_hells_cut"
+    },
+    "mayuri:m1_ashisogi_jizo": {
+      "textures": "textures/items/mayuri_m1_ashisogi_jizo"
+    },
+    "mayuri:poison_slash": {
+      "textures": "textures/items/mayuri_poison_slash"
+    },
+    "mayuri:toxic_fog": {
+      "textures": "textures/items/mayuri_toxic_fog"
     }
   }
 }

@@ -133,6 +133,17 @@ const CHARACTERS = {
       },
     },
   },
+  mayuri: {
+    id: "mayuri",
+    name: "Mayuri Kurotsuchi (Shikai)",
+    health: 180,
+    // so 3 itens: os slots 3 e 4 ficam livres ate ele ganhar mais skills
+    items: {
+      0: "mayuri:m1_ashisogi_jizo",
+      1: "mayuri:poison_slash",
+      2: "mayuri:toxic_fog",
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -182,6 +193,8 @@ const SKILL_COOLDOWN_TICKS = {
   "kenpachi:stomp": 240,
   "kenpachi:hunt": 400,
   "kenpachi:hells_cut": 400, // 20% a menos que o Getsuga Tenshou (500)
+  "mayuri:poison_slash": 300, // 15s
+  "mayuri:toxic_fog": 600, // 30s
 };
 
 const SKILL_NAMES = {
@@ -201,6 +214,8 @@ const SKILL_NAMES = {
   "kenpachi:stomp": "Stomp",
   "kenpachi:hunt": "Kenpachi's Hunt",
   "kenpachi:hells_cut": "Hell's Cut",
+  "mayuri:poison_slash": "Poison Slash",
+  "mayuri:toxic_fog": "Toxic Fog",
 };
 
 // dano aumentado
@@ -228,6 +243,9 @@ const DAMAGE = {
   flashSlash: 30, // por avanco, sao 3 avancos
   stomp: 45,
   hellsCut: 75, // mesmo dano do Getsuga Tenshou, metade do alcance
+  // Mayuri Kurotsuchi
+  mayuriM1: 8,
+  poisonSlash: 20,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -246,7 +264,7 @@ const FLASH_SLASH = {
   stepsPerAdvance: 6,
   gapTicks: 8, // "pequeno intervalo" entre um avanco e o proximo
 };
-const STOMP_RADIUS = 1.5; // area 3x3 blocos
+const STOMP_RADIUS = 3; // area 6x6 blocos (dobro do alcance original)
 const HELLS_CUT_RANGE = 10; // metade do alcance do Getsuga Tenshou (20)
 const KENPACHI_HUNT = {
   searchRadius: 40,
@@ -254,6 +272,24 @@ const KENPACHI_HUNT = {
   slownessAmplifier: 4, // slowness 5
   slownessTicks: 60, // 3s
   darknessTicks: 80, // 4s
+};
+
+// Mayuri Kurotsuchi
+const POISON_SLASH = {
+  forward: 4, // blocos pra frente
+  width: 3, // largura total da caixa (1.5 pra cada lado)
+  verticalReach: 3,
+  slownessAmplifier: 255, // "lentidao inf": no maximo o alvo nao sai do lugar
+  slownessTicks: 40, // 2s
+};
+const TOXIC_FOG = {
+  radius: 5, // area 10x10
+  durationTicks: 300, // 15s
+  tickInterval: 10,
+  refreshTicks: 30, // um pouco maior que o intervalo pro efeito nao piscar
+  poisonAmplifier: 9, // poison 10
+  slownessAmplifier: 2, // slowness 3
+  particlesPerTick: 14,
 };
 
 /* ---------------------------------------------------------
@@ -541,6 +577,7 @@ function activateCharacter(player, characterId) {
   player.setDynamicProperty(DP.character, characterId);
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
+  clearComboCounters(player);
 
   applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
 
@@ -590,6 +627,7 @@ function deactivateCharacter(player) {
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.awakening, 0);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
+  clearComboCounters(player);
   removeSenkeiZoneOwnedBy(player.id);
 
   system.runTimeout(() => {
@@ -947,6 +985,12 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "kenpachi:hells_cut":
       castHellsCut(player);
+      break;
+    case "mayuri:poison_slash":
+      castPoisonSlash(player);
+      break;
+    case "mayuri:toxic_fog":
+      castToxicFog(player);
       break;
   }
 });
@@ -1652,6 +1696,138 @@ function castHellsCut(player) {
 }
 
 /* ---------------------------------------------------------
+   Skills do Mayuri Kurotsuchi
+   --------------------------------------------------------- */
+
+// Caixa retangular na frente do player. As outras skills usam esfera; um corte
+// "4 pra frente e 3 de largura" so faz sentido como caixa orientada pela visao.
+function entitiesInFrontBox(player, box) {
+  const { forward, width, verticalReach = 3 } = box;
+  const dir = forwardDirection(player);
+  const perp = { x: -dir.z, z: dir.x };
+  const origin = player.location;
+  const half = width / 2;
+
+  // busca grossa por esfera e depois filtra pela caixa de verdade
+  const searchRadius = Math.sqrt(forward * forward + half * half) + verticalReach;
+  const found = [];
+
+  for (const entity of player.dimension.getEntities({
+    location: origin,
+    maxDistance: searchRadius,
+  })) {
+    if (entity.id === player.id) continue;
+    if (!entity.getComponent("minecraft:health")) continue;
+
+    const dx = entity.location.x - origin.x;
+    const dy = entity.location.y - origin.y;
+    const dz = entity.location.z - origin.z;
+
+    const along = dx * dir.x + dz * dir.z;
+    const lateral = dx * perp.x + dz * perp.z;
+
+    if (along < 0 || along > forward) continue;
+    if (Math.abs(lateral) > half) continue;
+    if (dy < -verticalReach || dy > verticalReach) continue;
+
+    found.push(entity);
+  }
+
+  return found;
+}
+
+function castPoisonSlash(player) {
+  if (!tryUseSkill(player, "mayuri:poison_slash")) return;
+  const dim = player.dimension;
+  const dir = forwardDirection(player);
+  const perp = { x: -dir.z, z: dir.x };
+  const origin = player.location;
+  const half = POISON_SLASH.width / 2;
+
+  world.sendMessage(`§5${player.name} §7usou §dPoison Slash§7!`);
+  dim.playSound("mob.wither.shoot", origin, { volume: 1.2, pitch: 1.3 });
+
+  // desenha o corte cobrindo exatamente a caixa que da dano
+  for (let step = 0; step <= 8; step++) {
+    const t = step / 8;
+    const along = 0.5 + t * (POISON_SLASH.forward - 0.5);
+    const lateral = Math.cos(t * Math.PI) * half;
+    try {
+      dim.spawnParticle("mayuri:toxic_fog", {
+        x: origin.x + dir.x * along + perp.x * lateral,
+        y: origin.y + 1 + Math.sin(t * Math.PI) * 0.5,
+        z: origin.z + dir.z * along + perp.z * lateral,
+      });
+    } catch (e) {}
+  }
+
+  const finalDamage = DAMAGE.poisonSlash * dmgMultiplier(player);
+  for (const entity of entitiesInFrontBox(player, POISON_SLASH)) {
+    entity.applyDamage(finalDamage, {
+      cause: EntityDamageCause.entityAttack,
+      damagingEntity: player,
+    });
+    try {
+      entity.addEffect("slowness", POISON_SLASH.slownessTicks, {
+        amplifier: POISON_SLASH.slownessAmplifier,
+        showParticles: true,
+      });
+    } catch (e) {}
+  }
+}
+
+function castToxicFog(player) {
+  if (!tryUseSkill(player, "mayuri:toxic_fog")) return;
+  const dim = player.dimension;
+  const center = player.location;
+
+  world.sendMessage(`§5${player.name} §7soltou §dToxic Fog§7!`);
+  dim.playSound("mob.wither.spawn", center, { volume: 1.2, pitch: 1.7 });
+
+  // a neblina fica onde foi solta, nao acompanha o Mayuri
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    for (let i = 0; i < TOXIC_FOG.particlesPerTick; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * TOXIC_FOG.radius;
+      try {
+        dim.spawnParticle("mayuri:toxic_fog", {
+          x: center.x + Math.cos(angle) * dist,
+          y: center.y + 0.2 + Math.random() * 2.2,
+          z: center.z + Math.sin(angle) * dist,
+        });
+      } catch (e) {}
+    }
+
+    for (const entity of dim.getEntities({
+      location: center,
+      maxDistance: TOXIC_FOG.radius,
+    })) {
+      if (entity.id === player.id) continue;
+      if (!entity.getComponent("minecraft:health")) continue;
+      try {
+        entity.addEffect("poison", TOXIC_FOG.refreshTicks, {
+          amplifier: TOXIC_FOG.poisonAmplifier,
+          showParticles: true,
+        });
+        entity.addEffect("slowness", TOXIC_FOG.refreshTicks, {
+          amplifier: TOXIC_FOG.slownessAmplifier,
+          showParticles: false,
+        });
+      } catch (e) {}
+    }
+
+    elapsed += TOXIC_FOG.tickInterval;
+    if (elapsed >= TOXIC_FOG.durationTicks) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7A Toxic Fog se dissipou.");
+      } catch (e) {}
+    }
+  }, TOXIC_FOG.tickInterval);
+}
+
+/* ---------------------------------------------------------
    Awakening do Kenpachi: Pressao espiritual (tapa-olho removido)
    --------------------------------------------------------- */
 
@@ -1944,7 +2120,56 @@ const MELEE_WEAPONS = {
     particle: "minecraft:crit_particle",
     dot: null,
   },
+  "mayuri:m1_ashisogi_jizo": {
+    baseDamage: DAMAGE.mayuriM1,
+    particle: "mayuri:toxic_fog",
+    dot: null,
+    // a cada 3 acertos a lamina "corta os tendoes" e derruba a velocidade
+    combo: {
+      everyHits: 3,
+      effect: "slowness",
+      amplifier: 0, // slowness 1
+      durationTicks: 60, // 3s
+      message: "§5Ashisogi Jizō cortou os tendões!",
+    },
+  },
 };
+
+function comboKeyFor(weaponId) {
+  return "mv:combo_" + weaponId.replace(":", "_");
+}
+
+// conta os acertos da arma e dispara o efeito a cada N. O contador e por player
+// (nao por alvo), entao trocar de alvo no meio da sequencia nao zera.
+function applyMeleeCombo(player, target, weaponId, combo) {
+  const key = comboKeyFor(weaponId);
+  const stored = player.getDynamicProperty(key);
+  const hits = (typeof stored === "number" ? stored : 0) + 1;
+
+  if (hits < combo.everyHits) {
+    player.setDynamicProperty(key, hits);
+    return;
+  }
+
+  player.setDynamicProperty(key, 0);
+  try {
+    target.addEffect(combo.effect, combo.durationTicks, {
+      amplifier: combo.amplifier,
+      showParticles: true,
+    });
+    if (combo.message) player.sendMessage(combo.message);
+  } catch (e) {
+    // alvo morreu com o hit que fechou o combo
+  }
+}
+
+function clearComboCounters(player) {
+  for (const weaponId in MELEE_WEAPONS) {
+    if (MELEE_WEAPONS[weaponId].combo) {
+      player.setDynamicProperty(comboKeyFor(weaponId), 0);
+    }
+  }
+}
 
 world.afterEvents.entityHitEntity.subscribe((ev) => {
   const { damagingEntity, hitEntity } = ev;
@@ -1994,6 +2219,9 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       }
       if (weapon.dot) {
         applyDot(hitEntity, damagingEntity, weapon.dot.perSecond, weapon.dot.seconds);
+      }
+      if (weapon.combo) {
+        applyMeleeCombo(damagingEntity, hitEntity, held.typeId, weapon.combo);
       }
     }
 

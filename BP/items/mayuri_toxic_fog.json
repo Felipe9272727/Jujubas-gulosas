@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "mayuri:toxic_fog",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "mayuri:toxic_fog",
+      "minecraft:display_name": {
+        "value": "Toxic Fog"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "mayuri_toxic_fog",
+        "duration": 30
+      }
+    }
+  }
+}

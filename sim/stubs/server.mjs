@@ -123,7 +123,7 @@ class HealthComponent {
   }
   get effectiveMax() {
     this.entity._assertValid();
-    const boost = this.entity._effects.get("health_boost");
+    const boost = this.entity._activeEffect("health_boost");
     const extra = boost ? (boost.amplifier + 1) * 4 : 0;
     return this.entity._baseMaxHealth + extra;
   }
@@ -322,9 +322,21 @@ export class Entity {
     return true;
   }
 
+  // no jogo o efeito some sozinho quando a duracao acaba; sem isso o stub
+  // guardaria o efeito pra sempre e esconderia bug de duracao
+  _activeEffect(effectType) {
+    const effect = this._effects.get(effectType);
+    if (!effect) return undefined;
+    if (currentTick >= effect.endTick) {
+      this._effects.delete(effectType);
+      return undefined;
+    }
+    return effect;
+  }
+
   getEffect(effectType) {
     this._assertValid();
-    return this._effects.get(effectType);
+    return this._activeEffect(effectType);
   }
 
   getVelocity() {

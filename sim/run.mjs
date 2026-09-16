@@ -50,7 +50,7 @@ function noNewErrors(label, mark) {
 }
 
 // ids na mesma ordem do registro CHARACTERS (o menu usa Object.keys)
-const CHARACTER_IDS = { ichigo: 0, byakuya: 1, kenpachi: 2 };
+const CHARACTER_IDS = { ichigo: 0, byakuya: 1, kenpachi: 2, mayuri: 3 };
 
 const DP = {
   character: "mv:character",
@@ -493,17 +493,17 @@ check(
   `x=${kenpachi.location.x.toFixed(1)}`
 );
 
-scenario("Stomp: 45 de dano em 3x3");
+scenario("Stomp: 45 de dano em 6x6 (alcance dobrado)");
 mark = errors.length;
 kenpachi.teleport({ x: -80, y: 64, z: -80 });
-prey.teleport({ x: -79, y: 64, z: -80 }); // 1 bloco: dentro do 3x3
+prey.teleport({ x: -79, y: 64, z: -80 }); // 1 bloco: dentro
 dmgBefore = log.damages.length;
 const partBefore = log.particles.length;
 useItem(kenpachi, "kenpachi:stomp");
 advanceTicks(10, "stomp");
 noNewErrors("Stomp executa limpo", mark);
 check(
-  "45 de dano em quem está no 3x3",
+  "45 de dano em quem está na área",
   log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 45)
 );
 const stompParticles = log.particles.slice(partBefore);
@@ -515,13 +515,24 @@ check(
 );
 check("NÃO explode de verdade (nenhum createExplosion)", log.explosions.length === 0);
 
-prey.teleport({ x: -74, y: 64, z: -80 }); // 6 blocos: fora do 3x3
+// 2.5 blocos: fora do raio antigo (1.5), dentro do novo (3) - o teste do buff
+prey.teleport({ x: -77.5, y: 64, z: -80 });
+dmgBefore = log.damages.length;
+kenpachi.setDynamicProperty("mv:cd_kenpachi_stomp", undefined);
+useItem(kenpachi, "kenpachi:stomp");
+advanceTicks(10, "stomp-alcance-novo");
+check(
+  "alcance dobrado: pega a 2.5 blocos (antes não pegava)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 45)
+);
+
+prey.teleport({ x: -74, y: 64, z: -80 }); // 6 blocos: fora
 dmgBefore = log.damages.length;
 kenpachi.setDynamicProperty("mv:cd_kenpachi_stomp", undefined);
 useItem(kenpachi, "kenpachi:stomp");
 advanceTicks(10, "stomp-fora");
 check(
-  "quem está fora do 3x3 não leva dano",
+  "quem está fora da área não leva dano",
   !log.damages.slice(dmgBefore).some((d) => d.target === "Presa")
 );
 
@@ -700,6 +711,134 @@ check(
   log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 45),
   JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.amount))
 );
+
+/* ================= Mayuri Kurotsuchi ================= */
+
+scenario("Mayuri Kurotsuchi: ativação");
+const mayuri = createPlayer("MayuriPlayer", { x: 200, y: 64, z: 200 });
+const cobaia = createDummy("Cobaia", { x: 203, y: 64, z: 200 }, 5000);
+
+mark = errors.length;
+emit("playerSpawn", { player: mayuri, initialSpawn: true });
+advanceTicks(20, "spawn-mayuri");
+queueFormResponse(CHARACTER_IDS.mayuri);
+useItem(mayuri, "multiversal:character_selector");
+await Promise.resolve();
+await Promise.resolve();
+advanceTicks(20, "ativar-mayuri");
+noNewErrors("ativar Mayuri sem erro", mark);
+check("personagem salvo", mayuri.getDynamicProperty(DP.character) === "mayuri");
+check("vida maxima 180", hp(mayuri).effectiveMax === 180, `${hp(mayuri).effectiveMax}`);
+check(
+  "3 itens nos slots 0-2",
+  JSON.stringify(slotIds(mayuri, 3)) ===
+    JSON.stringify(["mayuri:m1_ashisogi_jizo", "mayuri:poison_slash", "mayuri:toxic_fog"]),
+  JSON.stringify(slotIds(mayuri, 3))
+);
+check(
+  "slots 3 e 4 ficam livres",
+  inv(mayuri).getItem(3) === undefined && inv(mayuri).getItem(4) === undefined
+);
+
+scenario("Ashisogi Jizō: lentidão a cada 3 hits");
+mark = errors.length;
+mayuri.teleport({ x: 200, y: 64, z: 200 });
+cobaia.teleport({ x: 201, y: 64, z: 200 });
+hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
+check("1º hit: sem lentidão", !cobaia.getEffect("slowness"));
+hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
+check("2º hit: sem lentidão", !cobaia.getEffect("slowness"));
+hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
+check("3º hit: aplica lentidão", !!cobaia.getEffect("slowness"));
+check(
+  "lentidão dura 3 segundos",
+  (cobaia.getEffect("slowness")?.endTick ?? 0) - system.currentTick === 60,
+  `${(cobaia.getEffect("slowness")?.endTick ?? 0) - system.currentTick} ticks`
+);
+
+cobaia.removeEffect("slowness");
+hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
+hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
+check("contador reiniciou (4º e 5º hit sem lentidão)", !cobaia.getEffect("slowness"));
+hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
+check("6º hit: aplica de novo", !!cobaia.getEffect("slowness"));
+noNewErrors("combo do m1 sem erro", mark);
+cobaia.removeEffect("slowness");
+
+scenario("Poison Slash: caixa de 4 pra frente x 3 de largura");
+mark = errors.length;
+mayuri.teleport({ x: 200, y: 64, z: 200 });
+mayuri._view = { x: 1, y: 0, z: 0 }; // olhando pro +x
+const naFrente = createDummy("NaFrente", { x: 203, y: 64, z: 200 }, 500);
+const longeDemais = createDummy("LongeDemais", { x: 206, y: 64, z: 200 }, 500);
+const deLado = createDummy("DeLado", { x: 202, y: 64, z: 203 }, 500);
+const atras = createDummy("Atras", { x: 198, y: 64, z: 200 }, 500);
+cobaia.teleport({ x: 500, y: 64, z: 500 });
+
+dmgBefore = log.damages.length;
+useItem(mayuri, "mayuri:poison_slash");
+advanceTicks(10, "poison-slash");
+noNewErrors("Poison Slash executa limpo", mark);
+const slashHits = log.damages.slice(dmgBefore);
+check(
+  "20 de dano em quem está na frente",
+  slashHits.some((d) => d.target === "NaFrente" && d.amount === 20)
+);
+check("não pega a 6 blocos (limite é 4)", !slashHits.some((d) => d.target === "LongeDemais"));
+check("não pega a 3 blocos de lado (largura é 3 total)", !slashHits.some((d) => d.target === "DeLado"));
+check("não pega quem está atrás", !slashHits.some((d) => d.target === "Atras"));
+check(
+  "aplica lentidão máxima por 2 segundos",
+  naFrente.getEffect("slowness")?.amplifier === 255 &&
+    (naFrente.getEffect("slowness")?.endTick ?? 0) - system.currentTick <= 40,
+  `amp=${naFrente.getEffect("slowness")?.amplifier}`
+);
+for (const d of [longeDemais, deLado, atras]) d.kill();
+
+scenario("Toxic Fog: 10x10, poison 10 + slowness 3 por 15s");
+mark = errors.length;
+mayuri.teleport({ x: 200, y: 64, z: 200 });
+naFrente.teleport({ x: 203, y: 64, z: 200 }); // 3 blocos: dentro do raio 5
+const foraDaNevoa = createDummy("ForaDaNevoa", { x: 208, y: 64, z: 200 }, 500);
+naFrente.removeEffect("slowness");
+
+const partBeforeFog = log.particles.length;
+useItem(mayuri, "mayuri:toxic_fog");
+advanceTicks(30, "fog-inicio");
+noNewErrors("Toxic Fog executa limpo", mark);
+check("poison 10 (amplifier 9) em quem está na neblina", naFrente.getEffect("poison")?.amplifier === 9);
+check("slowness 3 (amplifier 2) em quem está na neblina", naFrente.getEffect("slowness")?.amplifier === 2);
+check("quem está fora do 10x10 não é afetado", !foraDaNevoa.getEffect("poison"));
+check("Mayuri não se envenena", !mayuri.getEffect("poison"));
+const fogParticles = log.particles.slice(partBeforeFog);
+check(
+  "neblina roxa desenhada com a partícula customizada",
+  fogParticles.length > 20 && fogParticles.every((p) => p.particleId === "mayuri:toxic_fog"),
+  `${fogParticles.length} partículas`
+);
+
+mark = errors.length;
+advanceTicks(300, "fog-fim");
+noNewErrors("Toxic Fog roda os 15s sem erro", mark);
+check(
+  "neblina acaba sozinha",
+  log.worldMessages.some((m) => m.to === "MayuriPlayer" && m.message.includes("se dissipou"))
+);
+advanceTicks(40, "fog-efeitos-expiram");
+check("efeitos param de ser renovados depois que a neblina acaba", !naFrente.getEffect("poison"));
+
+scenario("Mayuri não tem awakening");
+mark = errors.length;
+mayuri.setDynamicProperty(DP.awakening, 100);
+mayuri.isSneaking = true;
+useItem(mayuri, "mayuri:m1_ashisogi_jizo");
+advanceTicks(10, "sem-awakening");
+mayuri.isSneaking = false;
+noNewErrors("agachar + m1 sem awakening não lança", mark);
+check("continua não-desperto", !mayuri.getDynamicProperty(DP.awakened));
+check("vida maxima continua 180", hp(mayuri).effectiveMax === 180);
+naFrente.kill();
+foraDaNevoa.kill();
 
 /* ================= dash universal ================= */
 
