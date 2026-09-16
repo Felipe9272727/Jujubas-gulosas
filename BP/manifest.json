@@ -1,0 +1,38 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Combates Multiversais",
+    "description": "Sistema de personagens multiversais em PvP - Ichigo Kurosaki (Shikai) e mais no futuro",
+    "uuid": "62c83451-9bcd-482f-9acc-033e19ac0ed3",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 21, 0]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "fc934b88-3837-46a8-8d74-f8abb2906ce1",
+      "version": [1, 0, 0]
+    },
+    {
+      "type": "script",
+      "language": "javascript",
+      "uuid": "400a7de8-a214-4b87-b6b4-bac4024dbb0f",
+      "entry": "scripts/main.js",
+      "version": [1, 0, 0]
+    }
+  ],
+  "dependencies": [
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.0.0"
+    },
+    {
+      "module_name": "@minecraft/server-ui",
+      "version": "2.0.0"
+    },
+    {
+      "uuid": "4bf12e5b-80e4-46d0-976e-b3145b68ac90",
+      "version": [1, 0, 0]
+    }
+  ]
+}

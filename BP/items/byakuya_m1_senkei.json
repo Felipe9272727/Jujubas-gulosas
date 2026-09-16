@@ -1,0 +1,33 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "byakuya:m1_senbonzakura_senkei",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "byakuya:m1_senbonzakura_senkei",
+      "minecraft:display_name": {
+        "value": "Senbonzakura (Senkei)"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:glint": true,
+      "minecraft:should_despawn": false,
+      "minecraft:damage": 21,
+      "minecraft:durability": {
+        "max_durability": 5000,
+        "damage_chance": {
+          "min": 0,
+          "max": 0
+        }
+      },
+      "minecraft:enchantable": {
+        "value": 0,
+        "slot": "sword"
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "ichigo:getsuga_tenshou_bankai",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "ichigo:getsuga_tenshou_bankai",
+      "minecraft:display_name": {
+        "value": "Getsuga Tenshou (Bankai)"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:glint": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "ichigo_getsuga_tenshou_bankai",
+        "duration": 20
+      }
+    }
+  }
+}

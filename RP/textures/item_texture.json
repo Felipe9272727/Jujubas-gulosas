@@ -1,0 +1,60 @@
+{
+  "resource_pack_name": "combates_multiversais",
+  "texture_name": "atlas.items",
+  "texture_data": {
+    "multiversal:character_selector": {
+      "textures": "textures/items/character_selector"
+    },
+    "ichigo:m1_zangetsu": {
+      "textures": "textures/items/ichigo_m1_zangetsu"
+    },
+    "ichigo:getsuga_slam": {
+      "textures": "textures/items/ichigo_getsuga_slam"
+    },
+    "ichigo:getsuga_slash": {
+      "textures": "textures/items/ichigo_getsuga_slash"
+    },
+    "ichigo:getsuga_run": {
+      "textures": "textures/items/ichigo_getsuga_run"
+    },
+    "ichigo:getsuga_tenshou": {
+      "textures": "textures/items/ichigo_getsuga_tenshou"
+    },
+    "ichigo:tensa_m1": {
+      "textures": "textures/items/ichigo_tensa_m1"
+    },
+    "ichigo:getsuga_barrage": {
+      "textures": "textures/items/ichigo_getsuga_barrage"
+    },
+    "ichigo:getsuga_tenshou_bankai": {
+      "textures": "textures/items/ichigo_getsuga_tenshou_bankai"
+    },
+    "ichigo:double_getsuga": {
+      "textures": "textures/items/ichigo_double_getsuga"
+    },
+    "ichigo:nuke_tenshou": {
+      "textures": "textures/items/ichigo_nuke_tenshou"
+    },
+    "byakuya:m1_senbonzakura": {
+      "textures": "textures/items/byakuya_m1_senbonzakura"
+    },
+    "byakuya:tripleshot": {
+      "textures": "textures/items/byakuya_tripleshot"
+    },
+    "byakuya:disperse": {
+      "textures": "textures/items/byakuya_disperse"
+    },
+    "byakuya:bloodshed": {
+      "textures": "textures/items/byakuya_bloodshed"
+    },
+    "byakuya:coating": {
+      "textures": "textures/items/byakuya_coating"
+    },
+    "byakuya:m1_senbonzakura_senkei": {
+      "textures": "textures/items/byakuya_m1_senbonzakura_senkei"
+    },
+    "byakuya:m1_senbonzakura_finisher": {
+      "textures": "textures/items/byakuya_m1_senbonzakura_finisher"
+    }
+  }
+}

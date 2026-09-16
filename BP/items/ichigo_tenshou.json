@@ -1,0 +1,25 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "ichigo:getsuga_tenshou",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "ichigo:getsuga_tenshou",
+      "minecraft:display_name": {
+        "value": "Getsuga Tenshou!"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:glint": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "ichigo_getsuga_tenshou",
+        "duration": 25
+      }
+    }
+  }
+}
