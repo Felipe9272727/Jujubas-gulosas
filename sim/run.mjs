@@ -53,7 +53,7 @@ function noNewErrors(label, mark) {
 // indice do botao e relativo ao arco, nao ao CHARACTERS inteiro
 const ROSTER = [
   { name: "Invasão à Soul Society", ids: ["ichigo", "byakuya", "kenpachi", "mayuri"] },
-  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow"] },
+  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra"] },
 ];
 
 function locate(id) {
@@ -101,6 +101,13 @@ function inv(p) {
 function hp(p) {
   return p.getComponent("minecraft:health");
 }
+// vida maxima do jeito que o player enxerga: acima do teto do Bedrock o pool
+// real e menor e a escala repoe a diferenca
+function virtualMax(p) {
+  const scale = p.getDynamicProperty("mv:health_scale") ?? 1;
+  return Math.round(hp(p).effectiveMax * scale);
+}
+
 function slotIds(p, count = 9) {
   return Array.from({ length: count }, (_, i) => inv(p).getItem(i)?.typeId);
 }
@@ -170,7 +177,7 @@ check(
   shownForms[0]?.body
 );
 check("personagem salvo", ichigo.getDynamicProperty(DP.character) === "ichigo");
-check("vida maxima 200", hp(ichigo).effectiveMax === 200, `${hp(ichigo).effectiveMax}`);
+check("vida maxima 200", virtualMax(ichigo) === 200, `${virtualMax(ichigo)}`);
 check("vida cheia apos ativar", hp(ichigo).currentValue === 200, `${hp(ichigo).currentValue}`);
 check(
   "5 itens do Ichigo travados nos slots 0-4",
@@ -239,7 +246,7 @@ advanceTicks(20, "awakening");
 ichigo.isSneaking = false;
 noNewErrors("ativar awakening sem erro", mark);
 check("awakened = true", ichigo.getDynamicProperty(DP.awakened) === true);
-check("vida maxima 400", hp(ichigo).effectiveMax === 400, `${hp(ichigo).effectiveMax}`);
+check("vida maxima 400", virtualMax(ichigo) === 400, `${virtualMax(ichigo)}`);
 check(
   "itens trocados pelos da bankai",
   JSON.stringify(slotIds(ichigo, 5)) ===
@@ -320,7 +327,7 @@ hp(ichigo).setCurrentValue(150);
 advanceTicks(120, "drenagem");
 noNewErrors("drenagem + reversão sem erro", mark);
 check("awakened = false", ichigo.getDynamicProperty(DP.awakened) === false);
-check("vida maxima de volta pra 200", hp(ichigo).effectiveMax === 200, `${hp(ichigo).effectiveMax}`);
+check("vida maxima de volta pra 200", virtualMax(ichigo) === 200, `${virtualMax(ichigo)}`);
 check("NAO curou ao reverter (só clampou)", hp(ichigo).currentValue <= 150, `${hp(ichigo).currentValue}`);
 check(
   "itens base restaurados",
@@ -481,7 +488,7 @@ await pickCharacter(kenpachi, "kenpachi");
 advanceTicks(20, "ativar-kenpachi");
 noNewErrors("ativar Kenpachi sem erro", mark);
 check("personagem salvo", kenpachi.getDynamicProperty(DP.character) === "kenpachi");
-check("vida maxima 300", hp(kenpachi).effectiveMax === 300, `${hp(kenpachi).effectiveMax}`);
+check("vida maxima 300", virtualMax(kenpachi) === 300, `${virtualMax(kenpachi)}`);
 check(
   "5 itens do Kenpachi travados nos slots 0-4",
   JSON.stringify(slotIds(kenpachi, 5)) ===
@@ -634,7 +641,7 @@ kenpachi.isSneaking = false;
 advanceTicks(2, "pressao-inicio");
 noNewErrors("ativar Pressão sem erro", mark);
 check("awakened = true", kenpachi.getDynamicProperty(DP.awakened) === true);
-check("vida máxima continua 300", hp(kenpachi).effectiveMax === 300, `${hp(kenpachi).effectiveMax}`);
+check("vida máxima continua 300", virtualMax(kenpachi) === 300, `${virtualMax(kenpachi)}`);
 check("awakening NÃO cura (vida continua 200)", hp(kenpachi).currentValue <= 200, `${hp(kenpachi).currentValue}`);
 check(
   "itens continuam os mesmos",
@@ -727,7 +734,7 @@ hp(kenpachi).setCurrentValue(120);
 advanceTicks(90, "drenar-pressao");
 noNewErrors("reversão sem erro", mark);
 check("awakened = false", kenpachi.getDynamicProperty(DP.awakened) === false);
-check("vida máxima continua 300", hp(kenpachi).effectiveMax === 300);
+check("vida máxima continua 300", virtualMax(kenpachi) === 300);
 check("NÃO curou ao reverter", hp(kenpachi).currentValue <= 120, `${hp(kenpachi).currentValue}`);
 
 kenpachi.teleport({ x: -80, y: 64, z: -80 });
@@ -755,7 +762,7 @@ await pickCharacter(mayuri, "mayuri");
 advanceTicks(20, "ativar-mayuri");
 noNewErrors("ativar Mayuri sem erro", mark);
 check("personagem salvo", mayuri.getDynamicProperty(DP.character) === "mayuri");
-check("vida maxima 180", hp(mayuri).effectiveMax === 180, `${hp(mayuri).effectiveMax}`);
+check("vida maxima 180", virtualMax(mayuri) === 180, `${virtualMax(mayuri)}`);
 check(
   "3 itens nos slots 0-2",
   JSON.stringify(slotIds(mayuri, 3)) ===
@@ -929,7 +936,7 @@ check(
 advanceTicks(40, "bankai-efeitos-expiram");
 check("efeitos param de ser renovados quando a neblina acaba", !naFrente.getEffect("poison"));
 check("Mayuri não vira forma persistente", !mayuri.getDynamicProperty(DP.awakened));
-check("vida maxima continua 180", hp(mayuri).effectiveMax === 180);
+check("vida maxima continua 180", virtualMax(mayuri) === 180);
 naFrente.kill();
 foraDaNevoa.kill();
 
@@ -966,7 +973,7 @@ check(
   shown.buttons.length === ROSTER[1].ids.length,
   `${shown.buttons.length} botões`
 );
-check("segundo arco é o do Grimmjow", shown.buttons[0].includes("Grimmjow"), shown.buttons.join(", "));
+check("segundo arco traz os Arrancar", shown.buttons.join(" ").includes("Grimmjow") && shown.buttons.join(" ").includes("Ulquiorra"), shown.buttons.join(", "));
 
 explorador.isSneaking = true;
 useItem(explorador, "multiversal:character_selector");
@@ -1002,7 +1009,7 @@ mark = errors.length;
 await pickCharacter(grimmjow, "grimmjow");
 advanceTicks(20, "ativar-grimmjow");
 noNewErrors("ativar Grimmjow sem erro", mark);
-check("vida maxima 800", hp(grimmjow).effectiveMax === 800, `${hp(grimmjow).effectiveMax}`);
+check("vida maxima 800", virtualMax(grimmjow) === 800, `${virtualMax(grimmjow)}`);
 check(
   "4 itens nos slots 0-3",
   JSON.stringify(slotIds(grimmjow, 4)) ===
@@ -1090,12 +1097,12 @@ advanceTicks(20, "resurreccion");
 noNewErrors("Resurrección sem erro", mark);
 check("awakened = true", grimmjow.getDynamicProperty(DP.awakened) === true);
 check(
-  'grita "Rasgue, La Pantera!" no chat',
+  'grita "Mutile, Pantera" no chat',
   log.worldMessages
     .slice(msgsBeforeRes)
-    .some((m) => m.message === "<GrimmjowPlayer> Rasgue, La Pantera!")
+    .some((m) => m.message === "<GrimmjowPlayer> Mutile, Pantera")
 );
-check("vida maxima 1200", hp(grimmjow).effectiveMax === 1200, `${hp(grimmjow).effectiveMax}`);
+check("vida maxima 1200", virtualMax(grimmjow) === 1200, `${virtualMax(grimmjow)}`);
 check("speed 5 (amplifier 4)", grimmjow.getEffect("speed")?.amplifier === 4, `${grimmjow.getEffect("speed")?.amplifier}`);
 check("regen 4 (amplifier 3)", grimmjow.getEffect("regeneration")?.amplifier === 3, `${grimmjow.getEffect("regeneration")?.amplifier}`);
 check(
@@ -1209,7 +1216,7 @@ check(
   grimmjow.getEffect("speed")?.amplifier === 4,
   `${grimmjow.getEffect("speed")?.amplifier}`
 );
-check("e a vida maxima continua 1200", hp(grimmjow).effectiveMax === 1200);
+check("e a vida maxima continua 1200", virtualMax(grimmjow) === 1200);
 
 scenario("Fim da Resurrección");
 mark = errors.length;
@@ -1218,7 +1225,7 @@ hp(grimmjow).setCurrentValue(600);
 advanceTicks(90, "drenar-resurreccion");
 noNewErrors("reversão sem erro", mark);
 check("awakened = false", grimmjow.getDynamicProperty(DP.awakened) === false);
-check("vida maxima volta pra 800", hp(grimmjow).effectiveMax === 800, `${hp(grimmjow).effectiveMax}`);
+check("vida maxima volta pra 800", virtualMax(grimmjow) === 800, `${virtualMax(grimmjow)}`);
 check("speed volta pro 2 base", grimmjow.getEffect("speed")?.amplifier === 1, `${grimmjow.getEffect("speed")?.amplifier}`);
 check("regen volta pro 2 base", grimmjow.getEffect("regeneration")?.amplifier === 1, `${grimmjow.getEffect("regeneration")?.amplifier}`);
 check("NÃO curou ao reverter", hp(grimmjow).currentValue <= 600, `${hp(grimmjow).currentValue}`);
@@ -1232,6 +1239,297 @@ check(
       "grimmjow:gran_rey_cero",
     ]),
   JSON.stringify(slotIds(grimmjow, 4))
+);
+
+/* ================= Ulquiorra Cifer ================= */
+
+scenario("Ulquiorra Cifer: ativação e vida acima do teto");
+const ulquiorra = createPlayer("UlquiorraPlayer", { x: 600, y: 64, z: 600 });
+const alvoU = createDummy("AlvoU", { x: 605, y: 64, z: 600 }, 500000);
+emit("playerSpawn", { player: ulquiorra, initialSpawn: true });
+advanceTicks(20, "spawn-ulquiorra");
+
+mark = errors.length;
+await pickCharacter(ulquiorra, "ulquiorra");
+advanceTicks(20, "ativar-ulquiorra");
+noNewErrors("ativar Ulquiorra sem erro", mark);
+check("vida maxima 1600", virtualMax(ulquiorra) === 1600, `${virtualMax(ulquiorra)}`);
+check(
+  "pool real fica no teto do Bedrock (1044)",
+  hp(ulquiorra).effectiveMax === 1044,
+  `${hp(ulquiorra).effectiveMax}`
+);
+check(
+  "health_boost dentro do range do Bedrock",
+  ulquiorra.getEffect("health_boost")?.amplifier === 255,
+  `${ulquiorra.getEffect("health_boost")?.amplifier}`
+);
+advanceTicks(10, "actionbar-ulquiorra");
+check(
+  "actionbar mostra os 1600 configurados",
+  log.actionBars.slice(-10).some((a) => a.player === "UlquiorraPlayer" && a.text.includes("/1600")),
+  log.actionBars.filter((a) => a.player === "UlquiorraPlayer").slice(-1)[0]?.text
+);
+check(
+  "5 itens nos slots 0-4",
+  JSON.stringify(slotIds(ulquiorra, 5)) ===
+    JSON.stringify([
+      "ulquiorra:m1_zanpakuto",
+      "ulquiorra:gran_rey_cero",
+      "ulquiorra:cero_bala",
+      "ulquiorra:sonido",
+      "ulquiorra:pesquisa",
+    ]),
+  JSON.stringify(slotIds(ulquiorra, 5))
+);
+
+scenario("Cero Bala");
+mark = errors.length;
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+ulquiorra._view = { x: 1, y: 0, z: 0 };
+alvoU.teleport({ x: 610, y: 64, z: 600 });
+dmgBefore = log.damages.length;
+useItem(ulquiorra, "ulquiorra:cero_bala");
+advanceTicks(60, "cero-bala");
+noNewErrors("Cero Bala executa limpo", mark);
+const balaHits = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoU");
+check(
+  "4 tiros de 100 de dano",
+  balaHits.length === 4 && balaHits.every((d) => d.amount === 100),
+  JSON.stringify(balaHits.map((d) => d.amount))
+);
+
+scenario("Dano respeita a vida virtual do alvo");
+mark = errors.length;
+const escalado = createDummy("Escalado", { x: 608, y: 64, z: 600 }, 500000);
+escalado.setDynamicProperty("mv:health_scale", 2); // finge o dobro de vida virtual
+alvoU.teleport({ x: 900, y: 64, z: 900 });
+ulquiorra.setDynamicProperty("mv:cd_ulquiorra_cero_bala", undefined);
+dmgBefore = log.damages.length;
+useItem(ulquiorra, "ulquiorra:cero_bala");
+advanceTicks(60, "cero-bala-escalado");
+const escaladoHits = log.damages.slice(dmgBefore).filter((d) => d.target === "Escalado");
+check(
+  "num alvo de escala 2, 100 nominal entra como 50 reais",
+  escaladoHits.length === 4 && escaladoHits.every((d) => d.amount === 50),
+  JSON.stringify(escaladoHits.map((d) => d.amount))
+);
+noNewErrors("dano escalado sem erro", mark);
+escalado.kill();
+
+scenario("Sonído");
+mark = errors.length;
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+const fugitivoU = createPlayer("FugitivoU", { x: 630, y: 64, z: 600 }, 5000);
+useItem(ulquiorra, "ulquiorra:sonido");
+advanceTicks(5, "sonido");
+noNewErrors("Sonído executa limpo", mark);
+const sonidoDist = Math.hypot(
+  ulquiorra.location.x - fugitivoU.location.x,
+  ulquiorra.location.z - fugitivoU.location.z
+);
+check("teleporta colado no player mais próximo", sonidoDist <= 2, `dist=${sonidoDist.toFixed(2)}`);
+
+ulquiorra.setDynamicProperty("mv:cd_ulquiorra_sonido", undefined);
+fugitivoU.teleport({ x: 2000, y: 64, z: 2000 });
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+useItem(ulquiorra, "ulquiorra:sonido");
+advanceTicks(5, "sonido-sem-alvo");
+check(
+  "sem player por perto não teleporta nem gasta cooldown",
+  ulquiorra.location.x === 600 &&
+    ulquiorra.getDynamicProperty("mv:cd_ulquiorra_sonido") === undefined
+);
+
+scenario("Pesquisa: marca quem está na mira");
+mark = errors.length;
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+ulquiorra._view = { x: 1, y: 0, z: 0 };
+alvoU.teleport({ x: 606, y: 64, z: 600 });
+useItem(ulquiorra, "ulquiorra:pesquisa");
+advanceTicks(5, "pesquisa");
+noNewErrors("Pesquisa executa limpo", mark);
+check("marca o alvo que está na mira", (alvoU.getDynamicProperty("mv:marked_end") ?? 0) > system.currentTick);
+
+ulquiorra.setDynamicProperty("mv:cd_ulquiorra_cero_bala", undefined);
+dmgBefore = log.damages.length;
+useItem(ulquiorra, "ulquiorra:cero_bala");
+advanceTicks(60, "cero-bala-marcado");
+const marcadoHits = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoU");
+check(
+  "marcado recebe +50% de dano (100 vira 150)",
+  marcadoHits.length === 4 && marcadoHits.every((d) => d.amount === 150),
+  JSON.stringify(marcadoHits.map((d) => d.amount))
+);
+
+alvoU.setDynamicProperty("mv:marked_end", 0);
+ulquiorra.setDynamicProperty("mv:cd_ulquiorra_cero_bala", undefined);
+dmgBefore = log.damages.length;
+useItem(ulquiorra, "ulquiorra:cero_bala");
+advanceTicks(60, "cero-bala-sem-marca");
+check(
+  "sem marca o dano volta pro normal",
+  log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoU").every((d) => d.amount === 100)
+);
+
+scenario("Resurrección: Murciélago");
+mark = errors.length;
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+ulquiorra.setDynamicProperty(DP.awakening, 100);
+const msgsBeforeConfine = log.worldMessages.length;
+ulquiorra.isSneaking = true;
+useItem(ulquiorra, "ulquiorra:m1_zanpakuto");
+ulquiorra.isSneaking = false;
+advanceTicks(20, "murcielago");
+noNewErrors("Resurrección sem erro", mark);
+check(
+  'grita "Confine, Murciélago" no chat',
+  log.worldMessages
+    .slice(msgsBeforeConfine)
+    .some((m) => m.message === "<UlquiorraPlayer> Confine, Murciélago")
+);
+check("vida maxima 2000", virtualMax(ulquiorra) === 2000, `${virtualMax(ulquiorra)}`);
+check(
+  "5 itens do Murciélago",
+  JSON.stringify(slotIds(ulquiorra, 5)) ===
+    JSON.stringify([
+      "ulquiorra:m1_garras",
+      "ulquiorra:nihil",
+      "ulquiorra:enigma",
+      "ulquiorra:cero_oscuras",
+      "ulquiorra:lanza",
+    ]),
+  JSON.stringify(slotIds(ulquiorra, 5))
+);
+
+scenario("Nihil: 30% da vida do alvo");
+mark = errors.length;
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+ulquiorra._view = { x: 1, y: 0, z: 0 };
+const cobaiaNihil = createDummy("CobaiaNihil", { x: 603, y: 64, z: 600 }, 1000);
+hp(cobaiaNihil).setCurrentValue(1000);
+dmgBefore = log.damages.length;
+useItem(ulquiorra, "ulquiorra:nihil");
+advanceTicks(10, "nihil");
+noNewErrors("Nihil executa limpo", mark);
+const nihilHit = log.damages.slice(dmgBefore).find((d) => d.target === "CobaiaNihil");
+check("tira 30% da vida atual (1000 -> 300)", nihilHit && Math.abs(nihilHit.amount - 300) < 0.01, `${nihilHit?.amount}`);
+
+ulquiorra.setDynamicProperty("mv:cd_ulquiorra_nihil", undefined);
+dmgBefore = log.damages.length;
+useItem(ulquiorra, "ulquiorra:nihil");
+advanceTicks(10, "nihil-2");
+const nihilHit2 = log.damages.slice(dmgBefore).find((d) => d.target === "CobaiaNihil");
+check(
+  "é sobre a vida ATUAL: com 700 restantes tira 210",
+  nihilHit2 && Math.abs(nihilHit2.amount - 210) < 0.01,
+  `${nihilHit2?.amount}`
+);
+cobaiaNihil.kill();
+
+scenario("Enigma: zona que anula regeneração e skills");
+mark = errors.length;
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+const intruso = createPlayer("Intruso", { x: 1200, y: 64, z: 1200 }, 5000);
+emit("playerSpawn", { player: intruso, initialSpawn: true });
+advanceTicks(20, "spawn-intruso");
+await pickCharacter(intruso, "mayuri");
+advanceTicks(20, "ativar-intruso");
+check("intruso tem regeneração antes da zona", !!intruso.getEffect("regeneration"));
+
+useItem(ulquiorra, "ulquiorra:enigma");
+advanceTicks(10, "enigma-abre");
+noNewErrors("Enigma executa limpo", mark);
+
+intruso.teleport({ x: 604, y: 64, z: 600 }); // dentro do raio 10
+advanceTicks(20, "enigma-pega-intruso");
+check("dentro da Enigma a regeneração é anulada", !intruso.getEffect("regeneration"));
+
+const msgsBeforeBlock = log.worldMessages.length;
+useItem(intruso, "mayuri:poison_slash");
+advanceTicks(5, "enigma-bloqueia");
+check(
+  "skill inimiga é bloqueada dentro da zona",
+  log.worldMessages.slice(msgsBeforeBlock).some((m) => m.message.includes("Enigma anula suas skills"))
+);
+
+const msgsBeforeOwn = log.worldMessages.length;
+ulquiorra.setDynamicProperty("mv:cd_ulquiorra_nihil", undefined);
+useItem(ulquiorra, "ulquiorra:nihil");
+advanceTicks(5, "enigma-dono");
+check(
+  "o Ulquiorra continua usando as skills dele lá dentro",
+  !log.worldMessages.slice(msgsBeforeOwn).some((m) => m.message.includes("Enigma anula")) &&
+    log.worldMessages.slice(msgsBeforeOwn).some((m) => m.message.includes("Nihil"))
+);
+
+mark = errors.length;
+advanceTicks(420, "enigma-acaba");
+noNewErrors("Enigma fecha sem erro", mark);
+check(
+  "zona acaba sozinha em 20s",
+  log.worldMessages.some((m) => m.to === "UlquiorraPlayer" && m.message.includes("Enigma se desfez"))
+);
+advanceTicks(10, "enigma-devolve-regen");
+check("regeneração volta quando a zona fecha", !!intruso.getEffect("regeneration"));
+
+const msgsAfterZone = log.worldMessages.length;
+useItem(intruso, "mayuri:toxic_fog");
+advanceTicks(5, "enigma-liberou");
+check(
+  "e as skills voltam a funcionar",
+  !log.worldMessages.slice(msgsAfterZone).some((m) => m.message.includes("Enigma anula"))
+);
+intruso.teleport({ x: 1200, y: 64, z: 1200 });
+
+scenario("Cero Oscuras");
+mark = errors.length;
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+ulquiorra._view = { x: 1, y: 0, z: 0 };
+alvoU.teleport({ x: 612, y: 64, z: 600 });
+const naBordaOscuras = createDummy("NaBordaOscuras", { x: 612, y: 64, z: 606 }, 500000); // 6 de lado
+dmgBefore = log.damages.length;
+useItem(ulquiorra, "ulquiorra:cero_oscuras");
+advanceTicks(50, "cero-oscuras");
+noNewErrors("Cero Oscuras executa limpo", mark);
+check(
+  "1400 de dano (4x o Gran Rey Cero)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoU" && d.amount === 1400)
+);
+check(
+  "esfera 4x maior: pega alvo a 6 blocos do eixo",
+  log.damages.slice(dmgBefore).some((d) => d.target === "NaBordaOscuras")
+);
+naBordaOscuras.kill();
+
+scenario("Lanza del Relámpago");
+mark = errors.length;
+ulquiorra.teleport({ x: 600, y: 64, z: 600 });
+ulquiorra._view = { x: 1, y: 0, z: 0 };
+alvoU.teleport({ x: 900, y: 64, z: 900 });
+const perto = createDummy("Perto", { x: 615, y: 64, z: 600 }, 500000);
+const longe = createDummy("Longe18", { x: 631, y: 64, z: 600 }, 500000); // 16 do impacto (~615)
+const bemLonge = createDummy("BemLonge", { x: 660, y: 64, z: 600 }, 500000); // 45 do impacto
+dmgBefore = log.damages.length;
+useItem(ulquiorra, "ulquiorra:lanza");
+advanceTicks(40, "lanza");
+noNewErrors("Lanza executa limpo", mark);
+hits = log.damages.slice(dmgBefore);
+check("900 de dano na explosão", hits.some((d) => d.target === "Perto" && d.amount === 900));
+check("explosão enorme: alcança ~18 blocos", hits.some((d) => d.target === "Longe18"));
+check("mas não é infinita", !hits.some((d) => d.target === "BemLonge"));
+for (const d of [perto, longe, bemLonge]) d.kill();
+
+scenario("Fim da Resurrección do Ulquiorra");
+mark = errors.length;
+ulquiorra.setDynamicProperty(DP.awakening, 2);
+advanceTicks(90, "drenar-murcielago");
+noNewErrors("reversão sem erro", mark);
+check("vida maxima volta pra 1600", virtualMax(ulquiorra) === 1600, `${virtualMax(ulquiorra)}`);
+check(
+  "itens base restaurados",
+  inv(ulquiorra).getItem(0)?.typeId === "ulquiorra:m1_zanpakuto",
+  String(inv(ulquiorra).getItem(0)?.typeId)
 );
 
 /* ================= dash universal ================= */
@@ -1290,7 +1588,7 @@ emit("playerSpawn", { player: ichigo, initialSpawn: false });
 advanceTicks(20, "respawn");
 noNewErrors("respawn sem erro", mark);
 check("awakening cancelado no respawn", ichigo.getDynamicProperty(DP.awakened) === false);
-check("vida do personagem reaplicada", hp(ichigo).effectiveMax === 200 && hp(ichigo).currentValue === 200);
+check("vida do personagem reaplicada", virtualMax(ichigo) === 200 && hp(ichigo).currentValue === 200);
 
 scenario("Alvo morrendo no meio de um DoT");
 mark = errors.length;
@@ -1311,7 +1609,7 @@ await Promise.resolve();
 advanceTicks(20, "desativar");
 noNewErrors("desativar sem erro", mark);
 check("personagem limpo", ichigo.getDynamicProperty(DP.character) === undefined);
-check("vida normalizada em 20", hp(ichigo).effectiveMax === 20 && hp(ichigo).currentValue === 20, `${hp(ichigo).currentValue}/${hp(ichigo).effectiveMax}`);
+check("vida normalizada em 20", virtualMax(ichigo) === 20 && hp(ichigo).currentValue === 20, `${hp(ichigo).currentValue}/${virtualMax(ichigo)}`);
 check("itens do personagem removidos", slotIds(ichigo, 5).every((id) => id === undefined), JSON.stringify(slotIds(ichigo, 5)));
 check("seletor continua no slot 8", inv(ichigo).getItem(8)?.typeId === "multiversal:character_selector");
 

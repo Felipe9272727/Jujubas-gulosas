@@ -19,7 +19,8 @@ usar o seletor** passa pro próximo (dá a volta no último).
 
 | Personagem | Vida | Awakening |
 |---|---|---|
-| **Grimmjow Jaegerjaquez** | 800 | Resurrección: La Pantera (1200 de vida, speed 5, regen 4) |
+| **Grimmjow Jaegerjaquez** | 800 | Resurrección: La Pantera — "Mutile, Pantera" (1200 de vida, speed 5, regen 4) |
+| **Ulquiorra Cifer** | 1600 | Resurrección: Murciélago — "Confine, Murciélago" (2000 de vida) |
 
 ## Layout
 
@@ -60,6 +61,31 @@ python3 tools/gen_textures.py --check        # texturas batem com os grids
 node --import ./sim/register.mjs sim/run.mjs # simulação
 ```
 
+### Teto de vida do Bedrock
+
+O Bedrock guarda o amplificador de efeito num **byte**: o máximo é 255. Como a
+vida vem de `health_boost`, o teto real é **1044** (`20 + 256×4`). Pedir mais
+que isso não dá erro visível — o efeito simplesmente **não aplica**, e o
+personagem fica com a vida da forma anterior. Foi o que aconteceu com os 1200
+do La Pantera.
+
+Acima de 1044 a vida passa a ser **virtual**: o pool real fica no teto e
+`healthScaleFor()` guarda a razão em `mv:health_scale`. Daí em diante:
+
+- **todo** dano do addon passa por `dealDamage()`, que divide pela escala do
+  alvo — "700 de dano" continua tirando 700 da vida que ele vê;
+- a actionbar multiplica de volta, então o player enxerga o número configurado;
+- comparações de vida (limiar da Máscara Hollow, golpe de desespero do
+  Kenpachi) usam `virtualHealth()`.
+
+O stub da simulação recusa `amplifier > 255`, então passar do teto quebra o
+build em vez de virar bug silencioso no jogo.
+
+Uma ressalva: o dano base do m1 vem do `minecraft:damage` do item, que é
+vanilla e **não** passa pela escala. Contra um personagem escalado o m1 pesa
+proporcionalmente mais (no máximo ~1,9× no Murciélago). As skills, que são
+todas scriptadas, escalam certo.
+
 ### Versão dos packs (multiplayer)
 
 O cliente do Minecraft guarda cada pack por **(uuid, versão)**. Se o conteúdo
@@ -94,7 +120,7 @@ O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
 personagens, ativa awakening/máscara/Kageyoshi/Senkei/Pressão, mata alvos no
 meio de um DoT, simula reload do mundo e desconexão, e roda 2000 ticks livres
 no fim. São
-271 checks — qualquer exceção em qualquer callback é capturada e reportada.
+314 checks — qualquer exceção em qualquer callback é capturada e reportada.
 
 Foi assim que apareceram os bugs de cooldown pós-reload, a máscara que nunca
 era removida e o buraco na contenção do Senkei.
@@ -114,6 +140,9 @@ era removida e o buraco na contenção do Senkei.
 | `fireEnergySphere(player, opts)` | Esfera de energia que viaja pela direção da visão e some no primeiro alvo ou no fim do alcance (Gran Rey Cero) |
 | `reapplyFormEffects(player)` | Devolve os efeitos permanentes da forma atual. Buff temporário **sobrescreve** o permanente em vez de somar, então todo buff que mexe em speed/regen precisa chamar isso ao acabar |
 | `ARCS` | Agrupamento do seletor. Personagem que não estiver num arco **não aparece no menu** |
+| `dealDamage(target, amount, source)` | Porta única de dano: aplica a escala de vida do alvo e a marca da Pesquisa. Nenhum `applyDamage` solto no código |
+| `activeZones` | Zonas com regras: `blocksSkills`, `blocksOwnerSkills`, `traps`, `blocksRegen`. Senkei e Enigma são a mesma estrutura com flags diferentes |
+| `entitiesInFrontBox(player, box)` / `drawSweep` | Caixa direcional e o corte desenhado em cima dela |
 | `MELEE_WEAPONS` | Toda arma de m1: `baseDamage`, `particle`, `dot`, `awardsAwakening`, `onHit` — centraliza o hit corpo-a-corpo |
 | `applyDot(entity, player, perSecond, totalSeconds)` | Dano por segundo (sangramento), limpa sozinho se o alvo morre |
 | `dmgMultiplier(player)` | Multiplicador de dano por buff ativo (hoje só o Sakura's Coating, +20%) |
@@ -139,6 +168,8 @@ guardar um novo prazo em tick absoluto, use esses helpers.
    O slot 8 é sempre do seletor.
    **E registrar o id em `ARCS`**, no arco dele — quem fica fora de todo arco
    não aparece no seletor. A simulação falha se alguém sumir do elenco.
+   Vida acima de **1044** entra no esquema de vida virtual descrito acima —
+   funciona sozinho, mas leia a ressalva do m1.
 2. **Criar os itens** em `BP/items/<nome>.json` — copie um existente; o ícone é
    uma string `"namespace:item"`, e a arma de m1 leva `minecraft:damage` igual
    ao dano desejado **menos 1** (o jogo soma 1 de soco).

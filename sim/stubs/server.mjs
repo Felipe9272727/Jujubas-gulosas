@@ -311,6 +311,12 @@ export class Entity {
     this._assertValid();
     if (typeof effectType !== "string") throw new Error("addEffect precisa de um id de efeito");
     const amplifier = options.amplifier ?? 0;
+    // no Bedrock o amplificador e um byte: acima de 255 o efeito nao aplica
+    if (!Number.isInteger(amplifier) || amplifier < 0 || amplifier > 255) {
+      throw new Error(
+        `amplifier fora do range do Bedrock (0-255): ${effectType} amplifier ${amplifier}`
+      );
+    }
     this._effects.set(effectType, { amplifier, endTick: currentTick + duration });
     log.effects.push({ target: this.name, effectType, duration, amplifier });
     return true;
@@ -342,6 +348,37 @@ export class Entity {
   getVelocity() {
     this._assertValid();
     return { ...this._velocity };
+  }
+
+  // raycast simples pela direcao da visao, ordenado do mais perto pro mais longe
+  getEntitiesFromViewDirection(options = {}) {
+    this._assertValid();
+    const maxDistance = options.maxDistance ?? 16;
+    const view = this._view;
+    const length =
+      Math.sqrt(view.x * view.x + view.y * view.y + view.z * view.z) || 1;
+    const step = { x: view.x / length, y: view.y / length, z: view.z / length };
+    const origin = this._location;
+
+    const hits = [];
+    for (const entity of this.dimension.getEntities()) {
+      if (entity.id === this.id) continue;
+      const dx = entity._location.x - origin.x;
+      const dy = entity._location.y - origin.y;
+      const dz = entity._location.z - origin.z;
+
+      const along = dx * step.x + dy * step.y + dz * step.z;
+      if (along < 0 || along > maxDistance) continue;
+
+      const px = dx - step.x * along;
+      const py = dy - step.y * along;
+      const pz = dz - step.z * along;
+      if (Math.sqrt(px * px + py * py + pz * pz) > 1.8) continue;
+
+      hits.push({ entity, distance: along });
+    }
+    hits.sort((a, b) => a.distance - b.distance);
+    return hits;
   }
 
   getViewDirection() {

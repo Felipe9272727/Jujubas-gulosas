@@ -21,6 +21,8 @@ const DP = {
   maskEnd: "mv:mask_end",
   byakuyaWeapon: "mv:byakuya_weapon", // "base" | "senkei" | "finisher"
   arc: "mv:arc", // indice do arco escolhido no seletor
+  healthScale: "mv:health_scale", // vida virtual / vida real
+  markedEnd: "mv:marked_end", // marca da Pesquisa do Ulquiorra
 };
 
 const BASE_SPEED_AMPLIFIER = 1; // speed 2 pra todo personagem
@@ -180,14 +182,43 @@ const CHARACTERS = {
       health: 1200,
       speedAmplifier: 4, // speed 5
       regenAmplifier: 3, // regen 4
-      onActivate: "resurreccion",
-      chatLine: "Rasgue, La Pantera!",
+      onActivate: "battlecry",
+      chatLine: "Mutile, Pantera",
+      cryParticle: "grimmjow:cero",
       items: {
         0: "grimmjow:m1_garras",
         1: "grimmjow:destruir",
         2: "grimmjow:rugido",
         3: "grimmjow:arrancar_corazon",
         4: "grimmjow:disparo",
+      },
+    },
+  },
+  ulquiorra: {
+    id: "ulquiorra",
+    name: "Ulquiorra Cifer",
+    health: 1600,
+    items: {
+      0: "ulquiorra:m1_zanpakuto",
+      1: "ulquiorra:gran_rey_cero",
+      2: "ulquiorra:cero_bala",
+      3: "ulquiorra:sonido",
+      4: "ulquiorra:pesquisa",
+    },
+    awakening: {
+      name: "Resurrección: Murciélago",
+      triggerItem: "ulquiorra:m1_zanpakuto",
+      health: 2000,
+      onActivate: "battlecry",
+      chatLine: "Confine, Murciélago",
+      cryParticle: "ulquiorra:oscuras",
+      cryPitch: 0.7,
+      items: {
+        0: "ulquiorra:m1_garras",
+        1: "ulquiorra:nihil",
+        2: "ulquiorra:enigma",
+        3: "ulquiorra:cero_oscuras",
+        4: "ulquiorra:lanza",
       },
     },
   },
@@ -210,7 +241,7 @@ const ARCS = [
   {
     id: "hueco_mundo",
     name: "Arrancar / Hueco Mundo",
-    characters: ["grimmjow"],
+    characters: ["grimmjow", "ulquiorra"],
   },
 ];
 
@@ -231,12 +262,74 @@ for (const weaponId of BYAKUYA_ALT_WEAPONS) {
   ITEM_OWNER[weaponId] = "byakuya";
 }
 
+// O Bedrock guarda o amplificador de efeito num byte, entao o teto e 255. Com
+// health_boost 255 a vida real maxima e 20 + 256*4 = 1044. Personagem
+// configurado acima disso NAO cabe no medidor real: passar de 255 faz o efeito
+// simplesmente nao aplicar (foi o que aconteceu com os 1200 do La Pantera).
+// marca da Pesquisa do Ulquiorra: quem esta marcado recebe mais dano de todo
+// mundo, nao so do Ulquiorra
+const PESQUISA = {
+  range: 40,
+  durationTicks: 300, // 15s - nao especificado
+  damageMultiplier: 1.5, // +50% de dano recebido
+};
+
+function isMarked(entity) {
+  try {
+    return (
+      system.currentTick <
+      readTickDeadline(entity, DP.markedEnd, PESQUISA.durationTicks)
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+const MAX_EFFECT_AMPLIFIER = 255;
+const MAX_REAL_HEALTH = 20 + (MAX_EFFECT_AMPLIFIER + 1) * 4; // 1044
+
 const HEALTH_BOOST_LEVEL_FOR = (targetMaxHealth) => {
   // health_boost amplifier 0 = +4hp (nivel 1). cada nivel extra soma +4hp.
-  const extra = targetMaxHealth - 20;
+  const extra = Math.min(targetMaxHealth, MAX_REAL_HEALTH) - 20;
   const level = Math.max(0, Math.ceil(extra / 4) - 1);
-  return level;
+  return Math.min(level, MAX_EFFECT_AMPLIFIER);
 };
+
+// Acima do teto a vida vira "virtual": o pool real fica em 1044 e todo dano do
+// addon e dividido por essa escala antes de entrar. Pra quem cabe no teto a
+// escala e 1 e nada muda.
+function healthScaleFor(virtualMaxHealth) {
+  return virtualMaxHealth > MAX_REAL_HEALTH
+    ? virtualMaxHealth / MAX_REAL_HEALTH
+    : 1;
+}
+
+function healthScaleOf(entity) {
+  try {
+    const scale = entity.getDynamicProperty(DP.healthScale);
+    return typeof scale === "number" && scale > 0 ? scale : 1;
+  } catch (e) {
+    return 1;
+  }
+}
+
+// vida do jeito que o player enxerga (ja multiplicada pela escala)
+function virtualHealth(entity) {
+  const hp = entity.getComponent("minecraft:health");
+  if (!hp) return 0;
+  return hp.currentValue * healthScaleOf(entity);
+}
+
+// TODO dano do addon passa por aqui. Divide pela escala do ALVO pra que
+// "700 de dano" continue significando 700 da vida que ele ve na actionbar,
+// e aplica a marca da Pesquisa do Ulquiorra.
+function dealDamage(target, amount, source) {
+  const marked = isMarked(target) ? PESQUISA.damageMultiplier : 1;
+  target.applyDamage((amount * marked) / healthScaleOf(target), {
+    cause: EntityDamageCause.entityAttack,
+    damagingEntity: source,
+  });
+}
 
 const SKILL_COOLDOWN_TICKS = {
   "ichigo:getsuga_slam": 200,
@@ -264,6 +357,14 @@ const SKILL_COOLDOWN_TICKS = {
   "grimmjow:rugido": 500, // 25s - nao especificado
   "grimmjow:arrancar_corazon": 2400, // 2 min
   "grimmjow:disparo": 200, // 10s
+  "ulquiorra:gran_rey_cero": 600, // 30s, igual ao do Grimmjow
+  "ulquiorra:cero_bala": 300, // 15s
+  "ulquiorra:sonido": 160, // 8s
+  "ulquiorra:pesquisa": 400, // 20s - nao especificado
+  "ulquiorra:nihil": 500, // 25s - nao especificado
+  "ulquiorra:enigma": 800, // 40s - nao especificado
+  "ulquiorra:cero_oscuras": 700, // 35s - nao especificado
+  "ulquiorra:lanza": 1200, // 60s - nao especificado
 };
 
 const SKILL_NAMES = {
@@ -292,6 +393,14 @@ const SKILL_NAMES = {
   "grimmjow:rugido": "Rugido de La Pantera",
   "grimmjow:arrancar_corazon": "Arrancar Corazón",
   "grimmjow:disparo": "Disparo de La Pantera",
+  "ulquiorra:gran_rey_cero": "Gran Rey Cero",
+  "ulquiorra:cero_bala": "Cero Bala",
+  "ulquiorra:sonido": "Sonído",
+  "ulquiorra:pesquisa": "Pesquisa",
+  "ulquiorra:nihil": "Nihil",
+  "ulquiorra:enigma": "Enigma",
+  "ulquiorra:cero_oscuras": "Cero Oscuras",
+  "ulquiorra:lanza": "Lanza del Relámpago",
 };
 
 // dano aumentado
@@ -332,6 +441,13 @@ const DAMAGE = {
   destruir: 270,
   rugido: [100, 150, 200], // tres sequencias
   arrancarCorazon: 700,
+  // Ulquiorra Cifer
+  ulquiorraM1: 45,
+  ceroBala: 100, // por tiro, sao 4
+  // Murcielago (Resurreccion)
+  garrasMurcielago: 60,
+  ceroOscuras: 1400, // 4x o Gran Rey Cero
+  lanza: 900,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -382,6 +498,24 @@ const ARRANCAR_CORAZON = {
   grabTicks: 40, // 2s segurando antes de arrancar
 };
 const DISPARO = { speedAmplifier: 9, durationTicks: 100 }; // speed 10 por 5s
+
+// Ulquiorra Cifer
+const CERO_BALA = { shots: 4, gapTicks: 5, radius: 0.9, range: 26, speed: 2.6 };
+const SONIDO = { searchRadius: 50, distance: 1.6 };
+const NIHIL = {
+  forward: 5,
+  width: 4,
+  verticalReach: 3,
+  healthFraction: 0.3, // tira 30% da vida atual do alvo
+};
+const ENIGMA = {
+  radius: 10, // area 20x20
+  durationTicks: 400, // 20s
+  tickInterval: 10,
+};
+// "4x MAIOR" que o Gran Rey Cero (raio 2 -> 8) e 4x o dano
+const CERO_OSCURAS = { radius: 8, range: 30, speed: 1.1, shellParticles: 60 };
+const LANZA = { speed: 2.2, range: 34, blastRadius: 18 }; // maior explosao do addon
 
 const TOXIC_FOG = {
   radius: 5, // area 10x10
@@ -492,6 +626,8 @@ function applyCharacterEffects(
   speedAmplifier,
   regenAmplifier = REGEN_AMPLIFIER
 ) {
+  player.setDynamicProperty(DP.healthScale, healthScaleFor(maxHealth));
+
   const level = HEALTH_BOOST_LEVEL_FOR(maxHealth);
   player.addEffect("health_boost", 20000000, {
     amplifier: level,
@@ -561,10 +697,7 @@ function applyDot(entity, player, perSecond, totalSeconds) {
     ticks++;
     try {
       if (entity.getComponent("minecraft:health")) {
-        entity.applyDamage(perSecond * dmgMultiplier(player), {
-          cause: EntityDamageCause.entityAttack,
-          damagingEntity: player,
-        });
+        dealDamage(entity, perSecond * dmgMultiplier(player), player);
       }
     } catch (e) {
       system.clearRun(dotInterval);
@@ -580,8 +713,13 @@ function applyDot(entity, player, perSecond, totalSeconds) {
    Senkei: zonas ativas + estado da arma do Byakuya
    --------------------------------------------------------- */
 
-// lista de zonas de Senkei ativas no mundo: { ownerId, center, radius }
-const activeSenkeiZones = [];
+// Zonas ativas no mundo. O Senkei do Byakuya e a Enigma do Ulquiorra sao a
+// mesma estrutura com regras diferentes:
+//   blocksSkills      - quem esta dentro so pode usar o m1
+//   blocksOwnerSkills - se a regra acima vale tambem pro dono da zona
+//   traps             - puxa de volta quem tentar sair
+//   blocksRegen       - tira a regeneracao de quem esta dentro
+const activeZones = [];
 
 function distance2D(a, b) {
   const dx = a.x - b.x;
@@ -589,31 +727,51 @@ function distance2D(a, b) {
   return Math.sqrt(dx * dx + dz * dz);
 }
 
-function findSenkeiZoneAt(location) {
-  for (const zone of activeSenkeiZones) {
-    if (distance2D(location, zone.center) <= zone.radius) return zone;
+// zonas que contem essa entidade agora
+function zonesAt(entity) {
+  const location = entity.location;
+  const dimensionId = entity.dimension.id;
+  return activeZones.filter(
+    (zone) =>
+      zone.dimension.id === dimensionId &&
+      distance2D(location, zone.center) <= zone.radius
+  );
+}
+
+// zona que esta travando as skills desse player (undefined se nenhuma)
+function skillBlockingZoneFor(player) {
+  for (const zone of zonesAt(player)) {
+    if (!zone.blocksSkills) continue;
+    if (!zone.blocksOwnerSkills && zone.ownerId === player.id) continue;
+    return zone;
   }
   return undefined;
 }
 
-function isInsideAnySenkeiZone(player) {
-  return !!findSenkeiZoneAt(player.location);
+// zona que prende esse player no lugar (usada pra travar o dash)
+function trappingZoneFor(player) {
+  return zonesAt(player).find((zone) => zone.traps);
 }
 
-function removeSenkeiZoneOwnedBy(ownerId) {
-  const idx = activeSenkeiZones.findIndex((z) => z.ownerId === ownerId);
-  if (idx !== -1) {
-    system.clearRun(activeSenkeiZones[idx].intervalId);
-    activeSenkeiZones.splice(idx, 1);
+function removeZonesOwnedBy(ownerId) {
+  for (let i = activeZones.length - 1; i >= 0; i--) {
+    if (activeZones[i].ownerId !== ownerId) continue;
+    system.clearRun(activeZones[i].intervalId);
+    if (activeZones[i].onRemove) {
+      try {
+        activeZones[i].onRemove();
+      } catch (e) {}
+    }
+    activeZones.splice(i, 1);
   }
 }
 
 // margem de busca em volta da arena. o scan antigo era radius + 10, e quem
 // saisse alem disso entre dois ticks de contencao (dash, knockback forte,
 // pearl) simplesmente nunca mais era encontrado e escapava de vez.
-const SENKEI_SCAN_MARGIN = 48;
+const ZONE_SCAN_MARGIN = 48;
 
-function pullBackIntoSenkei(zone, entity) {
+function pullBackIntoZone(zone, entity) {
   if (entity.id === zone.ownerId) return;
 
   const dx = entity.location.x - zone.center.x;
@@ -642,17 +800,17 @@ function pullBackIntoSenkei(zone, entity) {
   } catch (e) {}
 }
 
-// empurra de volta pra dentro da area qualquer entidade que tente sair do senkei
-function containSenkeiZone(zone) {
+// empurra de volta pra dentro da area qualquer entidade que tente sair
+function containZone(zone) {
   const nearby = zone.dimension.getEntities({
     location: zone.center,
-    maxDistance: zone.radius + SENKEI_SCAN_MARGIN,
+    maxDistance: zone.radius + ZONE_SCAN_MARGIN,
   });
 
   const seen = new Set();
   for (const entity of nearby) {
     seen.add(entity.id);
-    pullBackIntoSenkei(zone, entity);
+    pullBackIntoZone(zone, entity);
   }
 
   // alguem preso sumiu do scan largo: fugiu longe demais ou morreu. so nesse
@@ -667,7 +825,7 @@ function containSenkeiZone(zone) {
   const alive = new Set();
   for (const entity of all) {
     alive.add(entity.id);
-    if (escaped.includes(entity.id)) pullBackIntoSenkei(zone, entity);
+    if (escaped.includes(entity.id)) pullBackIntoZone(zone, entity);
   }
   for (const id of escaped) {
     if (!alive.has(id)) zone.trapped.delete(id);
@@ -748,12 +906,14 @@ function deactivateCharacter(player) {
   player.removeEffect("health_boost");
   player.removeEffect("speed");
   player.removeEffect("regeneration");
+  player.setDynamicProperty(DP.healthScale, 1);
+  player.setDynamicProperty(DP.markedEnd, 0);
   player.setDynamicProperty(DP.character, undefined);
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.awakening, 0);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
   clearComboCounters(player);
-  removeSenkeiZoneOwnedBy(player.id);
+  removeZonesOwnedBy(player.id);
 
   system.runTimeout(() => {
     const hp = player.getComponent("minecraft:health");
@@ -802,8 +962,8 @@ function activateAwakening(player, character) {
     case "pressure":
       activateSpiritualPressure(player, form.pressure);
       break;
-    case "resurreccion":
-      announceResurreccion(player, form);
+    case "battlecry":
+      announceBattleCry(player, form);
       break;
   }
 }
@@ -1068,8 +1228,7 @@ world.afterEvents.itemUse.subscribe((ev) => {
     isAwakened(player) &&
     !isMasked(player)
   ) {
-    const hp = player.getComponent("minecraft:health");
-    if (hp && hp.currentValue <= character.awakening.hollowMask.healthThreshold) {
+    if (virtualHealth(player) <= character.awakening.hollowMask.healthThreshold) {
       activateHollowMask(player, character);
     } else {
       player.sendMessage(
@@ -1103,9 +1262,12 @@ world.afterEvents.itemUse.subscribe((ev) => {
   }
 
   // enquanto preso num senkei, ninguem pode usar skill - so a m1
-  if (itemStack.typeId in SKILL_COOLDOWN_TICKS && isInsideAnySenkeiZone(player)) {
-    player.sendMessage("§7Você está preso no Senkei! Só pode atacar com sua espada.");
-    return;
+  if (itemStack.typeId in SKILL_COOLDOWN_TICKS) {
+    const blocking = skillBlockingZoneFor(player);
+    if (blocking) {
+      player.sendMessage(blocking.blockMessage);
+      return;
+    }
   }
 
   switch (itemStack.typeId) {
@@ -1184,6 +1346,30 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "grimmjow:disparo":
       castDisparo(player);
       break;
+    case "ulquiorra:gran_rey_cero":
+      castGranReyCero(player, "ulquiorra:gran_rey_cero");
+      break;
+    case "ulquiorra:cero_bala":
+      castCeroBala(player);
+      break;
+    case "ulquiorra:sonido":
+      castSonido(player);
+      break;
+    case "ulquiorra:pesquisa":
+      castPesquisa(player);
+      break;
+    case "ulquiorra:nihil":
+      castNihil(player);
+      break;
+    case "ulquiorra:enigma":
+      activateEnigma(player);
+      break;
+    case "ulquiorra:cero_oscuras":
+      castCeroOscuras(player);
+      break;
+    case "ulquiorra:lanza":
+      castLanza(player);
+      break;
   }
 });
 
@@ -1246,10 +1432,7 @@ function damageNearbyEntities(player, center, radius, damage, excludeSelf = true
   for (const entity of entities) {
     if (excludeSelf && entity.id === player.id) continue;
     if (!entity.getComponent("minecraft:health")) continue;
-    entity.applyDamage(finalDamage, {
-      cause: EntityDamageCause.entityAttack,
-      damagingEntity: player,
-    });
+    dealDamage(entity, finalDamage, player);
   }
 }
 
@@ -1355,10 +1538,7 @@ function performDashStrike(player, options) {
       if (entity.id === player.id || hitEntities.has(entity.id)) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       hitEntities.add(entity.id);
-      entity.applyDamage(finalDamage, {
-        cause: EntityDamageCause.entityAttack,
-        damagingEntity: player,
-      });
+      dealDamage(entity, finalDamage, player);
     }
 
     if (traveled >= distance) {
@@ -1440,10 +1620,7 @@ function fireCrescentWave(player, options) {
       if (entity.id === player.id || hitEntities.has(entity.id)) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       hitEntities.add(entity.id);
-      entity.applyDamage(damage * dmgMultiplier(player), {
-        cause: EntityDamageCause.entityAttack,
-        damagingEntity: player,
-      });
+      dealDamage(entity, damage * dmgMultiplier(player), player);
     }
 
     travelled += speed;
@@ -1585,10 +1762,7 @@ function castByakuyaTripleshot(player) {
         if (entity.id === player.id || hitEntities.has(entity.id)) continue;
         if (!entity.getComponent("minecraft:health")) continue;
         hitEntities.add(entity.id);
-        entity.applyDamage(DAMAGE.tripleshot * dmgMultiplier(player), {
-          cause: EntityDamageCause.entityAttack,
-          damagingEntity: player,
-        });
+        dealDamage(entity, DAMAGE.tripleshot * dmgMultiplier(player), player);
         applyDot(entity, player, 5, 3);
       }
     }
@@ -1626,10 +1800,7 @@ function castByakuyaDisperse(player) {
   for (const entity of entities) {
     if (entity.id === player.id) continue;
     if (!entity.getComponent("minecraft:health")) continue;
-    entity.applyDamage(DAMAGE.disperse * dmgMultiplier(player), {
-      cause: EntityDamageCause.entityAttack,
-      damagingEntity: player,
-    });
+    dealDamage(entity, DAMAGE.disperse * dmgMultiplier(player), player);
     applyDot(entity, player, 6, 3);
   }
 }
@@ -1664,10 +1835,7 @@ function castByakuyaBloodshed(player) {
   for (const entity of entities) {
     if (entity.id === player.id) continue;
     if (!entity.getComponent("minecraft:health")) continue;
-    entity.applyDamage(DAMAGE.bloodshed * dmgMultiplier(player), {
-      cause: EntityDamageCause.entityAttack,
-      damagingEntity: player,
-    });
+    dealDamage(entity, DAMAGE.bloodshed * dmgMultiplier(player), player);
     applyDot(entity, player, 10, 5);
   }
 }
@@ -1859,8 +2027,7 @@ function castHellsCut(player) {
 
   // com o awakening ativo e pouca vida, o dano base triplica
   if (desperation && desperation.skill === "kenpachi:hells_cut" && isAwakened(player)) {
-    const hp = player.getComponent("minecraft:health");
-    if (hp && hp.currentValue <= desperation.healthThreshold) {
+    if (virtualHealth(player) <= desperation.healthThreshold) {
       damage *= desperation.damageFactor;
       desperate = true;
     }
@@ -1954,10 +2121,7 @@ function castPoisonSlash(player) {
 
   const finalDamage = DAMAGE.poisonSlash * dmgMultiplier(player);
   for (const entity of entitiesInFrontBox(player, POISON_SLASH)) {
-    entity.applyDamage(finalDamage, {
-      cause: EntityDamageCause.entityAttack,
-      damagingEntity: player,
-    });
+    dealDamage(entity, finalDamage, player);
     try {
       entity.addEffect("slowness", POISON_SLASH.slownessTicks, {
         amplifier: POISON_SLASH.slownessAmplifier,
@@ -2048,7 +2212,7 @@ function activateKonjiki(player, cfg) {
 
 function tryTriggerKonjiki(player, character) {
   if (getAwakening(player) < 100) return;
-  if (isInsideAnySenkeiZone(player)) return;
+  if (skillBlockingZoneFor(player)) return;
 
   player.setDynamicProperty(DP.awakening, 0);
   activateKonjiki(player, character.superAttack.konjiki);
@@ -2093,12 +2257,41 @@ function fireEnergySphere(player, options) {
   let travelled = radius;
   const hitEntities = new Set();
 
+  const centerAt = (distance) => ({
+    x: origin.x + step.x * distance,
+    y: origin.y + 1.4 + step.y * distance,
+    z: origin.z + step.z * distance,
+  });
+
+  // Colisao de um projetil pequeno e rapido tem dois furos classicos:
+  //   - getEntities mede ate os PES da entidade, mas a esfera voa na altura do
+  //     peito. Sem corrigir, um cero de raio menor que 1.4 nunca acerta ninguem
+  //     que esteja no chao.
+  //   - andando `speed` de uma vez, um alvo no meio de dois passos e atravessado.
+  // Entao a checagem mede ate o meio do corpo e o avanco e feito em sub-passos
+  // nunca maiores que o raio.
+  const hitAround = (center) => {
+    const finalDamage = damage * dmgMultiplier(player);
+    for (const entity of dim.getEntities({
+      location: center,
+      maxDistance: radius + 2.5,
+    })) {
+      if (entity.id === player.id || hitEntities.has(entity.id)) continue;
+      if (!entity.getComponent("minecraft:health")) continue;
+
+      const loc = entity.location;
+      const dx = loc.x - center.x;
+      const dy = loc.y + 1 - center.y; // meio do corpo, nao os pes
+      const dz = loc.z - center.z;
+      if (Math.sqrt(dx * dx + dy * dy + dz * dz) > radius + 0.6) continue;
+
+      hitEntities.add(entity.id);
+      dealDamage(entity, finalDamage, player);
+    }
+  };
+
   const interval = system.runInterval(() => {
-    const center = {
-      x: origin.x + step.x * travelled,
-      y: origin.y + 1.4 + step.y * travelled,
-      z: origin.z + step.z * travelled,
-    };
+    const center = centerAt(travelled);
 
     // casca da esfera: pontos espalhados na superficie
     for (let i = 0; i < shellParticles; i++) {
@@ -2114,15 +2307,9 @@ function fireEnergySphere(player, options) {
       } catch (e) {}
     }
 
-    const finalDamage = damage * dmgMultiplier(player);
-    for (const entity of dim.getEntities({ location: center, maxDistance: radius })) {
-      if (entity.id === player.id || hitEntities.has(entity.id)) continue;
-      if (!entity.getComponent("minecraft:health")) continue;
-      hitEntities.add(entity.id);
-      entity.applyDamage(finalDamage, {
-        cause: EntityDamageCause.entityAttack,
-        damagingEntity: player,
-      });
+    const subSteps = Math.max(1, Math.ceil(speed / Math.max(0.5, radius)));
+    for (let s = 1; s <= subSteps; s++) {
+      hitAround(centerAt(travelled + (speed * s) / subSteps));
     }
 
     travelled += speed;
@@ -2168,10 +2355,7 @@ function castDesgarra(player) {
 
   const finalDamage = DAMAGE.desgarra * dmgMultiplier(player);
   for (const entity of entitiesInFrontBox(player, DESGARRA)) {
-    entity.applyDamage(finalDamage, {
-      cause: EntityDamageCause.entityAttack,
-      damagingEntity: player,
-    });
+    dealDamage(entity, finalDamage, player);
   }
 }
 
@@ -2194,8 +2378,8 @@ function castRaza(player) {
   });
 }
 
-function castGranReyCero(player) {
-  if (!tryUseSkill(player, "grimmjow:gran_rey_cero")) return;
+function castGranReyCero(player, skillId = "grimmjow:gran_rey_cero") {
+  if (!tryUseSkill(player, skillId)) return;
 
   world.sendMessage(`§9§l${player.name}: GRAN REY CERO!`);
   player.dimension.playSound("mob.wither.death", player.location, {
@@ -2215,19 +2399,19 @@ function castGranReyCero(player) {
    La Pantera (Resurreccion)
    --------------------------------------------------------- */
 
-function announceResurreccion(player, form) {
-  // no chat, como se o proprio Grimmjow estivesse falando
+// grito de liberacao: aparece no chat como se o proprio personagem falasse
+function announceBattleCry(player, form) {
   world.sendMessage(`<${player.name}> ${form.chatLine}`);
   player.dimension.playSound("mob.enderdragon.growl", player.location, {
     volume: 1.8,
-    pitch: 1.3,
+    pitch: form.cryPitch ?? 1.3,
   });
 
   const loc = player.location;
   for (let i = 0; i < 40; i++) {
     const angle = (i / 40) * Math.PI * 2;
     try {
-      player.dimension.spawnParticle("grimmjow:cero", {
+      player.dimension.spawnParticle(form.cryParticle ?? "grimmjow:cero", {
         x: loc.x + Math.cos(angle) * 2.2,
         y: loc.y + 0.2 + (i % 8) * 0.35,
         z: loc.z + Math.sin(angle) * 2.2,
@@ -2261,10 +2445,7 @@ function castDestruir(player) {
 
   const finalDamage = DAMAGE.destruir * dmgMultiplier(player);
   for (const entity of entitiesInFrontBox(player, DESTRUIR)) {
-    entity.applyDamage(finalDamage, {
-      cause: EntityDamageCause.entityAttack,
-      damagingEntity: player,
-    });
+    dealDamage(entity, finalDamage, player);
   }
 }
 
@@ -2357,10 +2538,7 @@ function seizeAndRipHeart(player, victim) {
           z: heldAt.z + (Math.random() - 0.5) * 1.4,
         });
       }
-      victim.applyDamage(DAMAGE.arrancarCorazon * dmgMultiplier(player), {
-        cause: EntityDamageCause.entityAttack,
-        damagingEntity: player,
-      });
+      dealDamage(victim, DAMAGE.arrancarCorazon * dmgMultiplier(player), player);
       world.sendMessage(
         `§4§l${player.name} arrancou o coração de ${victim.name}!`
       );
@@ -2446,6 +2624,308 @@ function castDisparo(player) {
 }
 
 /* ---------------------------------------------------------
+   Skills do Ulquiorra Cifer
+   --------------------------------------------------------- */
+
+function castCeroBala(player) {
+  if (!tryUseSkill(player, "ulquiorra:cero_bala")) return;
+
+  world.sendMessage(`§2${player.name} §7usou §aCero Bala§7!`);
+
+  // quatro tiros rapidos em sequencia, cada um remirando pra onde o player olha
+  for (let shot = 0; shot < CERO_BALA.shots; shot++) {
+    system.runTimeout(() => {
+      try {
+        player.dimension.playSound("mob.wither.shoot", player.location, {
+          volume: 1,
+          pitch: 1.8,
+        });
+        fireEnergySphere(player, {
+          radius: CERO_BALA.radius,
+          range: CERO_BALA.range,
+          speed: CERO_BALA.speed,
+          damage: DAMAGE.ceroBala,
+          particle: "ulquiorra:oscuras",
+          shellParticles: 8,
+        });
+      } catch (e) {
+        // player saiu do mundo no meio da rajada
+      }
+    }, shot * CERO_BALA.gapTicks + 1);
+  }
+}
+
+function castSonido(player) {
+  // procura antes de gastar o cooldown
+  const target = nearestPlayer(player, SONIDO.searchRadius);
+  if (!target) {
+    player.sendMessage("§7Nenhum player por perto pro Sonído.");
+    return;
+  }
+  if (!tryUseSkill(player, "ulquiorra:sonido")) return;
+
+  const from = player.location;
+  const to = target.location;
+  const dx = from.x - to.x;
+  const dz = from.z - to.z;
+  const distance = Math.sqrt(dx * dx + dz * dz) || 1;
+
+  // aparece colado no alvo, do lado de onde estava vindo
+  const spot = {
+    x: to.x + (dx / distance) * SONIDO.distance,
+    y: to.y,
+    z: to.z + (dz / distance) * SONIDO.distance,
+  };
+
+  try {
+    player.teleport(spot, { keepVelocity: false, facingLocation: to });
+  } catch (e) {
+    return;
+  }
+
+  world.sendMessage(`§2${player.name} §7apareceu ao lado de §a${target.name}§7 com Sonído.`);
+  for (const at of [from, spot]) {
+    for (let i = 0; i < 10; i++) {
+      try {
+        player.dimension.spawnParticle("ulquiorra:oscuras", {
+          x: at.x + (Math.random() - 0.5) * 1.2,
+          y: at.y + Math.random() * 2,
+          z: at.z + (Math.random() - 0.5) * 1.2,
+        });
+      } catch (e) {}
+    }
+  }
+  player.dimension.playSound("mob.endermen.portal", spot, { volume: 1, pitch: 1.4 });
+}
+
+function castPesquisa(player) {
+  const seen = player.getEntitiesFromViewDirection({ maxDistance: PESQUISA.range });
+  const target = seen
+    .map((hit) => hit.entity)
+    .find((entity) => entity && entity.id !== player.id && entity.getComponent("minecraft:health"));
+
+  if (!target) {
+    player.sendMessage("§7Você não está olhando pra ninguém.");
+    return;
+  }
+  if (!tryUseSkill(player, "ulquiorra:pesquisa")) return;
+
+  target.setDynamicProperty(DP.markedEnd, system.currentTick + PESQUISA.durationTicks);
+
+  const name = target.typeId === "minecraft:player" ? target.name : target.typeId;
+  world.sendMessage(
+    `§2${player.name} §7analisou §a${name}§7: §c+50% de dano recebido §7por ${
+      PESQUISA.durationTicks / 20
+    }s.`
+  );
+  player.dimension.playSound("random.orb", player.location, { volume: 1, pitch: 0.6 });
+
+  // marca visivel em volta do alvo enquanto durar
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed += 5;
+    if (elapsed > PESQUISA.durationTicks || !isMarked(target)) {
+      system.clearRun(interval);
+      return;
+    }
+    try {
+      const loc = target.location;
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 + elapsed / 10;
+        target.dimension.spawnParticle("ulquiorra:oscuras", {
+          x: loc.x + Math.cos(angle) * 0.9,
+          y: loc.y + 2.2,
+          z: loc.z + Math.sin(angle) * 0.9,
+        });
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 5);
+}
+
+/* ---------------------------------------------------------
+   Murcielago (Resurreccion)
+   --------------------------------------------------------- */
+
+function castNihil(player) {
+  if (!tryUseSkill(player, "ulquiorra:nihil")) return;
+
+  world.sendMessage(`§2${player.name} §7usou §aNihil§7!`);
+  player.dimension.playSound("mob.wither.shoot", player.location, {
+    volume: 1.3,
+    pitch: 0.5,
+  });
+
+  drawSweep(player, NIHIL, "ulquiorra:oscuras", true);
+
+  for (const entity of entitiesInFrontBox(player, NIHIL)) {
+    // porcentagem da vida ATUAL do alvo, medida na vida virtual dele
+    const toll = virtualHealth(entity) * NIHIL.healthFraction;
+    if (toll > 0) dealDamage(entity, toll, player);
+  }
+}
+
+function activateEnigma(player) {
+  if (!tryUseSkill(player, "ulquiorra:enigma")) return;
+  const dim = player.dimension;
+  const center = player.location;
+  const stripped = new Set();
+
+  world.sendMessage(
+    `§2§l${player.name} selou a área com Enigma! §r§7(sem regeneração e sem skills lá dentro)`
+  );
+  dim.playSound("mob.wither.spawn", center, { volume: 1.4, pitch: 1.1 });
+
+  let elapsed = 0;
+  const intervalId = system.runInterval(() => {
+    // parede verde marcando o perimetro
+    for (let i = 0; i < 28; i++) {
+      const angle = (i / 28) * Math.PI * 2;
+      for (let h = 0; h < 4; h++) {
+        try {
+          dim.spawnParticle("ulquiorra:oscuras", {
+            x: center.x + Math.cos(angle) * ENIGMA.radius,
+            y: center.y + h * 1.2,
+            z: center.z + Math.sin(angle) * ENIGMA.radius,
+          });
+        } catch (e) {}
+      }
+    }
+
+    elapsed += ENIGMA.tickInterval;
+    if (elapsed >= ENIGMA.durationTicks) {
+      removeZonesOwnedBy(player.id);
+      try {
+        player.sendMessage("§7A Enigma se desfez.");
+      } catch (e) {}
+    }
+  }, ENIGMA.tickInterval);
+
+  activeZones.push({
+    ownerId: player.id,
+    kind: "enigma",
+    center,
+    radius: ENIGMA.radius,
+    dimension: dim,
+    intervalId,
+    trapped: new Set(),
+    stripped,
+    blocksSkills: true,
+    blocksOwnerSkills: false, // "skills inimigas": o Ulquiorra continua usando as dele
+    traps: false,
+    blocksRegen: true,
+    blockMessage: "§7A Enigma anula suas skills aqui dentro.",
+    onRemove: () => {
+      // devolve a regeneracao pra quem ficou sem ela dentro da zona
+      for (const other of world.getPlayers()) {
+        if (!stripped.has(other.id)) continue;
+        try {
+          reapplyFormEffects(other);
+        } catch (e) {}
+      }
+    },
+  });
+}
+
+function castCeroOscuras(player) {
+  if (!tryUseSkill(player, "ulquiorra:cero_oscuras")) return;
+
+  world.sendMessage(`§2§l${player.name}: CERO OSCURAS!`);
+  player.dimension.playSound("mob.wither.death", player.location, {
+    volume: 2,
+    pitch: 0.3,
+  });
+
+  // mesmo projetil do Gran Rey Cero, 4x o raio e 4x o dano
+  fireEnergySphere(player, {
+    radius: CERO_OSCURAS.radius,
+    range: CERO_OSCURAS.range,
+    speed: CERO_OSCURAS.speed,
+    damage: DAMAGE.ceroOscuras,
+    particle: "ulquiorra:oscuras",
+    shellParticles: CERO_OSCURAS.shellParticles,
+  });
+}
+
+function explodeLanza(player, center) {
+  const dim = player.dimension;
+
+  try {
+    dim.playSound("mob.wither.death", center, { volume: 2, pitch: 0.2 });
+  } catch (e) {}
+
+  // cascas concentricas ate o raio cheio: a maior explosao do addon
+  for (let ring = 1; ring <= 6; ring++) {
+    const radius = (LANZA.blastRadius * ring) / 6;
+    const points = 12 + ring * 6;
+    for (let i = 0; i < points; i++) {
+      const angle = (i / points) * Math.PI * 2;
+      for (const height of [0.3, 2, 4]) {
+        try {
+          dim.spawnParticle(
+            ring > 4 ? "ulquiorra:oscuras" : "minecraft:large_explosion",
+            {
+              x: center.x + Math.cos(angle) * radius,
+              y: center.y + height,
+              z: center.z + Math.sin(angle) * radius,
+            }
+          );
+        } catch (e) {}
+      }
+    }
+  }
+
+  damageNearbyEntities(player, center, LANZA.blastRadius, DAMAGE.lanza);
+}
+
+function castLanza(player) {
+  if (!tryUseSkill(player, "ulquiorra:lanza")) return;
+  const dim = player.dimension;
+  const view = player.getViewDirection();
+  const length =
+    Math.sqrt(view.x * view.x + view.y * view.y + view.z * view.z) || 1;
+  const step = { x: view.x / length, y: view.y / length, z: view.z / length };
+  const origin = player.location;
+
+  world.sendMessage(`§2§l${player.name}: LANZA DEL RELÁMPAGO!`);
+  dim.playSound("mob.wither.shoot", origin, { volume: 2, pitch: 0.4 });
+
+  let travelled = 2;
+  const interval = system.runInterval(() => {
+    const tip = {
+      x: origin.x + step.x * travelled,
+      y: origin.y + 1.4 + step.y * travelled,
+      z: origin.z + step.z * travelled,
+    };
+
+    // corpo da lanca arrastando atras da ponta
+    for (let t = 0; t < 10; t++) {
+      try {
+        dim.spawnParticle("ulquiorra:oscuras", {
+          x: tip.x - step.x * t * 0.45,
+          y: tip.y - step.y * t * 0.45,
+          z: tip.z - step.z * t * 0.45,
+        });
+      } catch (e) {}
+    }
+
+    const struck = dim
+      .getEntities({ location: tip, maxDistance: 2 })
+      .some(
+        (entity) =>
+          entity.id !== player.id && entity.getComponent("minecraft:health")
+      );
+
+    travelled += LANZA.speed;
+    if (struck || travelled >= LANZA.range) {
+      system.clearRun(interval);
+      explodeLanza(player, tip);
+    }
+  }, 1);
+}
+
+/* ---------------------------------------------------------
    Awakening do Kenpachi: Pressao espiritual (tapa-olho removido)
    --------------------------------------------------------- */
 
@@ -2495,10 +2975,7 @@ function activateSpiritualPressure(player, cfg) {
         if (elapsed % 20 === 0) {
           // dano cru: o +50% do awakening vale pras skills e pro m1, nao pra
           // pressao em si
-          entity.applyDamage(cfg.dotPerSecond, {
-            cause: EntityDamageCause.entityAttack,
-            damagingEntity: player,
-          });
+          dealDamage(entity, cfg.dotPerSecond, player);
         }
       } catch (e) {
         // alvo morreu ou saiu: ignora e segue com o resto
@@ -2564,10 +3041,7 @@ function activateKageyoshi(player, character) {
     for (const entity of entities) {
       if (entity.id === player.id) continue;
       if (!entity.getComponent("minecraft:health")) continue;
-      entity.applyDamage(cfg.dotPerSecond * dmgMultiplier(player), {
-        cause: EntityDamageCause.entityAttack,
-        damagingEntity: player,
-      });
+      dealDamage(entity, cfg.dotPerSecond * dmgMultiplier(player), player);
     }
 
     elapsed++;
@@ -2636,7 +3110,7 @@ function activateSenkei(player, character) {
     elapsed += 20;
     if (elapsed >= cfg.maxDurationTicks) {
       // trava de seguranca: se ninguem desativar manualmente, acaba sozinho
-      removeSenkeiZoneOwnedBy(player.id);
+      removeZonesOwnedBy(player.id);
       try {
         player.setDynamicProperty(DP.byakuyaWeapon, "base");
         world.sendMessage(`§7O Senkei de ${player.name} se dissipou.`);
@@ -2646,20 +3120,26 @@ function activateSenkei(player, character) {
     }
   }, 20);
 
-  activeSenkeiZones.push({
+  activeZones.push({
     ownerId: player.id,
+    kind: "senkei",
     center,
     radius: cfg.radius,
     dimension: dim,
     intervalId,
     trapped: new Set(),
+    blocksSkills: true,
+    blocksOwnerSkills: true, // no Senkei nem o Byakuya pode usar skill
+    traps: true,
+    blocksRegen: false,
+    blockMessage: "§7Você está preso no Senkei! Só pode atacar com sua espada.",
   });
 }
 
 function tryTriggerByakuyaSuper(player, character) {
   if (getAwakening(player) < 100) return;
   if (getByakuyaWeaponState(player) !== "base") return;
-  if (isInsideAnySenkeiZone(player)) return;
+  if (skillBlockingZoneFor(player)) return;
 
   const charged = senkeiChargeReady.has(player.id);
   player.setDynamicProperty(DP.awakening, 0);
@@ -2674,7 +3154,7 @@ function tryTriggerByakuyaSuper(player, character) {
 
 // crouch + usar a senbonzakura do senkei = desativa a area e puxa a espada final
 function triggerSenkeiDeactivation(player, character) {
-  removeSenkeiZoneOwnedBy(player.id);
+  removeZonesOwnedBy(player.id);
   player.setDynamicProperty(DP.byakuyaWeapon, "finisher");
   player.setDynamicProperty(DP.awakening, 0);
   player.sendMessage(
@@ -2687,7 +3167,7 @@ function triggerSenkeiDeactivation(player, character) {
 function finishByakuyaSuper(player) {
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
   player.setDynamicProperty(DP.awakening, 0);
-  removeSenkeiZoneOwnedBy(player.id);
+  removeZonesOwnedBy(player.id);
 
   try {
     player.addEffect("slowness", 200, { amplifier: 9, showParticles: false });
@@ -2746,6 +3226,16 @@ const MELEE_WEAPONS = {
   "grimmjow:m1_garras": {
     baseDamage: DAMAGE.garras,
     particle: "grimmjow:cero",
+    dot: null,
+  },
+  "ulquiorra:m1_zanpakuto": {
+    baseDamage: DAMAGE.ulquiorraM1,
+    particle: "ulquiorra:oscuras",
+    dot: null,
+  },
+  "ulquiorra:m1_garras": {
+    baseDamage: DAMAGE.garrasMurcielago,
+    particle: "ulquiorra:oscuras",
     dot: null,
   },
   "mayuri:m1_ashisogi_jizo": {
@@ -2837,10 +3327,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       const bonus = Math.round(weapon.baseDamage * (dmgMultiplier(damagingEntity) - 1));
       if (bonus > 0) {
         try {
-          hitEntity.applyDamage(bonus, {
-            cause: EntityDamageCause.entityAttack,
-            damagingEntity,
-          });
+          dealDamage(hitEntity, bonus, damagingEntity);
         } catch (e) {
           // ignora
         }
@@ -2872,7 +3359,7 @@ system.runInterval(() => {
   for (const player of world.getPlayers()) {
     const character = getActiveCharacter(player);
     if (!character) continue;
-    if (isInsideAnySenkeiZone(player)) continue;
+    if (trappingZoneFor(player)) continue;
 
     const vel = player.getVelocity();
     const horizontalSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
@@ -2905,8 +3392,20 @@ system.runInterval(() => {
    --------------------------------------------------------- */
 
 system.runInterval(() => {
-  for (const zone of activeSenkeiZones) {
-    containSenkeiZone(zone);
+  for (const zone of activeZones) {
+    if (zone.traps) containZone(zone);
+    if (!zone.blocksRegen) continue;
+
+    for (const entity of zone.dimension.getEntities({
+      location: zone.center,
+      maxDistance: zone.radius,
+    })) {
+      if (!zone.blocksOwnerSkills && entity.id === zone.ownerId) continue;
+      try {
+        entity.removeEffect("regeneration");
+        zone.stripped?.add(entity.id);
+      } catch (e) {}
+    }
   }
 }, 4);
 
@@ -2983,8 +3482,11 @@ system.runInterval(() => {
   for (const player of world.getPlayers()) {
     const hp = player.getComponent("minecraft:health");
     if (!hp) continue;
-    const current = Math.max(0, Math.round(hp.currentValue));
-    const max = Math.round(hp.effectiveMax);
+    // acima do teto do Bedrock a vida e virtual: a actionbar mostra o numero
+    // configurado, nao o pool real
+    const scale = healthScaleOf(player);
+    const current = Math.max(0, Math.round(hp.currentValue * scale));
+    const max = Math.round(hp.effectiveMax * scale);
     const awakening = getAwakening(player);
     const awakenedTag = isAwakened(player) ? " §d✦AWAKENING" : "";
     const weaponState = getByakuyaWeaponState(player);
@@ -3063,7 +3565,7 @@ system.runInterval(() => {
 
 world.afterEvents.playerLeave.subscribe((ev) => {
   const playerId = ev.playerId;
-  removeSenkeiZoneOwnedBy(playerId);
+  removeZonesOwnedBy(playerId);
   senkeiChargeTicks.delete(playerId);
   senkeiChargeReady.delete(playerId);
   wasSneakJumping.delete(playerId);

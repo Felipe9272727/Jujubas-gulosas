@@ -106,6 +106,36 @@
     },
     "grimmjow:disparo": {
       "textures": "textures/items/grimmjow_disparo"
+    },
+    "ulquiorra:m1_zanpakuto": {
+      "textures": "textures/items/ulquiorra_m1_zanpakuto"
+    },
+    "ulquiorra:gran_rey_cero": {
+      "textures": "textures/items/ulquiorra_gran_rey_cero"
+    },
+    "ulquiorra:cero_bala": {
+      "textures": "textures/items/ulquiorra_cero_bala"
+    },
+    "ulquiorra:sonido": {
+      "textures": "textures/items/ulquiorra_sonido"
+    },
+    "ulquiorra:pesquisa": {
+      "textures": "textures/items/ulquiorra_pesquisa"
+    },
+    "ulquiorra:m1_garras": {
+      "textures": "textures/items/ulquiorra_m1_garras"
+    },
+    "ulquiorra:nihil": {
+      "textures": "textures/items/ulquiorra_nihil"
+    },
+    "ulquiorra:enigma": {
+      "textures": "textures/items/ulquiorra_enigma"
+    },
+    "ulquiorra:cero_oscuras": {
+      "textures": "textures/items/ulquiorra_cero_oscuras"
+    },
+    "ulquiorra:lanza": {
+      "textures": "textures/items/ulquiorra_lanza"
     }
   }
 }
