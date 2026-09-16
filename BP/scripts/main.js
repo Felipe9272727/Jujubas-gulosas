@@ -86,6 +86,7 @@ const CHARACTERS = {
     },
     // super ataque no lugar de uma segunda forma persistente
     superAttack: {
+      onTrigger: "byakuya",
       triggerItem: "byakuya:m1_senbonzakura",
       chargeTicksForSenkei: 100, // 5s agachado segurando a m1 = desbloqueia o Senkei
       kageyoshi: {
@@ -142,6 +143,24 @@ const CHARACTERS = {
       0: "mayuri:m1_ashisogi_jizo",
       1: "mayuri:poison_slash",
       2: "mayuri:toxic_fog",
+    },
+    // Bankai como super ataque (nao troca item nem vida, igual ao Kageyoshi):
+    // agachar + usar a m1 com o medidor em 100%
+    superAttack: {
+      onTrigger: "konjiki",
+      triggerItem: "mayuri:m1_ashisogi_jizo",
+      // mesma neblina da Toxic Fog, so que gigante e muito mais forte
+      konjiki: {
+        radius: 25, // area 50x50
+        height: 3.2,
+        durationTicks: 300, // 15s
+        tickInterval: 10,
+        refreshTicks: 30,
+        poisonAmplifier: 19, // poison 20
+        slownessAmplifier: 255, // "lentidao inf"
+        particlesPerTick: 60, // area 25x maior que a da Toxic Fog
+        endMessage: "§7A Konjiki Ashisogi Jizō se dissipou.",
+      },
     },
   },
 };
@@ -284,13 +303,16 @@ const POISON_SLASH = {
 };
 const TOXIC_FOG = {
   radius: 5, // area 10x10
+  height: 2.2,
   durationTicks: 300, // 15s
   tickInterval: 10,
   refreshTicks: 30, // um pouco maior que o intervalo pro efeito nao piscar
   poisonAmplifier: 9, // poison 10
   slownessAmplifier: 2, // slowness 3
   particlesPerTick: 14,
+  endMessage: "§7A Toxic Fog se dissipou.",
 };
+
 
 /* ---------------------------------------------------------
    Utils
@@ -561,10 +583,10 @@ function getActiveItemsForPlayer(player, character) {
   if (character.superAttack) {
     const weaponState = getByakuyaWeaponState(player);
     if (weaponState === "senkei") {
-      return { ...character.items, 0: character.superAttack.senkei.weapon };
+      return { ...character.items, 0: character.superAttack.senkei?.weapon };
     }
     if (weaponState === "finisher") {
-      return { ...character.items, 0: character.superAttack.senkei.finisherWeapon };
+      return { ...character.items, 0: character.superAttack.senkei?.finisherWeapon };
     }
   }
   return character.items;
@@ -916,14 +938,15 @@ world.afterEvents.itemUse.subscribe((ev) => {
     player.isSneaking &&
     getByakuyaWeaponState(player) === "base"
   ) {
-    tryTriggerByakuyaSuper(player, character);
+    // pra quem nao tem arma alternativa o estado e sempre "base"
+    tryTriggerSuperAttack(player, character);
     return;
   }
 
   // agachado + usar a senbonzakura do senkei = desativa a area e puxa a espada final
   if (
     character.superAttack &&
-    itemStack.typeId === character.superAttack.senkei.weapon &&
+    itemStack.typeId === character.superAttack.senkei?.weapon &&
     player.isSneaking &&
     getByakuyaWeaponState(player) === "senkei"
   ) {
@@ -1776,24 +1799,22 @@ function castPoisonSlash(player) {
   }
 }
 
-function castToxicFog(player) {
-  if (!tryUseSkill(player, "mayuri:toxic_fog")) return;
+// Neblina venenosa que fica parada onde foi solta. A Toxic Fog e a Konjiki
+// Ashisogi Jizo sao a mesma coisa com raio, intensidade e densidade diferentes.
+function spawnPoisonCloud(player, cfg) {
   const dim = player.dimension;
   const center = player.location;
 
-  world.sendMessage(`§5${player.name} §7soltou §dToxic Fog§7!`);
-  dim.playSound("mob.wither.spawn", center, { volume: 1.2, pitch: 1.7 });
-
-  // a neblina fica onde foi solta, nao acompanha o Mayuri
   let elapsed = 0;
   const interval = system.runInterval(() => {
-    for (let i = 0; i < TOXIC_FOG.particlesPerTick; i++) {
+    for (let i = 0; i < cfg.particlesPerTick; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const dist = Math.random() * TOXIC_FOG.radius;
+      // sqrt espalha por area; sem ele a neblina fica amontoada no centro
+      const dist = cfg.radius * Math.sqrt(Math.random());
       try {
         dim.spawnParticle("mayuri:toxic_fog", {
           x: center.x + Math.cos(angle) * dist,
-          y: center.y + 0.2 + Math.random() * 2.2,
+          y: center.y + 0.2 + Math.random() * cfg.height,
           z: center.z + Math.sin(angle) * dist,
         });
       } catch (e) {}
@@ -1801,30 +1822,81 @@ function castToxicFog(player) {
 
     for (const entity of dim.getEntities({
       location: center,
-      maxDistance: TOXIC_FOG.radius,
+      maxDistance: cfg.radius,
     })) {
       if (entity.id === player.id) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       try {
-        entity.addEffect("poison", TOXIC_FOG.refreshTicks, {
-          amplifier: TOXIC_FOG.poisonAmplifier,
+        entity.addEffect("poison", cfg.refreshTicks, {
+          amplifier: cfg.poisonAmplifier,
           showParticles: true,
         });
-        entity.addEffect("slowness", TOXIC_FOG.refreshTicks, {
-          amplifier: TOXIC_FOG.slownessAmplifier,
+        entity.addEffect("slowness", cfg.refreshTicks, {
+          amplifier: cfg.slownessAmplifier,
           showParticles: false,
         });
       } catch (e) {}
     }
 
-    elapsed += TOXIC_FOG.tickInterval;
-    if (elapsed >= TOXIC_FOG.durationTicks) {
+    elapsed += cfg.tickInterval;
+    if (elapsed >= cfg.durationTicks) {
       system.clearRun(interval);
-      try {
-        player.sendMessage("§7A Toxic Fog se dissipou.");
-      } catch (e) {}
+      if (cfg.endMessage) {
+        try {
+          player.sendMessage(cfg.endMessage);
+        } catch (e) {}
+      }
     }
-  }, TOXIC_FOG.tickInterval);
+  }, cfg.tickInterval);
+}
+
+function castToxicFog(player) {
+  if (!tryUseSkill(player, "mayuri:toxic_fog")) return;
+
+  world.sendMessage(`§5${player.name} §7soltou §dToxic Fog§7!`);
+  player.dimension.playSound("mob.wither.spawn", player.location, {
+    volume: 1.2,
+    pitch: 1.7,
+  });
+
+  spawnPoisonCloud(player, TOXIC_FOG);
+}
+
+/* ---------------------------------------------------------
+   Bankai do Mayuri: Konjiki Ashisogi Jizo
+   --------------------------------------------------------- */
+
+function activateKonjiki(player, cfg) {
+  world.sendMessage(
+    `§5§lBANKAI: KONJIKI ASHISOGI JIZŌ! §r§dA neblina de ${player.name} cobre tudo.`
+  );
+  player.dimension.playSound("mob.wither.spawn", player.location, {
+    volume: 2,
+    pitch: 0.5,
+  });
+
+  spawnPoisonCloud(player, cfg);
+}
+
+function tryTriggerKonjiki(player, character) {
+  if (getAwakening(player) < 100) return;
+  if (isInsideAnySenkeiZone(player)) return;
+
+  player.setDynamicProperty(DP.awakening, 0);
+  activateKonjiki(player, character.superAttack.konjiki);
+}
+
+// Cada personagem com super ataque decide o que acontece ao agachar + usar a m1
+// com o medidor cheio.
+function tryTriggerSuperAttack(player, character) {
+  switch (character.superAttack.onTrigger) {
+    case "byakuya":
+      tryTriggerByakuyaSuper(player, character);
+      break;
+    case "konjiki":
+      tryTriggerKonjiki(player, character);
+      break;
+  }
 }
 
 /* ---------------------------------------------------------
@@ -2289,7 +2361,8 @@ system.runInterval(() => {
 system.runInterval(() => {
   for (const player of world.getPlayers()) {
     const character = getActiveCharacter(player);
-    if (!character || !character.superAttack) continue;
+    // so o Byakuya carrega Senkei; outros supers nao tem pose de carregamento
+    if (!character?.superAttack?.senkei) continue;
     if (getByakuyaWeaponState(player) !== "base") {
       resetSenkeiCharge(player);
       continue;

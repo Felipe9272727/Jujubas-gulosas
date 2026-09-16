@@ -827,15 +827,81 @@ check(
 advanceTicks(40, "fog-efeitos-expiram");
 check("efeitos param de ser renovados depois que a neblina acaba", !naFrente.getEffect("poison"));
 
-scenario("Mayuri não tem awakening");
+scenario("Mayuri não herda o carregamento do Senkei");
 mark = errors.length;
-mayuri.setDynamicProperty(DP.awakening, 100);
+mayuri.teleport({ x: 200, y: 64, z: 200 });
+mayuri.setDynamicProperty(DP.awakening, 0);
+const msgsBeforeCharge = log.worldMessages.length;
+mayuri.isSneaking = true;
+inv(mayuri).setItem(0, new ItemStack("mayuri:m1_ashisogi_jizo", 1));
+advanceTicks(140, "carga-indevida"); // bem mais que os 5s de carga do Senkei
+mayuri.isSneaking = false;
+noNewErrors("segurar agachado com a m1 não lança", mark);
+check(
+  "não recebe o círculo de carga do Senkei",
+  !log.worldMessages.slice(msgsBeforeCharge).some((m) => m.message.includes("Senkei carregado"))
+);
+check(
+  "actionbar não mostra 'carregado'",
+  !log.actionBars.slice(-8).some((a) => a.player === "MayuriPlayer" && a.text.includes("carregado"))
+);
+
+scenario("Bankai: Konjiki Ashisogi Jizō");
+mark = errors.length;
+mayuri.teleport({ x: 200, y: 64, z: 200 });
+naFrente.teleport({ x: 218, y: 64, z: 200 }); // 18 blocos: dentro do 50x50
+foraDaNevoa.teleport({ x: 240, y: 64, z: 200 }); // 40 blocos: fora
+naFrente.removeEffect("poison");
+naFrente.removeEffect("slowness");
+
+// sem o medidor cheio a Bankai não sai
+mayuri.setDynamicProperty(DP.awakening, 40);
 mayuri.isSneaking = true;
 useItem(mayuri, "mayuri:m1_ashisogi_jizo");
-advanceTicks(10, "sem-awakening");
+advanceTicks(15, "bankai-sem-medidor");
+check("sem 100% de medidor a Bankai não sai", !naFrente.getEffect("poison"));
+check("e o medidor não é consumido", mayuri.getDynamicProperty(DP.awakening) === 40);
+
+mayuri.setDynamicProperty(DP.awakening, 100);
+const partBeforeBankai = log.particles.length;
+useItem(mayuri, "mayuri:m1_ashisogi_jizo");
 mayuri.isSneaking = false;
-noNewErrors("agachar + m1 sem awakening não lança", mark);
-check("continua não-desperto", !mayuri.getDynamicProperty(DP.awakened));
+advanceTicks(30, "bankai");
+noNewErrors("Konjiki executa limpo", mark);
+check("consumiu o medidor", mayuri.getDynamicProperty(DP.awakening) === 0);
+check(
+  "poison 20 (amplifier 19)",
+  naFrente.getEffect("poison")?.amplifier === 19,
+  `${naFrente.getEffect("poison")?.amplifier}`
+);
+check(
+  "lentidão máxima (amplifier 255)",
+  naFrente.getEffect("slowness")?.amplifier === 255,
+  `${naFrente.getEffect("slowness")?.amplifier}`
+);
+check("alcança 18 blocos (área 50x50)", !!naFrente.getEffect("poison"));
+check("não alcança 40 blocos", !foraDaNevoa.getEffect("poison"));
+check("Mayuri não se envenena", !mayuri.getEffect("poison"));
+const bankaiParticles = log.particles.slice(partBeforeBankai);
+check(
+  "neblina densa desenhada com a partícula customizada",
+  bankaiParticles.length > 150 &&
+    bankaiParticles.every((p) => p.particleId === "mayuri:toxic_fog"),
+  `${bankaiParticles.length} partículas`
+);
+
+mark = errors.length;
+advanceTicks(300, "bankai-fim");
+noNewErrors("Konjiki roda os 15s sem erro", mark);
+check(
+  "Bankai acaba sozinha",
+  log.worldMessages.some(
+    (m) => m.to === "MayuriPlayer" && m.message.includes("Konjiki Ashisogi Jizō se dissipou")
+  )
+);
+advanceTicks(40, "bankai-efeitos-expiram");
+check("efeitos param de ser renovados quando a neblina acaba", !naFrente.getEffect("poison"));
+check("Mayuri não vira forma persistente", !mayuri.getDynamicProperty(DP.awakened));
 check("vida maxima continua 180", hp(mayuri).effectiveMax === 180);
 naFrente.kill();
 foraDaNevoa.kill();
