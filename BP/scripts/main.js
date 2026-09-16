@@ -101,6 +101,38 @@ const CHARACTERS = {
       },
     },
   },
+  kenpachi: {
+    id: "kenpachi",
+    name: "Zaraki Kenpachi",
+    health: 300,
+    items: {
+      0: "kenpachi:m1_zanpakuto",
+      1: "kenpachi:flash_slash",
+      2: "kenpachi:stomp",
+      3: "kenpachi:hunt",
+      4: "kenpachi:hells_cut",
+    },
+    // o awakening dele nao troca item nem aumenta vida: e um burst de pressao
+    // espiritual seguido de um buff permanente de dano
+    awakening: {
+      name: "Pressão (tapa-olho removido)",
+      triggerItem: "kenpachi:m1_zanpakuto",
+      damageMultiplier: 1.5, // +50% em todas as skills e no m1
+      onActivate: "pressure",
+      pressure: {
+        radius: 25, // area 50x50
+        durationTicks: 60, // 3s parados e cegos
+        dotPerSecond: 10,
+        chatLine: "Que pressão espiritual tremenda!",
+      },
+      // com pouca vida, o Hell's Cut vira golpe de desespero
+      desperation: {
+        skill: "kenpachi:hells_cut",
+        healthThreshold: 60,
+        damageFactor: 3,
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -146,6 +178,10 @@ const SKILL_COOLDOWN_TICKS = {
   "byakuya:disperse": 440,
   "byakuya:bloodshed": 600,
   "byakuya:coating": 3600,
+  "kenpachi:flash_slash": 360,
+  "kenpachi:stomp": 240,
+  "kenpachi:hunt": 400,
+  "kenpachi:hells_cut": 400, // 20% a menos que o Getsuga Tenshou (500)
 };
 
 const SKILL_NAMES = {
@@ -161,6 +197,10 @@ const SKILL_NAMES = {
   "byakuya:disperse": "Senbonzakura Disperse",
   "byakuya:bloodshed": "Senbonzakura Bloodshed",
   "byakuya:coating": "Sakura's Coating",
+  "kenpachi:flash_slash": "Flash Slash",
+  "kenpachi:stomp": "Stomp",
+  "kenpachi:hunt": "Kenpachi's Hunt",
+  "kenpachi:hells_cut": "Hell's Cut",
 };
 
 // dano aumentado
@@ -183,6 +223,11 @@ const DAMAGE = {
   bloodshed: 25,
   byakuyaSenkeiM1: 22,
   byakuyaFinisher: 130,
+  // Zaraki Kenpachi
+  kenpachiM1: 14,
+  flashSlash: 30, // por avanco, sao 3 avancos
+  stomp: 45,
+  hellsCut: 75, // mesmo dano do Getsuga Tenshou, metade do alcance
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -193,6 +238,23 @@ const SLAM_RADIUS = 4.5; // area de dano aumentada
 const DASH_COOLDOWN_TICKS = 80; // 4s
 const DASH_HORIZONTAL_STRENGTH = 6.5; // impulso bem maior
 const DASH_VERTICAL_STRENGTH = 0.25;
+
+// Zaraki Kenpachi
+const FLASH_SLASH = {
+  advances: 3,
+  distancePerAdvance: 6,
+  stepsPerAdvance: 6,
+  gapTicks: 8, // "pequeno intervalo" entre um avanco e o proximo
+};
+const STOMP_RADIUS = 1.5; // area 3x3 blocos
+const HELLS_CUT_RANGE = 10; // metade do alcance do Getsuga Tenshou (20)
+const KENPACHI_HUNT = {
+  searchRadius: 40,
+  behindDistance: 1.5,
+  slownessAmplifier: 4, // slowness 5
+  slownessTicks: 60, // 3s
+  darknessTicks: 80, // 4s
+};
 
 /* ---------------------------------------------------------
    Utils
@@ -319,7 +381,16 @@ function isMasked(player) {
 }
 
 function dmgMultiplier(player) {
-  return isCoated(player) ? 1.2 : 1;
+  let multiplier = isCoated(player) ? 1.2 : 1;
+
+  // formas despertas que dao buff permanente de dano (Pressao do Kenpachi)
+  const character = getActiveCharacter(player);
+  const awakenedBonus = character?.awakening?.damageMultiplier;
+  if (awakenedBonus && isAwakened(player)) {
+    multiplier *= awakenedBonus;
+  }
+
+  return multiplier;
 }
 
 // dano ao longo do tempo generico (sangramento) - reutilizavel por qualquer personagem
@@ -449,7 +520,7 @@ function getByakuyaWeaponState(player) {
 // decide quais itens devem estar travados nos slots do player nesse momento
 function getActiveItemsForPlayer(player, character) {
   if (character.awakening && isAwakened(player)) {
-    return character.awakening.items;
+    return character.awakening.items ?? character.items;
   }
   if (character.superAttack) {
     const weaponState = getByakuyaWeaponState(player);
@@ -537,18 +608,31 @@ function activateAwakening(player, character) {
   const form = character.awakening;
   if (!form) return;
 
+  // nem todo awakening muda vida, velocidade ou itens: o do Kenpachi mantem
+  // os tres e entrega um burst de pressao espiritual + buff de dano
+  const health = form.health ?? character.health;
+  const items = form.items ?? character.items;
+
   player.setDynamicProperty(DP.awakened, true);
-  applyCharacterEffects(player, form.health, form.speedAmplifier);
+  applyCharacterEffects(player, health, form.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
 
   const inv = getInv(player);
-  for (const slot in form.items) {
-    inv.setItem(Number(slot), new ItemStack(form.items[slot], 1));
+  for (const slot in items) {
+    inv.setItem(Number(slot), new ItemStack(items[slot], 1));
   }
 
-  system.runTimeout(() => healToMax(player, form.health), 2);
+  // a cura existe pra encher o teto novo de vida (caso do Bankai). Um awakening
+  // que mantem o teto nao pode virar cura de graca.
+  if (health > character.health) {
+    system.runTimeout(() => healToMax(player, health), 2);
+  }
 
   world.sendMessage(`§d§l${player.name} despertou: ${form.name}!`);
   player.sendMessage(`§d§lAwakening ativado! §r§dVocê é agora ${form.name}.`);
+
+  if (form.onActivate === "pressure") {
+    activateSpiritualPressure(player, form.pressure);
+  }
 }
 
 function revertAwakening(player, reason) {
@@ -852,6 +936,18 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "byakuya:coating":
       castSakuraCoating(player);
       break;
+    case "kenpachi:flash_slash":
+      castFlashSlash(player);
+      break;
+    case "kenpachi:stomp":
+      castKenpachiStomp(player);
+      break;
+    case "kenpachi:hunt":
+      castKenpachiHunt(player);
+      break;
+    case "kenpachi:hells_cut":
+      castHellsCut(player);
+      break;
   }
 });
 
@@ -961,66 +1057,95 @@ function castGetsugaSlash(player) {
   damageNearbyEntities(player, center, 2.2, DAMAGE.slash);
 }
 
-function castGetsugaRun(player) {
-  if (!tryUseSkill(player, "ichigo:getsuga_run")) return;
+// Avanco com dano ao longo do caminho: o player desliza pra frente por teleport
+// incremental e atinge cada entidade uma vez so. Usado pelo Getsuga Run (um
+// avanco longo) e pelo Flash Slash (tres avancos curtos em sequencia).
+function performDashStrike(player, options) {
+  const {
+    distance,
+    steps,
+    damage,
+    hitRadius = 1.6,
+    particle = "minecraft:crit_particle",
+    burst = "minecraft:large_explosion",
+    onFinish,
+  } = options;
+
   const dim = player.dimension;
   const dir = forwardDirection(player);
-  const start = player.location;
-
-  const totalDistance = 20;
-  const stepsCount = 20; // 1 bloco por tick = deslize suave
-  const distancePerStep = totalDistance / stepsCount;
+  const distancePerStep = distance / steps;
   const hitEntities = new Set();
-
-  dim.playSound("mob.enderdragon.flap", start, { volume: 1, pitch: 1.4 });
-  world.sendMessage(`§b${player.name} §7usou §6Getsuga Run§7!`);
 
   let traveled = 0;
   const interval = system.runInterval(() => {
     traveled += distancePerStep;
 
-    const base = player.location;
-    const next = {
-      x: base.x + dir.x * distancePerStep,
-      y: base.y,
-      z: base.z + dir.z * distancePerStep,
-    };
-
+    let next;
     try {
+      const base = player.location;
+      next = {
+        x: base.x + dir.x * distancePerStep,
+        y: base.y,
+        z: base.z + dir.z * distancePerStep,
+      };
       player.teleport(next, { keepVelocity: false });
     } catch (e) {
       system.clearRun(interval);
       return;
     }
 
-    // particulas de "deslizar" no chao, atras do player
-    dim.spawnParticle("minecraft:crit_particle", {
-      x: next.x - dir.x * 0.6,
-      y: next.y + 0.1,
-      z: next.z - dir.z * 0.6,
-    });
-    dim.spawnParticle("minecraft:large_explosion", {
-      x: next.x - dir.x * 0.9,
-      y: next.y + 0.2,
-      z: next.z - dir.z * 0.9,
-    });
+    // rastro de "deslizar" no chao, atras do player
+    try {
+      dim.spawnParticle(particle, {
+        x: next.x - dir.x * 0.6,
+        y: next.y + 0.1,
+        z: next.z - dir.z * 0.6,
+      });
+      if (burst) {
+        dim.spawnParticle(burst, {
+          x: next.x - dir.x * 0.9,
+          y: next.y + 0.2,
+          z: next.z - dir.z * 0.9,
+        });
+      }
+    } catch (e) {
+      // particula invalida nao deve travar o avanco
+    }
 
     const hitLocation = { x: next.x, y: next.y + 1, z: next.z };
-    const nearby = dim.getEntities({ location: hitLocation, maxDistance: 1.6 });
+    const nearby = dim.getEntities({ location: hitLocation, maxDistance: hitRadius });
+    const finalDamage = damage * dmgMultiplier(player);
     for (const entity of nearby) {
       if (entity.id === player.id || hitEntities.has(entity.id)) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       hitEntities.add(entity.id);
-      entity.applyDamage(DAMAGE.run, {
+      entity.applyDamage(finalDamage, {
         cause: EntityDamageCause.entityAttack,
         damagingEntity: player,
       });
     }
 
-    if (traveled >= totalDistance) {
+    if (traveled >= distance) {
       system.clearRun(interval);
+      if (onFinish) onFinish();
     }
   }, 1);
+}
+
+function castGetsugaRun(player) {
+  if (!tryUseSkill(player, "ichigo:getsuga_run")) return;
+
+  player.dimension.playSound("mob.enderdragon.flap", player.location, {
+    volume: 1,
+    pitch: 1.4,
+  });
+  world.sendMessage(`§b${player.name} §7usou §6Getsuga Run§7!`);
+
+  performDashStrike(player, {
+    distance: 20,
+    steps: 20, // 1 bloco por tick = deslize suave
+    damage: DAMAGE.run,
+  });
 }
 
 // funcao generica: dispara uma onda em formato de lua crescente pra frente
@@ -1350,6 +1475,255 @@ function castSakuraCoating(player) {
 }
 
 /* ---------------------------------------------------------
+   Skills do Zaraki Kenpachi
+   --------------------------------------------------------- */
+
+function castFlashSlash(player) {
+  if (!tryUseSkill(player, "kenpachi:flash_slash")) return;
+
+  world.sendMessage(`§6${player.name} §7usou §eFlash Slash§7!`);
+
+  // Tres avancos. Cada um remira na direcao em que o player esta olhando na hora
+  // e tem seu proprio conjunto de alvos ja atingidos, entao dar os 30 tres vezes
+  // no mesmo alvo depende de virar pra ele entre um avanco e outro - um alvo
+  // parado no caminho de um unico avanco leva so aquele.
+  let advance = 0;
+  const strike = () => {
+    advance++;
+    try {
+      player.dimension.playSound("mob.enderdragon.flap", player.location, {
+        volume: 1.1,
+        pitch: 1.4 + advance * 0.15,
+      });
+    } catch (e) {
+      return; // player saiu do mundo no meio da sequencia
+    }
+
+    performDashStrike(player, {
+      distance: FLASH_SLASH.distancePerAdvance,
+      steps: FLASH_SLASH.stepsPerAdvance,
+      damage: DAMAGE.flashSlash,
+      burst: null,
+      onFinish: () => {
+        if (advance < FLASH_SLASH.advances) {
+          system.runTimeout(strike, FLASH_SLASH.gapTicks);
+        }
+      },
+    });
+  };
+
+  strike();
+}
+
+function castKenpachiStomp(player) {
+  if (!tryUseSkill(player, "kenpachi:stomp")) return;
+  const dim = player.dimension;
+  const loc = player.location;
+
+  world.sendMessage(`§6${player.name} §7usou §eStomp§7!`);
+  dim.playSound("random.explode", loc, { volume: 1.6, pitch: 0.7 });
+
+  // so as particulas da explosao - nenhum bloco e quebrado
+  try {
+    dim.spawnParticle("minecraft:large_explosion", {
+      x: loc.x,
+      y: loc.y + 0.2,
+      z: loc.z,
+    });
+  } catch (e) {}
+  for (let i = 0; i < 10; i++) {
+    const angle = (i / 10) * Math.PI * 2;
+    try {
+      dim.spawnParticle("minecraft:large_explosion", {
+        x: loc.x + Math.cos(angle) * STOMP_RADIUS,
+        y: loc.y + 0.2,
+        z: loc.z + Math.sin(angle) * STOMP_RADIUS,
+      });
+    } catch (e) {}
+  }
+
+  damageNearbyEntities(player, loc, STOMP_RADIUS, DAMAGE.stomp);
+}
+
+function nearestPlayer(player, maxDistance) {
+  const origin = player.location;
+  let best;
+  let bestDistance = Infinity;
+
+  for (const other of player.dimension.getPlayers({ location: origin, maxDistance })) {
+    if (other.id === player.id) continue;
+    const dx = other.location.x - origin.x;
+    const dy = other.location.y - origin.y;
+    const dz = other.location.z - origin.z;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = other;
+    }
+  }
+
+  return best;
+}
+
+function castKenpachiHunt(player) {
+  // procura o alvo ANTES de gastar o cooldown: sem ninguem por perto a skill
+  // nao e consumida
+  const target = nearestPlayer(player, KENPACHI_HUNT.searchRadius);
+  if (!target) {
+    player.sendMessage("§7Nenhum player por perto pra caçar.");
+    return;
+  }
+  if (!tryUseSkill(player, "kenpachi:hunt")) return;
+
+  const view = target.getViewDirection();
+  const length = Math.sqrt(view.x * view.x + view.z * view.z) || 1;
+  const targetLocation = target.location;
+  const behind = {
+    x: targetLocation.x - (view.x / length) * KENPACHI_HUNT.behindDistance,
+    y: targetLocation.y,
+    z: targetLocation.z - (view.z / length) * KENPACHI_HUNT.behindDistance,
+  };
+
+  try {
+    player.teleport(behind, { keepVelocity: false, facingLocation: targetLocation });
+  } catch (e) {
+    player.sendMessage("§7Não deu pra aparecer atrás do alvo.");
+    return;
+  }
+
+  world.sendMessage(
+    `§6${player.name} §7caçou §c${target.name}§7 com §eKenpachi's Hunt§7!`
+  );
+  player.dimension.playSound("mob.endermen.portal", behind, {
+    volume: 1.2,
+    pitch: 0.6,
+  });
+
+  try {
+    target.addEffect("slowness", KENPACHI_HUNT.slownessTicks, {
+      amplifier: KENPACHI_HUNT.slownessAmplifier,
+      showParticles: true,
+    });
+    target.addEffect("darkness", KENPACHI_HUNT.darknessTicks, {
+      amplifier: 0,
+      showParticles: false,
+    });
+    target.sendMessage("§8Algo apareceu atrás de você...");
+  } catch (e) {
+    // alvo saiu do mundo entre a busca e o teleport
+  }
+}
+
+function castHellsCut(player) {
+  if (!tryUseSkill(player, "kenpachi:hells_cut")) return;
+
+  const character = getActiveCharacter(player);
+  const desperation = character?.awakening?.desperation;
+  let damage = DAMAGE.hellsCut;
+  let desperate = false;
+
+  // com o awakening ativo e pouca vida, o dano base triplica
+  if (desperation && desperation.skill === "kenpachi:hells_cut" && isAwakened(player)) {
+    const hp = player.getComponent("minecraft:health");
+    if (hp && hp.currentValue <= desperation.healthThreshold) {
+      damage *= desperation.damageFactor;
+      desperate = true;
+    }
+  }
+
+  world.sendMessage(
+    desperate
+      ? `§4§l${player.name}: HELL'S CUT!!! §r§c(golpe de desespero)`
+      : `§6${player.name}: §lHELL'S CUT!`
+  );
+  player.dimension.playSound("mob.wither.shoot", player.location, {
+    volume: 1.6,
+    pitch: desperate ? 0.35 : 0.6,
+  });
+
+  // mesma onda do Getsuga Tenshou, com metade do alcance
+  fireCrescentWave(player, {
+    radius: 1.8,
+    thickness: 0.9,
+    range: HELLS_CUT_RANGE,
+    damage,
+    particle: desperate ? "minecraft:blood_particle" : "minecraft:crit_particle",
+  });
+}
+
+/* ---------------------------------------------------------
+   Awakening do Kenpachi: Pressao espiritual (tapa-olho removido)
+   --------------------------------------------------------- */
+
+function releaseSpiritualPressure(held) {
+  for (const { entity } of held) {
+    try {
+      entity.removeEffect("blindness");
+      entity.removeEffect("slowness");
+    } catch (e) {
+      // alvo morreu ou saiu do mundo durante a pressao
+    }
+  }
+}
+
+function activateSpiritualPressure(player, cfg) {
+  const dim = player.dimension;
+  const center = player.location;
+
+  world.sendMessage(
+    `§4§l${player.name} arrancou o tapa-olho! §r§cA pressão espiritual cobre tudo.`
+  );
+  dim.playSound("mob.enderdragon.growl", center, { volume: 2, pitch: 0.4 });
+
+  // ancora cada um onde estava: a lentidao sozinha nao prende de verdade, entao
+  // a pressao segura pela posicao (mesma ideia da contencao do Senkei)
+  const held = [];
+  for (const entity of dim.getEntities({ location: center, maxDistance: cfg.radius })) {
+    if (entity.id === player.id) continue;
+    if (!entity.getComponent("minecraft:health")) continue;
+    held.push({ entity, anchor: entity.location });
+    if (entity.typeId === "minecraft:player") {
+      world.sendMessage(`<${entity.name}> ${cfg.chatLine}`);
+    }
+  }
+
+  if (!held.length) return;
+
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed++;
+
+    for (const { entity, anchor } of held) {
+      try {
+        entity.teleport(anchor, { keepVelocity: false });
+        entity.addEffect("blindness", 40, { amplifier: 0, showParticles: false });
+        entity.addEffect("slowness", 40, { amplifier: 9, showParticles: false });
+        if (elapsed % 20 === 0) {
+          // dano cru: o +50% do awakening vale pras skills e pro m1, nao pra
+          // pressao em si
+          entity.applyDamage(cfg.dotPerSecond, {
+            cause: EntityDamageCause.entityAttack,
+            damagingEntity: player,
+          });
+        }
+      } catch (e) {
+        // alvo morreu ou saiu: ignora e segue com o resto
+      }
+    }
+
+    if (elapsed >= cfg.durationTicks) {
+      system.clearRun(interval);
+      releaseSpiritualPressure(held);
+      try {
+        player.sendMessage(
+          "§cA pressão se assentou. §r§6+50% de dano enquanto o Awakening durar."
+        );
+      } catch (e) {}
+    }
+  }, 1);
+}
+
+/* ---------------------------------------------------------
    Super ataque do Byakuya: Senbonzakura Kageyoshi / Senkei
    --------------------------------------------------------- */
 
@@ -1565,6 +1939,11 @@ const MELEE_WEAPONS = {
     awardsAwakening: false,
     onHit: "finisher",
   },
+  "kenpachi:m1_zanpakuto": {
+    baseDamage: DAMAGE.kenpachiM1,
+    particle: "minecraft:crit_particle",
+    dot: null,
+  },
 };
 
 world.afterEvents.entityHitEntity.subscribe((ev) => {
@@ -1600,18 +1979,17 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
     }
 
     if (hitEntity.getComponent("minecraft:health")) {
-      // bonus de dano do Sakura's Coating aplicado por cima do dano base da espada
-      if (isCoated(damagingEntity)) {
-        const bonus = Math.round(weapon.baseDamage * 0.2);
-        if (bonus > 0) {
-          try {
-            hitEntity.applyDamage(bonus, {
-              cause: EntityDamageCause.entityAttack,
-              damagingEntity,
-            });
-          } catch (e) {
-            // ignora
-          }
+      // o dano base da arma vem do minecraft:damage do item, entao aqui so entra
+      // o extra dos buffs ativos (Sakura's Coating, Pressao do Kenpachi, ...)
+      const bonus = Math.round(weapon.baseDamage * (dmgMultiplier(damagingEntity) - 1));
+      if (bonus > 0) {
+        try {
+          hitEntity.applyDamage(bonus, {
+            cause: EntityDamageCause.entityAttack,
+            damagingEntity,
+          });
+        } catch (e) {
+          // ignora
         }
       }
       if (weapon.dot) {

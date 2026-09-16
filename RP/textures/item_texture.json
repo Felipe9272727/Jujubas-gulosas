@@ -55,6 +55,21 @@
     },
     "byakuya:m1_senbonzakura_finisher": {
       "textures": "textures/items/byakuya_m1_senbonzakura_finisher"
+    },
+    "kenpachi:m1_zanpakuto": {
+      "textures": "textures/items/kenpachi_m1_zanpakuto"
+    },
+    "kenpachi:flash_slash": {
+      "textures": "textures/items/kenpachi_flash_slash"
+    },
+    "kenpachi:stomp": {
+      "textures": "textures/items/kenpachi_stomp"
+    },
+    "kenpachi:hunt": {
+      "textures": "textures/items/kenpachi_hunt"
+    },
+    "kenpachi:hells_cut": {
+      "textures": "textures/items/kenpachi_hells_cut"
     }
   }
 }

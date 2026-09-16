@@ -49,6 +49,9 @@ function noNewErrors(label, mark) {
   );
 }
 
+// ids na mesma ordem do registro CHARACTERS (o menu usa Object.keys)
+const CHARACTER_IDS = { ichigo: 0, byakuya: 1, kenpachi: 2 };
+
 const DP = {
   character: "mv:character",
   awakening: "mv:awakening",
@@ -125,7 +128,11 @@ await Promise.resolve();
 await Promise.resolve();
 advanceTicks(20, "ativar ichigo");
 noNewErrors("abrir menu + escolher personagem sem erro", mark);
-check("form exibido", shownForms.length === 1 && shownForms[0].buttons.length >= 2);
+check(
+  "form lista os 3 personagens",
+  shownForms.length === 1 && shownForms[0].buttons.length === Object.keys(CHARACTER_IDS).length,
+  `${shownForms[0]?.buttons.length} botões`
+);
 check("personagem salvo", ichigo.getDynamicProperty(DP.character) === "ichigo");
 check("vida maxima 200", hp(ichigo).effectiveMax === 200, `${hp(ichigo).effectiveMax}`);
 check("vida cheia apos ativar", hp(ichigo).currentValue === 200, `${hp(ichigo).currentValue}`);
@@ -425,6 +432,275 @@ check(
   String(inv(byakuya).getItem(0)?.typeId)
 );
 
+/* ================= Zaraki Kenpachi ================= */
+
+scenario("Zaraki Kenpachi: ativação");
+const kenpachi = createPlayer("KenpachiPlayer", { x: -80, y: 64, z: -80 });
+// longe do caminho dos avancos e com vida alta: e alvo de teste, nao saco de pancada
+const victim = createPlayer("Vítima", { x: -80, y: 64, z: -60 }, 4000);
+const prey = createDummy("Presa", { x: -77, y: 64, z: -80 }, 5000);
+
+mark = errors.length;
+emit("playerSpawn", { player: kenpachi, initialSpawn: true });
+emit("playerSpawn", { player: victim, initialSpawn: true });
+advanceTicks(20, "spawn-kenpachi");
+queueFormResponse(CHARACTER_IDS.kenpachi);
+useItem(kenpachi, "multiversal:character_selector");
+await Promise.resolve();
+await Promise.resolve();
+advanceTicks(20, "ativar-kenpachi");
+noNewErrors("ativar Kenpachi sem erro", mark);
+check("personagem salvo", kenpachi.getDynamicProperty(DP.character) === "kenpachi");
+check("vida maxima 300", hp(kenpachi).effectiveMax === 300, `${hp(kenpachi).effectiveMax}`);
+check(
+  "5 itens do Kenpachi travados nos slots 0-4",
+  JSON.stringify(slotIds(kenpachi, 5)) ===
+    JSON.stringify([
+      "kenpachi:m1_zanpakuto",
+      "kenpachi:flash_slash",
+      "kenpachi:stomp",
+      "kenpachi:hunt",
+      "kenpachi:hells_cut",
+    ]),
+  JSON.stringify(slotIds(kenpachi, 5))
+);
+
+scenario("Flash Slash: 3 avanços de 30");
+mark = errors.length;
+kenpachi.teleport({ x: -80, y: 64, z: -80 });
+prey.teleport({ x: -77, y: 64, z: -80 });
+kenpachi._view = { x: 1, y: 0, z: 0 }; // olhando pro +x
+// cada avanco cobre 6 blocos, entao um alvo em cada trecho testa os tres
+const alvoA = createDummy("AlvoA", { x: -77, y: 64, z: -80 }, 500);
+const alvoB = createDummy("AlvoB", { x: -71, y: 64, z: -80 }, 500);
+const alvoC = createDummy("AlvoC", { x: -65, y: 64, z: -80 }, 500);
+let dmgBefore = log.damages.length;
+useItem(kenpachi, "kenpachi:flash_slash");
+advanceTicks(80, "flash-slash");
+noNewErrors("Flash Slash executa limpo", mark);
+const flashHits = log.damages.slice(dmgBefore).filter((d) => d.amount === 30);
+check(
+  "os 3 avanços acertam, 30 de dano cada",
+  ["AlvoA", "AlvoB", "AlvoC"].every(
+    (name) => flashHits.filter((d) => d.target === name).length === 1
+  ),
+  JSON.stringify(flashHits.map((d) => d.target))
+);
+for (const alvo of [alvoA, alvoB, alvoC]) alvo.kill();
+check(
+  "Kenpachi avançou pra frente",
+  kenpachi.location.x > -80 + 3,
+  `x=${kenpachi.location.x.toFixed(1)}`
+);
+
+scenario("Stomp: 45 de dano em 3x3");
+mark = errors.length;
+kenpachi.teleport({ x: -80, y: 64, z: -80 });
+prey.teleport({ x: -79, y: 64, z: -80 }); // 1 bloco: dentro do 3x3
+dmgBefore = log.damages.length;
+const partBefore = log.particles.length;
+useItem(kenpachi, "kenpachi:stomp");
+advanceTicks(10, "stomp");
+noNewErrors("Stomp executa limpo", mark);
+check(
+  "45 de dano em quem está no 3x3",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 45)
+);
+const stompParticles = log.particles.slice(partBefore);
+check(
+  "solta partícula de explosão",
+  stompParticles.length >= 10 &&
+    stompParticles.every((p) => p.particleId === "minecraft:large_explosion"),
+  `${stompParticles.length} partículas`
+);
+check("NÃO explode de verdade (nenhum createExplosion)", log.explosions.length === 0);
+
+prey.teleport({ x: -74, y: 64, z: -80 }); // 6 blocos: fora do 3x3
+dmgBefore = log.damages.length;
+kenpachi.setDynamicProperty("mv:cd_kenpachi_stomp", undefined);
+useItem(kenpachi, "kenpachi:stomp");
+advanceTicks(10, "stomp-fora");
+check(
+  "quem está fora do 3x3 não leva dano",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "Presa")
+);
+
+scenario("Kenpachi's Hunt");
+mark = errors.length;
+kenpachi.teleport({ x: -80, y: 64, z: -80 });
+victim.teleport({ x: -60, y: 64, z: -80 });
+victim._view = { x: 1, y: 0, z: 0 }; // olhando pro +x
+useItem(kenpachi, "kenpachi:hunt");
+advanceTicks(10, "hunt");
+noNewErrors("Hunt executa limpo", mark);
+check(
+  "teleportou ATRÁS do alvo (lado oposto ao que ele olha)",
+  kenpachi.location.x < victim.location.x &&
+    Math.abs(kenpachi.location.x - victim.location.x) <= 2,
+  `kenpachi.x=${kenpachi.location.x.toFixed(2)} victim.x=${victim.location.x.toFixed(2)}`
+);
+check("alvo com slowness 5 (amplifier 4)", victim.getEffect("slowness")?.amplifier === 4);
+check("alvo com darkness", !!victim.getEffect("darkness"));
+
+mark = errors.length;
+kenpachi.setDynamicProperty("mv:cd_kenpachi_hunt", undefined);
+victim.teleport({ x: 500, y: 64, z: 500 }); // ninguém por perto
+const huntPos = { ...kenpachi.location };
+useItem(kenpachi, "kenpachi:hunt");
+advanceTicks(5, "hunt-sem-alvo");
+noNewErrors("Hunt sem alvo não lança", mark);
+check(
+  "sem alvo, não teleporta e não gasta cooldown",
+  kenpachi.location.x === huntPos.x &&
+    kenpachi.getDynamicProperty("mv:cd_kenpachi_hunt") === undefined
+);
+
+scenario("Hell's Cut");
+mark = errors.length;
+kenpachi.teleport({ x: -80, y: 64, z: -80 });
+kenpachi._view = { x: 1, y: 0, z: 0 };
+prey.teleport({ x: -75, y: 64, z: -80 });
+dmgBefore = log.damages.length;
+useItem(kenpachi, "kenpachi:hells_cut");
+advanceTicks(30, "hells-cut");
+noNewErrors("Hell's Cut executa limpo", mark);
+check(
+  "75 de dano (mesmo do Getsuga Tenshou)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 75)
+);
+
+const farPrey = createDummy("Longe", { x: -65, y: 64, z: -80 }, 500); // 15 blocos
+dmgBefore = log.damages.length;
+kenpachi.setDynamicProperty("mv:cd_kenpachi_hells_cut", undefined);
+useItem(kenpachi, "kenpachi:hells_cut");
+advanceTicks(30, "hells-cut-alcance");
+check(
+  "alcance é metade do Getsuga (não chega a 15 blocos)",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "Longe")
+);
+
+scenario("Awakening: Pressão espiritual");
+mark = errors.length;
+kenpachi.teleport({ x: -80, y: 64, z: -80 });
+victim.teleport({ x: -70, y: 64, z: -80 });
+prey.teleport({ x: -75, y: 64, z: -80 });
+hp(kenpachi).setCurrentValue(200); // não está cheio: o awakening não pode curar
+kenpachi.setDynamicProperty(DP.awakening, 100);
+const msgsBeforePressure = log.worldMessages.length;
+kenpachi.isSneaking = true;
+useItem(kenpachi, "kenpachi:m1_zanpakuto");
+kenpachi.isSneaking = false;
+advanceTicks(2, "pressao-inicio");
+noNewErrors("ativar Pressão sem erro", mark);
+check("awakened = true", kenpachi.getDynamicProperty(DP.awakened) === true);
+check("vida máxima continua 300", hp(kenpachi).effectiveMax === 300, `${hp(kenpachi).effectiveMax}`);
+check("awakening NÃO cura (vida continua 200)", hp(kenpachi).currentValue <= 200, `${hp(kenpachi).currentValue}`);
+check(
+  "itens continuam os mesmos",
+  inv(kenpachi).getItem(0)?.typeId === "kenpachi:m1_zanpakuto" &&
+    inv(kenpachi).getItem(4)?.typeId === "kenpachi:hells_cut"
+);
+check(
+  "cada player preso 'fala' no chat",
+  log.worldMessages
+    .slice(msgsBeforePressure)
+    .some((m) => m.message === "<Vítima> Que pressão espiritual tremenda!")
+);
+
+victim.teleport({ x: -20, y: 64, z: -80 }); // tenta fugir da pressão
+advanceTicks(6, "pressao-prende");
+check(
+  "preso pela pressão volta pro lugar (fica parado)",
+  Math.abs(victim.location.x - (-70)) < 0.01,
+  `x=${victim.location.x.toFixed(2)}`
+);
+check("preso fica cego", !!victim.getEffect("blindness"));
+
+dmgBefore = log.damages.length;
+advanceTicks(60, "pressao-dot");
+const pressureHits = log.damages.slice(dmgBefore).filter((d) => d.target === "Vítima" && d.amount === 10);
+check("10 de dano por segundo durante a pressão", pressureHits.length >= 1, `${pressureHits.length} ticks de dano`);
+noNewErrors("pressão roda os 3s sem erro", mark);
+
+check("pressão soltou: enxerga de novo", !victim.getEffect("blindness"));
+victim.teleport({ x: -20, y: 64, z: -80 });
+advanceTicks(10, "pressao-soltou");
+check(
+  "pressão soltou: se mexe de novo",
+  Math.abs(victim.location.x - (-20)) < 0.01,
+  `x=${victim.location.x.toFixed(2)}`
+);
+
+scenario("Pressão: +50% de dano");
+mark = errors.length;
+kenpachi.teleport({ x: -80, y: 64, z: -80 });
+prey.teleport({ x: -79, y: 64, z: -80 });
+kenpachi.setDynamicProperty("mv:cd_kenpachi_stomp", undefined);
+dmgBefore = log.damages.length;
+useItem(kenpachi, "kenpachi:stomp");
+advanceTicks(10, "stomp-buffado");
+check(
+  "Stomp com +50%: 45 → 67.5",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && Math.abs(d.amount - 67.5) < 0.01),
+  JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.amount))
+);
+
+dmgBefore = log.damages.length;
+hitWith(kenpachi, prey, "kenpachi:m1_zanpakuto");
+check(
+  "m1 com +50%: bônus de 7 por cima do dano do item",
+  log.damages.slice(dmgBefore).some((d) => d.amount === 7),
+  JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.amount))
+);
+noNewErrors("dano buffado sem erro", mark);
+
+scenario("Hell's Cut de desespero (vida ≤ 60)");
+mark = errors.length;
+kenpachi.teleport({ x: -80, y: 64, z: -80 });
+prey.teleport({ x: -75, y: 64, z: -80 });
+hp(kenpachi).setCurrentValue(200);
+kenpachi.setDynamicProperty("mv:cd_kenpachi_hells_cut", undefined);
+dmgBefore = log.damages.length;
+useItem(kenpachi, "kenpachi:hells_cut");
+advanceTicks(30, "hells-cut-normal");
+const normalHit = log.damages.slice(dmgBefore).find((d) => d.target === "Presa");
+check("com vida alta: dano normal (75 x1.5 = 112.5)", normalHit && Math.abs(normalHit.amount - 112.5) < 0.01, `${normalHit?.amount}`);
+
+hp(kenpachi).setCurrentValue(55); // abaixo do limite de 60
+kenpachi.setDynamicProperty("mv:cd_kenpachi_hells_cut", undefined);
+dmgBefore = log.damages.length;
+useItem(kenpachi, "kenpachi:hells_cut");
+advanceTicks(30, "hells-cut-desespero");
+const desperateHit = log.damages.slice(dmgBefore).find((d) => d.target === "Presa");
+check(
+  "com vida ≤60: dano base triplica (225 x1.5 = 337.5)",
+  desperateHit && Math.abs(desperateHit.amount - 337.5) < 0.01,
+  `${desperateHit?.amount}`
+);
+noNewErrors("golpe de desespero sem erro", mark);
+
+scenario("Kenpachi: fim do Awakening");
+mark = errors.length;
+kenpachi.setDynamicProperty(DP.awakening, 2);
+hp(kenpachi).setCurrentValue(120);
+advanceTicks(90, "drenar-pressao");
+noNewErrors("reversão sem erro", mark);
+check("awakened = false", kenpachi.getDynamicProperty(DP.awakened) === false);
+check("vida máxima continua 300", hp(kenpachi).effectiveMax === 300);
+check("NÃO curou ao reverter", hp(kenpachi).currentValue <= 120, `${hp(kenpachi).currentValue}`);
+
+kenpachi.teleport({ x: -80, y: 64, z: -80 });
+prey.teleport({ x: -79, y: 64, z: -80 });
+kenpachi.setDynamicProperty("mv:cd_kenpachi_stomp", undefined);
+dmgBefore = log.damages.length;
+useItem(kenpachi, "kenpachi:stomp");
+advanceTicks(10, "stomp-sem-buff");
+check(
+  "sem awakening o dano volta pra 45",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 45),
+  JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.amount))
+);
+
 /* ================= dash universal ================= */
 
 scenario("Dash universal (agachar + pular)");
@@ -495,7 +771,7 @@ check("alvo frágil morreu", !frail.isValid);
 
 scenario("Desativar personagem");
 mark = errors.length;
-queueFormResponse(2); // botao "Desativar personagem"
+queueFormResponse(Object.keys(CHARACTER_IDS).length); // botao "Desativar personagem"
 useItem(ichigo, "multiversal:character_selector");
 await Promise.resolve();
 await Promise.resolve();

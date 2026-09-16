@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Empacota BP + RP em CombatesMultiversais.mcaddon.
+Empacota BP + RP em BleachBattlegrounds.mcaddon.
 
 Por padrao roda o pipeline inteiro antes de empacotar e se recusa a gerar o
 arquivo se alguma etapa falhar:
@@ -23,7 +23,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ADDON_NAME = "CombatesMultiversais.mcaddon"
+ADDON_NAME = "BleachBattlegrounds.mcaddon"
 
 EXCLUDE_DIRS = {".git", "__pycache__", "node_modules", "dist"}
 EXCLUDE_SUFFIXES = {".pyc"}

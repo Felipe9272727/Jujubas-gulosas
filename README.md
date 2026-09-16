@@ -1,11 +1,15 @@
-# Combates Multiversais
+# Bleach battlegrounds
 
-Addon de PvP pra Minecraft Bedrock (BP + RP) com personagens de multiversos
-diferentes. Cada player escolhe um personagem num menu, ganha vida, itens e
-skills próprias, e luta contra os outros.
+Addon de PvP pra Minecraft Bedrock (BP + RP). Cada player escolhe um personagem
+num menu, ganha vida, itens e skills próprias, e luta contra os outros.
 
-Personagens atuais: **Ichigo Kurosaki (Shikai → Tensa Zangetsu)** e
-**Byakuya Kuchiki (Shikai → Kageyoshi / Senkei)**.
+Personagens atuais:
+
+| Personagem | Vida | Awakening |
+|---|---|---|
+| **Ichigo Kurosaki** (Shikai) | 200 | Tensa Zangetsu (troca os 5 itens) + Máscara Hollow |
+| **Byakuya Kuchiki** (Shikai) | 200 | Super ataque: Kageyoshi ou Senkei |
+| **Zaraki Kenpachi** | 300 | Pressão (tapa-olho removido): burst + 50% de dano |
 
 ## Layout
 
@@ -32,7 +36,7 @@ sim/
 ## Build
 
 ```bash
-python3 tools/build.py          # valida, simula e gera dist/CombatesMultiversais.mcaddon
+python3 tools/build.py          # valida, simula e gera dist/BleachBattlegrounds.mcaddon
 ```
 
 O build **falha de propósito** se qualquer etapa quebrar. As etapas também
@@ -53,10 +57,11 @@ executado), entidades que ficam inválidas quando morrem, inventário, efeitos,
 dynamic properties e formulários com resposta roteirizada.
 
 O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
-`entityHitEntity`, `entitySpawn`, `playerLeave`), usa todas as skills dos dois
-personagens, ativa awakening/máscara/Kageyoshi/Senkei, mata alvos no meio de um
-DoT, simula reload do mundo e desconexão, e roda 2000 ticks livres no fim. São
-122 checks — qualquer exceção em qualquer callback é capturada e reportada.
+`entityHitEntity`, `entitySpawn`, `playerLeave`), usa todas as skills dos três
+personagens, ativa awakening/máscara/Kageyoshi/Senkei/Pressão, mata alvos no
+meio de um DoT, simula reload do mundo e desconexão, e roda 2000 ticks livres
+no fim. São
+166 checks — qualquer exceção em qualquer callback é capturada e reportada.
 
 Foi assim que apareceram os bugs de cooldown pós-reload, a máscara que nunca
 era removida e o buraco na contenção do Senkei.
@@ -66,6 +71,8 @@ era removida e o buraco na contenção do Senkei.
 | Sistema | O que faz |
 |---|---|
 | `CHARACTERS` | Registro de personagens: `id`, `name`, `health`, `items` (slot → item), e opcionalmente `awakening` (forma persistente) ou `superAttack` |
+| `awakening` | `health`, `speedAmplifier` e `items` são **opcionais** — omitir mantém os do personagem base (caso do Kenpachi). `damageMultiplier` dá buff permanente de dano; `onActivate` engata um efeito de entrada |
+| `performDashStrike(player, opts)` | Avanço com dano ao longo do caminho — usado pelo Getsuga Run (1 avanço longo) e pelo Flash Slash (3 curtos) |
 | `MELEE_WEAPONS` | Toda arma de m1: `baseDamage`, `particle`, `dot`, `awardsAwakening`, `onHit` — centraliza o hit corpo-a-corpo |
 | `applyDot(entity, player, perSecond, totalSeconds)` | Dano por segundo (sangramento), limpa sozinho se o alvo morre |
 | `dmgMultiplier(player)` | Multiplicador de dano por buff ativo (hoje só o Sakura's Coating, +20%) |

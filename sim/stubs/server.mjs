@@ -14,6 +14,7 @@ export const log = {
   effects: [],
   actionBars: [],
   titles: [],
+  explosions: [],
 };
 
 function record(err, phase) {
@@ -444,6 +445,12 @@ class Dimension {
     return e;
   }
 
+  // existe pra provar que NINGUEM chama: o Stomp so pode soltar particula
+  createExplosion(location, radius, options) {
+    log.explosions.push({ location, radius, options });
+    return true;
+  }
+
   runCommand(command) {
     log.commands.push({ by: `dimension:${this.id}`, command });
     return { successCount: 1 };
@@ -536,8 +543,8 @@ export const world = {
 
 /* ---------------- helpers pro harness ---------------- */
 
-export function createPlayer(name, location = { x: 0, y: 64, z: 0 }) {
-  const p = new Player({ name, dimension: overworld, location });
+export function createPlayer(name, location = { x: 0, y: 64, z: 0 }, maxHealth = 20) {
+  const p = new Player({ name, dimension: overworld, location, maxHealth });
   world._players.push(p);
   return p;
 }
