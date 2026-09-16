@@ -44,6 +44,12 @@ def png_size(path: Path) -> tuple[int, int] | None:
     return width, height
 
 
+def version_text(version) -> str:
+    if not isinstance(version, (list, tuple)):
+        return str(version)
+    return ".".join(str(n) for n in version)
+
+
 # as texturas sao desenhadas num grid 16x16 e salvas com upscale nearest 4x
 ITEM_GRID = 16
 ITEM_TEXTURE_PX = 64
@@ -69,6 +75,40 @@ if bp_manifest and rp_manifest:
         fail("BP/manifest.json nao depende do UUID do RP")
     if bp_uuid not in rp_deps:
         fail("RP/manifest.json nao depende do UUID do BP")
+
+    bp_version = bp_manifest["header"]["version"]
+    rp_version = rp_manifest["header"]["version"]
+    notes.append(
+        f"versao dos packs: BP {version_text(bp_version)}, RP {version_text(rp_version)}"
+    )
+
+    # O cliente guarda cada pack por (uuid, versao). Dependencia apontando pra
+    # uma versao que nao existe mais faz o jogo reclamar de pack faltando.
+    for label, manifest, other_uuid, other_version in (
+        ("BP", bp_manifest, rp_uuid, rp_version),
+        ("RP", rp_manifest, bp_uuid, bp_version),
+    ):
+        for dependency in manifest.get("dependencies", []):
+            if dependency.get("uuid") != other_uuid:
+                continue
+            if list(dependency.get("version", [])) != list(other_version):
+                fail(
+                    f"{label}/manifest.json depende da versao "
+                    f"{version_text(dependency.get('version'))} do outro pack, mas ele "
+                    f"esta na {version_text(other_version)} "
+                    f"- rode python3 tools/bump_version.py"
+                )
+
+    # modulo fora de sincronia com o header bagunca o cache do cliente
+    for label, manifest in (("BP", bp_manifest), ("RP", rp_manifest)):
+        header_version = manifest["header"]["version"]
+        for module in manifest.get("modules", []):
+            if list(module.get("version", [])) != list(header_version):
+                notes.append(
+                    f"aviso: modulo {module.get('type')} do {label} esta na "
+                    f"{version_text(module.get('version'))} e o header na "
+                    f"{version_text(header_version)}"
+                )
 
     uuids = [bp_uuid, rp_uuid] + [
         m["uuid"] for m in bp_manifest.get("modules", []) + rp_manifest.get("modules", [])

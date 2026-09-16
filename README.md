@@ -26,7 +26,8 @@ RP/                     resource pack
 tools/
   textures.py           grids de caracteres + paletas = fonte das texturas
   gen_textures.py       renderiza os grids em PNG (upscale nearest 4x)
-  validate.py           JSON, itens, texturas, manifests
+  validate.py           JSON, itens, texturas, manifests, versões
+  bump_version.py       sobe a versão dos packs e sincroniza as dependências
   build.py              roda tudo e empacota o .mcaddon
 sim/
   stubs/                @minecraft/server e @minecraft/server-ui falsos
@@ -43,11 +44,33 @@ O build **falha de propósito** se qualquer etapa quebrar. As etapas também
 rodam soltas:
 
 ```bash
-python3 tools/validate.py                    # JSON, itens sem textura, manifests
+python3 tools/validate.py                    # JSON, itens sem textura, manifests, versões
 node --check BP/scripts/main.js              # sintaxe
 python3 tools/gen_textures.py --check        # texturas batem com os grids
 node --import ./sim/register.mjs sim/run.mjs # simulação
 ```
+
+### Versão dos packs (multiplayer)
+
+O cliente do Minecraft guarda cada pack por **(uuid, versão)**. Se o conteúdo
+muda mas a versão fica igual, quem já baixou o pack antes continua usando a
+cópia do cache — e itens novos aparecem **sem textura** só pra essa pessoa,
+enquanto o host (que tem os arquivos locais) vê tudo normal.
+
+Então todo release que mexe em textura, item ou script precisa de um bump:
+
+```bash
+python3 tools/bump_version.py minor   # conteúdo novo (personagem, item, skill)
+python3 tools/bump_version.py patch   # correção
+python3 tools/bump_version.py --show  # versões atuais
+```
+
+O script sobe o header e os módulos dos dois packs e ainda acerta as
+dependências cruzadas (BP→RP e RP→BP), que precisam apontar pra versão exata do
+outro pack. O `validate.py` falha se essas versões saírem de sincronia.
+
+Depois de importar o `.mcaddon` novo, o host precisa **reativar o pack nas
+configurações do mundo** pra ele passar a usar a versão nova.
 
 ### A simulação
 
@@ -108,7 +131,9 @@ guardar um novo prazo em tick absoluto, use esses helpers.
    m1 em `MELEE_WEAPONS`.
 6. **Cobrir na simulação** (`sim/run.mjs`): um cenário que usa todas as skills
    e checa que causam dano.
-7. `python3 tools/build.py`
+7. `python3 tools/bump_version.py minor` — sem isso, quem já tem o pack
+   baixado não vê as texturas novas
+8. `python3 tools/build.py`
 
 O `validate.py` pega item sem textura, textura sem arquivo, item citado no
 script sem definição no BP e ícone no formato antigo — rode antes de testar

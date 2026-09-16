@@ -17,6 +17,7 @@ arquivo se alguma etapa falhar:
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import zipfile
@@ -70,8 +71,16 @@ def pack(out_dir: Path) -> Path:
             zf.write(path, arcname)
 
     size_kb = target.stat().st_size / 1024
+    version = json.loads((ROOT / "RP" / "manifest.json").read_text(encoding="utf-8"))
+    version_text = ".".join(str(n) for n in version["header"]["version"])
+
     print(f"\n\033[32m✔ {target}\033[0m")
-    print(f"  {len(files)} arquivos, {size_kb:.1f} KB")
+    print(f"  {len(files)} arquivos, {size_kb:.1f} KB, packs na versao {version_text}")
+    print(
+        "  \033[33mse mudou textura/item/script desde o ultimo release, rode\033[0m\n"
+        "  \033[33m  python3 tools/bump_version.py minor\033[0m\n"
+        "  \033[33melse quem ja tem o pack baixado continua vendo a versao velha\033[0m"
+    )
     return target
 
 
