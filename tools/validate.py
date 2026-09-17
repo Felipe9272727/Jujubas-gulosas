@@ -242,6 +242,38 @@ if player_entity.exists():
                 if required not in data["minecraft:client_entity"]["description"]:
                     fail(f"RP/entity/player.entity.json perdeu a chave '{required}' do vanilla")
 
+        # o client entity do player so aceita persona (Character Creator) com
+        # min_engine_version <= 1.13.0
+        engine = data.get("minecraft:client_entity", {}).get("description", {}).get(
+            "min_engine_version"
+        )
+        if engine != "1.13.0":
+            fail(
+                "RP/entity/player.entity.json precisa de \"min_engine_version\": \"1.13.0\" "
+                f"na description (achei: {engine!r}) - sem isso a skin de persona quebra"
+            )
+
+# ------------------------------- itens que o script manda pra offhand
+# O Bedrock recusa a offhand EM SILENCIO pra item sem minecraft:allow_off_hand.
+# O marcador da forma gigante mora nessa slot: sem o componente, o modelo nunca
+# escala e nada no jogo diz por que.
+main_js_text = (BP / "scripts" / "main.js").read_text(encoding="utf-8")
+for marker in sorted(set(re.findall(r'offhandMarker:\s*"([^"]+)"', main_js_text))):
+    path = bp_items.get(marker)
+    if path is None:
+        fail(f"offhandMarker '{marker}' nao tem BP/items/*.json")
+        continue
+    item = (parsed.get(path) or {}).get("minecraft:item", {})
+    allow = item.get("components", {}).get("minecraft:allow_off_hand")
+    value = allow.get("value") if isinstance(allow, dict) else allow
+    if not value:
+        fail(
+            f"o item '{marker}' vai pra offhand mas nao declara "
+            f"minecraft:allow_off_hand - o jogo vai recusar sem avisar"
+        )
+    else:
+        notes.append(f"marcador de offhand ok: {marker}")
+
 # ---------------------------------------------------------------- particulas
 particle_ids = set()
 for path in sorted(RP.glob("particles/*.json")):

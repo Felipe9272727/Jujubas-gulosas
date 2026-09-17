@@ -21,6 +21,7 @@ import {
   scheduledRunCount,
 } from "./stubs/server.mjs";
 import { queueFormResponse, shownForms } from "./stubs/server-ui.mjs";
+import fs from "node:fs";
 
 const checks = [];
 let currentScenario = "boot";
@@ -2078,6 +2079,29 @@ check(
   yammy.getComponent("minecraft:equippable").getEquipment("Offhand")?.typeId === "yammy:ira_marker",
   String(yammy.getComponent("minecraft:equippable").getEquipment("Offhand")?.typeId)
 );
+// O marcador so serve se o RP realmente olhar pra ele. Nada amarrava os dois
+// lados, e foi por isso que a forma gigante passou por todos os checks sem
+// nunca escalar no jogo.
+const playerEntity = JSON.parse(
+  fs.readFileSync(new URL("../RP/entity/player.entity.json", import.meta.url), "utf-8")
+);
+const scaleExpr = playerEntity["minecraft:client_entity"].description.scripts.scale;
+const marcadorNaOffhand = yammy
+  .getComponent("minecraft:equippable")
+  .getEquipment("Offhand")?.typeId;
+check(
+  "o scripts.scale do RP olha exatamente o item que está na offhand",
+  !!marcadorNaOffhand && scaleExpr.includes(`'${marcadorNaOffhand}'`),
+  `offhand=${marcadorNaOffhand} scale=${scaleExpr}`
+);
+// o modelo do player tem 1.8 blocos na escala vanilla 0.9375
+const escalaGigante = Number((scaleExpr.match(/\?\s*([\d.]+)/) ?? [])[1]);
+check(
+  "a escala da forma gigante dá ~10 blocos de altura",
+  Math.abs((escalaGigante * 1.8) / 0.9375 - 10) < 0.5,
+  `escala ${escalaGigante} -> ${((escalaGigante * 1.8) / 0.9375).toFixed(2)} blocos`
+);
+
 check(
   "4 itens da Ira",
   JSON.stringify(slotIds(yammy, 4)) ===

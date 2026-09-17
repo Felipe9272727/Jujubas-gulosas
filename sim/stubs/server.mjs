@@ -4,6 +4,8 @@
    (entidade removida vira invalida e lanca, igual no jogo).
    ========================================================= */
 
+import fs from "node:fs";
+
 export const errors = [];
 export const log = {
   worldMessages: [],
@@ -18,6 +20,7 @@ export const log = {
   knockbacks: [],
   teleports: [],
   blocks: [],
+  rejectedEquipment: [],
   cameras: [],
 };
 
@@ -159,6 +162,25 @@ class Container {
   }
 }
 
+// O Bedrock RECUSA a offhand pra item que nao declara minecraft:allow_off_hand,
+// e a recusa e muda: setEquipment devolve false, nao lanca nada. O stub le os
+// BP/items de verdade pra reproduzir isso - foi exatamente esse silencio que
+// deixou a forma gigante do Yammy sem nunca escalar.
+const offHandAllowed = new Set();
+try {
+  const itemsDir = new URL("../../BP/items/", import.meta.url);
+  for (const file of fs.readdirSync(itemsDir)) {
+    if (!file.endsWith(".json")) continue;
+    const data = JSON.parse(fs.readFileSync(new URL(file, itemsDir), "utf-8"));
+    const item = data["minecraft:item"];
+    const allow = item?.components?.["minecraft:allow_off_hand"];
+    const value = typeof allow === "object" ? allow?.value : allow;
+    if (value) offHandAllowed.add(item.description.identifier);
+  }
+} catch (e) {
+  throw new Error(`stub nao conseguiu ler BP/items pra saber o que entra na offhand: ${e.message}`);
+}
+
 class EquippableComponent {
   constructor(entity) {
     this.entity = entity;
@@ -176,6 +198,10 @@ class EquippableComponent {
     if (slot === EquipmentSlot.Mainhand) {
       this.entity._inventory.container.setItem(this.entity.selectedSlotIndex, item);
       return true;
+    }
+    if (slot === EquipmentSlot.Offhand && item && !offHandAllowed.has(item.typeId)) {
+      log.rejectedEquipment.push({ target: this.entity.name, slot, typeId: item.typeId });
+      return false; // igual ao jogo: nao entra e nao avisa
     }
     if (item === undefined) this.map.delete(slot);
     else this.map.set(slot, item);

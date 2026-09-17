@@ -1028,20 +1028,42 @@ function reapplyFormEffects(player) {
   );
 }
 
+// avisado uma vez por player, e rearmado assim que o marcador entra
+const warnedOffhand = new Set();
+
+// O marcador na offhand e a UNICA coisa que faz o modelo ficar gigante: o
+// player.entity.json do RP le essa slot por Molang. Se ele nao chegar la, nao
+// tem escala nenhuma - e o Bedrock RECUSA a offhand em silencio pra item sem
+// minecraft:allow_off_hand (setEquipment devolve false e nao lanca). Por isso
+// aqui a slot e LIDA DE VOLTA: a chamada nao e prova de nada.
 function setOffhandMarker(player, itemId) {
   try {
     const equip = player.getComponent("minecraft:equippable");
-    if (!equip) return;
+    if (!equip) return false;
+
     const current = equip.getEquipment(EquipmentSlot.Offhand);
-    if (itemId) {
-      if (current?.typeId !== itemId) {
-        equip.setEquipment(EquipmentSlot.Offhand, new ItemStack(itemId, 1));
-      }
-    } else if (current) {
-      equip.setEquipment(EquipmentSlot.Offhand, undefined);
+    if (!itemId) {
+      if (current) equip.setEquipment(EquipmentSlot.Offhand, undefined);
+      return true;
     }
+    if (current?.typeId === itemId) return true;
+
+    equip.setEquipment(EquipmentSlot.Offhand, new ItemStack(itemId, 1));
+
+    const landed = equip.getEquipment(EquipmentSlot.Offhand)?.typeId === itemId;
+    if (landed) {
+      warnedOffhand.delete(player.id);
+    } else if (!warnedOffhand.has(player.id)) {
+      // sem isso a forma gigante simplesmente nao acontece e nada diz por que
+      warnedOffhand.add(player.id);
+      player.sendMessage(
+        `§cA forma gigante não conseguiu ocupar a offhand (§7${itemId}§c): ` +
+          `§7o item precisa de minecraft:allow_off_hand.`
+      );
+    }
+    return landed;
   } catch (e) {
-    // sem equippable ou player invalido
+    return false; // sem equippable ou player invalido
   }
 }
 
@@ -5542,6 +5564,7 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   const playerId = ev.playerId;
   removeZonesOwnedBy(playerId);
   removeCursesBy(playerId);
+  warnedOffhand.delete(playerId);
   senkeiChargeTicks.delete(playerId);
   senkeiChargeReady.delete(playerId);
   wasSneakJumping.delete(playerId);

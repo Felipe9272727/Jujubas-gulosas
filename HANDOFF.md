@@ -129,7 +129,18 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    pacote de teleport chega depois e engole o `applyKnockback`. Era isso que
    fazia o Face Hold arremessar mob e não arremessar player. A skill para de
    teleportar, solta a lentidão e só empurra alguns ticks depois.
-9. **Player gigante só pelo resource pack.** Não existe setter de tamanho no
+9. **A offhand recusa item em silêncio.** O Bedrock só aceita na off hand item
+   que declara `minecraft:allow_off_hand` (item format_version ≥ 1.20.30).
+   `setEquipment` devolve `false` e **não lança nada** — o marcador da forma
+   gigante nunca chegava lá, então o Molang do RP nunca via nada e o Yammy
+   nunca crescia. `setOffhandMarker` agora **lê a slot de volta** em vez de
+   confiar na chamada, e avisa no chat quando falha. O `validate.py` exige o
+   componente em todo item citado como `offhandMarker`, e o stub da simulação
+   lê os `BP/items` de verdade pra recusar igual ao jogo.
+10. **O client entity do player precisa de `min_engine_version: "1.13.0"`.**
+   Acima disso as skins de persona (Character Creator) quebram. O `format_version`
+   do arquivo pode ser alto normalmente — é o `min_engine_version` que trava.
+11. **Player gigante só pelo resource pack.** Não existe setter de tamanho no
    Script API e `minecraft:scale` no BP pega todo mundo. O jeito que funciona é
    `scripts.scale` no client entity do player (`RP/entity/player.entity.json`),
    que aceita Molang e escala **só o modelo**. O gatilho é um item invisível
@@ -148,10 +159,12 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    hoje todos têm, então não aparece.
 4. **Pesquisa marca qualquer entidade**, não só player, e o +50% vale pro dano
    de **todos**, não só do Ulquiorra. Foi leitura minha do texto.
-5. **O "dente de tubarão no braço" da Harribel é um item, não um attachable.**
+5. ~~A forma Ira não fica grande no jogo.~~ **RESOLVIDO.** Era a armadilha 9: o
+   marcador não entrava na offhand. Ver acima.
+6. **O "dente de tubarão no braço" da Harribel é um item, não um attachable.**
    O addon não usa attachable em lugar nenhum; a arma da Resurrección é o item
    `harribel:m1_diente` na mão, com textura de dente.
-6. **A hitbox do Yammy gigante continua 1,8 bloco.** O modelo escala pra 10
+7. **A hitbox do Yammy gigante continua 1,8 bloco.** O modelo escala pra 10
    blocos, mas acertar ele usa a caixa normal. Ver a armadilha 7.
 6. **O addon sobrescreve `RP/entity/player.entity.json`**, então conflita com
    outro addon que mexa no mesmo arquivo e pode defasar quando a Mojang mudar o
