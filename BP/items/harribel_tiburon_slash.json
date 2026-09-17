@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "harribel:tiburon_slash",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "harribel:tiburon_slash",
+      "minecraft:display_name": {
+        "value": "Tiburon's Slash"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "harribel_tiburon_slash",
+        "duration": 8
+      }
+    }
+  }
+}

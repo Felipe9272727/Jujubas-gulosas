@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "harribel:maldita_agua",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "harribel:maldita_agua",
+      "minecraft:display_name": {
+        "value": "Maldita Água"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "harribel_maldita_agua",
+        "duration": 180
+      }
+    }
+  }
+}

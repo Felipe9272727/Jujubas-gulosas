@@ -16,6 +16,8 @@ export const log = {
   titles: [],
   explosions: [],
   knockbacks: [],
+  teleports: [],
+  blocks: [],
   cameras: [],
 };
 
@@ -345,7 +347,18 @@ export class Entity {
         `amplifier fora do range do Bedrock (0-255): ${effectType} amplifier ${amplifier}`
       );
     }
+    // No Bedrock o efeito novo so substitui o que ja esta ativo quando o
+    // amplifier e MAIOR OU IGUAL. Aplicar health_boost 244 por cima de um 255
+    // ativo simplesmente nao faz nada - era isso que devolvia o teto errado
+    // (e os +44 de vida) ao sair de um awakening.
+    const active = this._activeEffect(effectType);
+    if (active && active.amplifier > amplifier) {
+      log.effects.push({ target: this.name, effectType, duration, amplifier, ignored: true });
+      return false;
+    }
+
     this._effects.set(effectType, { amplifier, endTick: currentTick + duration });
+    this._clampHealthToMax();
     log.effects.push({ target: this.name, effectType, duration, amplifier });
     return true;
   }
@@ -353,7 +366,17 @@ export class Entity {
   removeEffect(effectType) {
     this._assertValid();
     this._effects.delete(effectType);
+    // tirar o health_boost derruba o teto e o jogo corta a vida atual junto
+    this._clampHealthToMax();
     return true;
+  }
+
+  // teto real considerando o health_boost ativo (espelha HealthComponent)
+  _clampHealthToMax() {
+    if (typeof this._baseMaxHealth !== "number") return;
+    const boost = this._activeEffect("health_boost");
+    const max = this._baseMaxHealth + (boost ? (boost.amplifier + 1) * 4 : 0);
+    if (this._health > max) this._health = max;
   }
 
   // no jogo o efeito some sozinho quando a duracao acaba; sem isso o stub
@@ -420,6 +443,7 @@ export class Entity {
       target: this.name,
       horizontal: { ...horizontal },
       verticalStrength,
+      tick: currentTick,
     });
     // API 2.0: applyKnockback(VectorXZ, number)
     if (typeof horizontal !== "object" || horizontal === null) {
@@ -445,6 +469,7 @@ export class Entity {
       throw new Error("teleport com location invalida");
     }
     this._location = { x: location.x, y: location.y, z: location.z };
+    log.teleports.push({ target: this.name, tick: currentTick });
     return true;
   }
 
@@ -484,10 +509,75 @@ function dist3(a, b) {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+export class BlockPermutation {
+  constructor(typeId) {
+    this.type = { id: typeId };
+  }
+  static resolve(typeId) {
+    if (typeof typeId !== "string" || !typeId.includes(":")) {
+      throw new Error(`BlockPermutation.resolve com id invalido: ${typeId}`);
+    }
+    return new BlockPermutation(typeId);
+  }
+  get typeId() {
+    return this.type.id;
+  }
+}
+
+class Block {
+  constructor(dimension, location) {
+    this.dimension = dimension;
+    this.location = { ...location };
+    this._permutation = BlockPermutation.resolve("minecraft:air");
+  }
+  get typeId() {
+    return this._permutation.typeId;
+  }
+  get isAir() {
+    return this.typeId === "minecraft:air";
+  }
+  get permutation() {
+    return this._permutation;
+  }
+  setPermutation(permutation) {
+    if (!(permutation instanceof BlockPermutation)) {
+      throw new Error("setPermutation espera um BlockPermutation");
+    }
+    this._permutation = permutation;
+    log.blocks.push({
+      location: { ...this.location },
+      typeId: permutation.typeId,
+      tick: currentTick,
+    });
+  }
+}
+
 class Dimension {
   constructor(id) {
     this.id = id;
     this._entities = new Set();
+    this._blocks = new Map();
+  }
+
+  // o jogo devolve o bloco pela coordenada inteira, e undefined em chunk
+  // descarregado - quem usa tem que aguentar os dois casos
+  getBlock(location) {
+    if (!location || typeof location.x !== "number" || Number.isNaN(location.x) ||
+        typeof location.y !== "number" || Number.isNaN(location.y) ||
+        typeof location.z !== "number" || Number.isNaN(location.z)) {
+      throw new Error("getBlock com location invalida");
+    }
+    const key = `${Math.floor(location.x)},${Math.floor(location.y)},${Math.floor(location.z)}`;
+    let block = this._blocks.get(key);
+    if (!block) {
+      block = new Block(this, {
+        x: Math.floor(location.x),
+        y: Math.floor(location.y),
+        z: Math.floor(location.z),
+      });
+      this._blocks.set(key, block);
+    }
+    return block;
   }
 
   spawnParticle(particleId, location, molang) {

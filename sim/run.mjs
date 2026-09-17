@@ -51,11 +51,12 @@ function noNewErrors(label, mark) {
 
 // espelho do registro ARCS do main.js: o menu so mostra o arco atual, entao o
 // indice do botao e relativo ao arco, nao ao CHARACTERS inteiro
-const CERO_METRALLETA_BULLETS = 6; // espelho da constante do main.js
+const CERO_METRALLETA_BULLETS = 6; // balas por fileira (espelho do main.js)
+const CERO_METRALLETA_ROWS = 4; // fileiras por disparo (espelho do main.js)
 
 const ROSTER = [
   { name: "Invasão à Soul Society", ids: ["ichigo", "byakuya", "kenpachi", "mayuri"] },
-  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra", "starkk", "yammy"] },
+  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra", "starkk", "yammy", "harribel"] },
 ];
 
 function locate(id) {
@@ -988,7 +989,9 @@ check(
 );
 check(
   "segundo arco traz os Arrancar",
-  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy"].every((n) => shown.buttons.join(" ").includes(n)),
+  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy", "Harribel"].every((n) =>
+    shown.buttons.join(" ").includes(n)
+  ),
   shown.buttons.join(", ")
 );
 
@@ -1839,14 +1842,14 @@ const foraDaCaixa = createDummy("ForaDaCaixa", { x: -590, y: 64, z: -594 }, 5000
 dmgBefore = log.damages.length;
 const partBeforeVolley = log.particles.length;
 useItem(starkk, "starkk:cero_metralleta");
-advanceTicks(18, "metralleta-primeira-fileira");
+advanceTicks(5, "metralleta-primeira-fileira");
 noNewErrors("Cero Metralleta executa limpo", mark);
 
 // a primeira fileira sai inteira de uma vez: varias balas, nao uma seguida da outra
 const primeiraFileira = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro");
 check(
-  "a fileira inteira acerta de uma vez (balas de 60)",
-  primeiraFileira.length >= 2 && primeiraFileira.every((d) => d.amount === 60),
+  "a fileira inteira acerta de uma vez (balas de 30)",
+  primeiraFileira.length >= 2 && primeiraFileira.every((d) => d.amount === 30),
   `${primeiraFileira.length} balas de ${JSON.stringify([...new Set(primeiraFileira.map((d) => d.amount))])}`
 );
 check(
@@ -1854,16 +1857,26 @@ check(
   primeiraFileira.length <= CERO_METRALLETA_BULLETS,
   `${primeiraFileira.length} acertos`
 );
+
+// o disparo e um PENTE: as outras 3 fileiras vem logo atras, sem esperar a pausa
+advanceTicks(13, "metralleta-resto-do-pente");
+const pente = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro");
+check(
+  "cada disparo é um pente de 4 fileiras coladas",
+  pente.length > primeiraFileira.length &&
+    pente.length <= CERO_METRALLETA_BULLETS * CERO_METRALLETA_ROWS,
+  `${pente.length} acertos no pente (${primeiraFileira.length} na 1ª fileira)`
+);
 check(
   "quem está fora da largura da fileira não leva",
   !log.damages.slice(dmgBefore).some((d) => d.target === "ForaDaCaixa")
 );
 
-// a proxima fileira so vem depois da pausa
+// o proximo pente so vem depois da pausa
 dmgBefore = log.damages.length;
-advanceTicks(30, "metralleta-segunda-fileira");
+advanceTicks(30, "metralleta-segundo-pente");
 check(
-  "vem outra fileira depois da pausa",
+  "vem outro pente depois da pausa",
   log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro").length >= 2
 );
 
@@ -1901,9 +1914,9 @@ check(
 );
 alvoTiro.kill();
 
-/* ================= Yammy Riyalgo ================= */
+/* ================= Yammy Llargo ================= */
 
-scenario("Yammy Riyalgo: ativação");
+scenario("Yammy Llargo: ativação");
 const yammy = createPlayer("YammyPlayer", { x: 1500, y: 64, z: 1500 });
 const sacoDePancada = createDummy("SacoDePancada", { x: 1503, y: 64, z: 1500 }, 500000);
 emit("playerSpawn", { player: yammy, initialSpawn: true });
@@ -1976,6 +1989,16 @@ check(
   JSON.stringify(arremesso?.horizontal)
 );
 check("solta a vítima", !sacoDePancada.getEffect("slowness"));
+// num player o teleport do mesmo tick engole o knockback (o cliente e dono da
+// posicao dele), entao o arremesso TEM que sair depois do ultimo teleport
+const ultimoTeleport = log.teleports
+  .filter((t) => t.target === "SacoDePancada")
+  .reduce((acc, t) => Math.max(acc, t.tick), -1);
+check(
+  "o arremesso não sai no mesmo tick do último teleport",
+  arremesso && arremesso.tick > ultimoTeleport,
+  `knockback no tick ${arremesso?.tick}, último teleport no ${ultimoTeleport}`
+);
 
 scenario("Wrath's Smash: pula e esmaga");
 mark = errors.length;
@@ -2210,6 +2233,346 @@ check(
   String(inv(yammy).getItem(0)?.typeId)
 );
 sacoDePancada.kill();
+
+/* ================= Tier Harribel ================= */
+
+scenario("Tier Harribel: ativação");
+const harribel = createPlayer("HarribelPlayer", { x: 2200, y: 64, z: 2200 });
+const presa = createDummy("Presa", { x: 2203, y: 64, z: 2200 }, 500000);
+emit("playerSpawn", { player: harribel, initialSpawn: true });
+advanceTicks(20, "spawn-harribel");
+
+mark = errors.length;
+await pickCharacter(harribel, "harribel");
+advanceTicks(20, "ativar-harribel");
+noNewErrors("ativar Harribel sem erro", mark);
+check("vida maxima 2600", virtualMax(harribel) === 2600, `${virtualMax(harribel)}`);
+check("vida cheia ao ativar", Math.round(virtualHp(harribel)) === 2600, `${virtualHp(harribel)}`);
+check(
+  "5 itens base nos slots 0-4",
+  JSON.stringify(slotIds(harribel, 5)) ===
+    JSON.stringify([
+      "harribel:m1_zanpakuto",
+      "harribel:tiburon_slash",
+      "harribel:shark_issues",
+      "harribel:water_prison",
+      "harribel:aquas_dash",
+    ]),
+  JSON.stringify(slotIds(harribel, 5))
+);
+
+dmgBefore = log.damages.length;
+hitWith(harribel, presa, "harribel:m1_zanpakuto");
+check(
+  "m1 dá 50 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 50)
+);
+
+scenario("Tiburon's Slash: corte horizontal");
+mark = errors.length;
+harribel.teleport({ x: 2200, y: 64, z: 2200 });
+harribel._view = { x: 1, y: 0, z: 0 };
+presa.teleport({ x: 2208, y: 64, z: 2200 });
+const foraDoCorteHarribel = createDummy("ForaDoCorte", { x: 2208, y: 64, z: 2215 }, 500000);
+dmgBefore = log.damages.length;
+const partBeforeCorte = log.particles.length;
+useItem(harribel, "harribel:tiburon_slash");
+advanceTicks(20, "tiburon-slash");
+noNewErrors("Tiburon's Slash executa limpo", mark);
+check(
+  "180 de dano, uma vez só por alvo",
+  log.damages.slice(dmgBefore).filter((d) => d.target === "Presa" && d.amount === 180).length === 1,
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Presa"))
+);
+check("quem está longe do corte não leva", !log.damages.slice(dmgBefore).some((d) => d.target === "ForaDoCorte"));
+const corteParticulas = log.particles.slice(partBeforeCorte).filter((p) => p.particleId === "harribel:agua");
+check("desenha o corte com água", corteParticulas.length > 50, `${corteParticulas.length} partículas`);
+// deitado: o arco abre pros LADOS, entao a variacao lateral e maior que a vertical
+const espalhamentoZ = Math.max(...corteParticulas.map((p) => p.location.z)) -
+  Math.min(...corteParticulas.map((p) => p.location.z));
+const espalhamentoY = Math.max(...corteParticulas.map((p) => p.location.y)) -
+  Math.min(...corteParticulas.map((p) => p.location.y));
+check(
+  "o corte é deitado (abre mais pros lados do que pra cima)",
+  espalhamentoZ > espalhamentoY * 3,
+  `lateral=${espalhamentoZ.toFixed(1)} vertical=${espalhamentoY.toFixed(1)}`
+);
+
+scenario("Shark Issues: 4 tubarões guiados");
+mark = errors.length;
+harribel.teleport({ x: 2200, y: 64, z: 2200 });
+harribel._view = { x: 1, y: 0, z: 0 };
+presa.teleport({ x: 2212, y: 64, z: 2204 }); // fora da mira, os tubarões curvam
+dmgBefore = log.damages.length;
+useItem(harribel, "harribel:shark_issues");
+advanceTicks(60, "shark-issues");
+noNewErrors("Shark Issues executa limpo", mark);
+const tubaroes = log.damages.slice(dmgBefore).filter((d) => d.target === "Presa");
+check(
+  "os tubarões perseguem e acertam (100 cada)",
+  tubaroes.length >= 1 && tubaroes.every((d) => d.amount === 100),
+  `${tubaroes.length} acertos de ${JSON.stringify([...new Set(tubaroes.map((d) => d.amount))])}`
+);
+check(
+  "no máximo 4 tubarões",
+  tubaroes.length <= 4,
+  `${tubaroes.length} acertos`
+);
+advanceTicks(140, "shark-issues-dissipa");
+noNewErrors("os tubarões somem sozinhos", mark);
+foraDoCorteHarribel.kill();
+
+scenario("Water Prison: cela de água 3x3");
+mark = errors.length;
+harribel.teleport({ x: 2300, y: 64, z: 2300 });
+harribel._view = { x: 1, y: 0, z: 0 };
+presa.teleport({ x: 2306, y: 64, z: 2300 });
+const blocosAntes = log.blocks.length;
+useItem(harribel, "harribel:water_prison");
+advanceTicks(5, "water-prison-fecha");
+noNewErrors("Water Prison executa limpo", mark);
+const aguaColocada = log.blocks.slice(blocosAntes).filter((b) => b.typeId === "minecraft:water");
+check(
+  "coloca uma cela 3x3x3 de água (27 blocos)",
+  aguaColocada.length === 27,
+  `${aguaColocada.length} blocos`
+);
+check("o alvo não consegue se mexer", presa.getEffect("slowness")?.amplifier === 255);
+
+// tenta fugir: a cela puxa de volta
+presa.teleport({ x: 2312, y: 64, z: 2300 });
+advanceTicks(2, "water-prison-fuga");
+const distDaCela = Math.abs(presa.location.x - 2306.5);
+check("puxa de volta quem tenta sair", distDaCela < 1, `dist=${distDaCela.toFixed(2)}`);
+
+const blocosAntesDeAbrir = log.blocks.length;
+advanceTicks(210, "water-prison-abre");
+const restaurados = log.blocks.slice(blocosAntesDeAbrir);
+check(
+  "depois de 10s apaga a água e devolve o que estava lá",
+  restaurados.length === 27 && restaurados.every((b) => b.typeId === "minecraft:air"),
+  `${restaurados.length} blocos, ${JSON.stringify([...new Set(restaurados.map((b) => b.typeId))])}`
+);
+check("e solta o alvo", !presa.getEffect("slowness"));
+
+scenario("Water Prison: alvo morre antes da hora");
+mark = errors.length;
+harribel.teleport({ x: 2400, y: 64, z: 2400 });
+harribel._view = { x: 1, y: 0, z: 0 };
+const preso = createDummy("Preso", { x: 2404, y: 64, z: 2400 }, 100);
+advanceTicks(300, "cooldown-water-prison");
+let blocosMark = log.blocks.length;
+useItem(harribel, "harribel:water_prison");
+advanceTicks(5, "prender");
+check(
+  "cela levantada",
+  log.blocks.slice(blocosMark).filter((b) => b.typeId === "minecraft:water").length === 27
+);
+blocosMark = log.blocks.length;
+preso.kill();
+advanceTicks(5, "alvo-morreu");
+noNewErrors("morte do alvo não quebra a prisão", mark);
+check(
+  "a cela abre sozinha quando o alvo morre (não fica de pé pra sempre)",
+  log.blocks.slice(blocosMark).length === 27 &&
+    log.blocks.slice(blocosMark).every((b) => b.typeId === "minecraft:air"),
+  `${log.blocks.slice(blocosMark).length} blocos devolvidos`
+);
+
+scenario("Aqua's Dash");
+mark = errors.length;
+harribel.teleport({ x: 2500, y: 64, z: 2500 });
+harribel._view = { x: 1, y: 0, z: 0 };
+useItem(harribel, "harribel:aquas_dash");
+advanceTicks(20, "aquas-dash");
+noNewErrors("Aqua's Dash executa limpo", mark);
+check(
+  "avança um dash grande (24 blocos)",
+  Math.abs(harribel.location.x - 2524) < 1.5,
+  `x=${harribel.location.x.toFixed(1)}`
+);
+
+scenario("Resurrección: Tiburón");
+mark = errors.length;
+harribel.teleport({ x: 2200, y: 64, z: 2200 });
+harribel.setDynamicProperty(DP.awakening, 100);
+const msgsBeforeTiburon = log.worldMessages.length;
+harribel.isSneaking = true;
+useItem(harribel, "harribel:m1_zanpakuto");
+harribel.isSneaking = false;
+advanceTicks(20, "tiburon");
+noNewErrors("Resurrección sem erro", mark);
+check(
+  "manda a fala no chat",
+  log.worldMessages
+    .slice(msgsBeforeTiburon)
+    .some((m) => m.message === "<HarribelPlayer> Reduce a cenizas, Tiburón")
+);
+check("awakened = true", harribel.getDynamicProperty(DP.awakened) === true);
+check("vida maxima 3000", virtualMax(harribel) === 3000, `${virtualMax(harribel)}`);
+check(
+  "4 itens da Resurrección nos slots 0-3",
+  JSON.stringify(slotIds(harribel, 4)) ===
+    JSON.stringify([
+      "harribel:m1_diente",
+      "harribel:tsunami",
+      "harribel:vortice",
+      "harribel:maldita_agua",
+    ]),
+  JSON.stringify(slotIds(harribel, 4))
+);
+
+dmgBefore = log.damages.length;
+presa.teleport({ x: 2203, y: 64, z: 2200 });
+hitWith(harribel, presa, "harribel:m1_diente");
+check(
+  "m1 do dente de tubarão dá 90",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 90)
+);
+
+scenario("Tsunami");
+mark = errors.length;
+harribel.teleport({ x: 2600, y: 64, z: 2600 });
+harribel._view = { x: 1, y: 0, z: 0 };
+presa.teleport({ x: 2612, y: 64, z: 2600 });
+const foraDaOnda = createDummy("ForaDaOnda", { x: 2612, y: 64, z: 2620 }, 500000);
+dmgBefore = log.damages.length;
+const kbAntesDaOnda = log.knockbacks.length;
+blocosMark = log.blocks.length;
+useItem(harribel, "harribel:tsunami");
+advanceTicks(30, "tsunami");
+noNewErrors("Tsunami executa limpo", mark);
+const onda = log.damages.slice(dmgBefore).filter((d) => d.target === "Presa");
+check(
+  "750 de dano, uma vez só por alvo",
+  onda.length === 1 && onda[0].amount === 750,
+  JSON.stringify(onda)
+);
+check("empurra quem a onda pega", log.knockbacks.slice(kbAntesDaOnda).some((k) => k.target === "Presa"));
+check("quem está fora da largura não leva", !log.damages.slice(dmgBefore).some((d) => d.target === "ForaDaOnda"));
+check("a água NÃO fica (nenhum bloco colocado)", log.blocks.length === blocosMark, `${log.blocks.length - blocosMark} blocos`);
+foraDaOnda.kill();
+
+scenario("Vórtice de agua");
+mark = errors.length;
+harribel.teleport({ x: 2700, y: 64, z: 2700 });
+harribel._view = { x: 1, y: 0, z: 0 };
+presa.teleport({ x: 2706, y: 64, z: 2700 });
+dmgBefore = log.damages.length;
+useItem(harribel, "harribel:vortice");
+advanceTicks(50, "vortice-metade");
+
+// girar de verdade = orbitar o centro, com o angulo mudando a cada tick
+const raioNoVortice = Math.hypot(presa.location.x - 2706, presa.location.z - 2700);
+const anguloAntes = Math.atan2(presa.location.z - 2700, presa.location.x - 2706);
+advanceTicks(1, "vortice-um-tick");
+const anguloDepois = Math.atan2(presa.location.z - 2700, presa.location.x - 2706);
+check(
+  "joga o alvo pra fora do olho do vórtice",
+  raioNoVortice > 2,
+  `raio=${raioNoVortice.toFixed(2)}`
+);
+check(
+  "gira o alvo em volta do centro",
+  Math.abs(anguloDepois - anguloAntes) > 0.05,
+  `ângulo ${anguloAntes.toFixed(2)} -> ${anguloDepois.toFixed(2)}`
+);
+
+advanceTicks(60, "vortice-fim");
+noNewErrors("Vórtice executa limpo", mark);
+const vortice = log.damages.slice(dmgBefore).filter((d) => d.target === "Presa");
+check(
+  "200 por segundo durante 5 segundos",
+  vortice.length === 5 && vortice.every((d) => d.amount === 200),
+  `${vortice.length} pulsos de ${JSON.stringify([...new Set(vortice.map((d) => d.amount))])}`
+);
+dmgBefore = log.damages.length;
+advanceTicks(40, "vortice-acabou");
+check("para sozinho", !log.damages.slice(dmgBefore).some((d) => d.target === "Presa"));
+
+scenario("Maldita Água: não acaba sozinha");
+mark = errors.length;
+harribel.teleport({ x: 2800, y: 64, z: 2800 });
+harribel._view = { x: 1, y: 0, z: 0 };
+presa.teleport({ x: 2806, y: 64, z: 2800 });
+dmgBefore = log.damages.length;
+useItem(harribel, "harribel:maldita_agua");
+advanceTicks(200, "maldita-agua-10s");
+noNewErrors("Maldita Água executa limpo", mark);
+const maldicao = log.damages.slice(dmgBefore).filter((d) => d.target === "Presa");
+check(
+  "20 de dano por segundo",
+  maldicao.length === 10 && maldicao.every((d) => d.amount === 20),
+  `${maldicao.length} pulsos de ${JSON.stringify([...new Set(maldicao.map((d) => d.amount))])}`
+);
+// mesmo passando do cooldown mais longo da addon, a maldicao continua
+dmgBefore = log.damages.length;
+advanceTicks(600, "maldita-agua-30s");
+check(
+  "continua queimando depois de 30s (não tem prazo)",
+  log.damages.slice(dmgBefore).filter((d) => d.target === "Presa").length === 30
+);
+// e nem a reversão da Resurrección solta o alvo
+harribel.setDynamicProperty(DP.awakening, 2);
+advanceTicks(90, "drenar-tiburon");
+check("awakened = false", harribel.getDynamicProperty(DP.awakened) === false);
+check("vida maxima volta pra 2600", virtualMax(harribel) === 2600, `${virtualMax(harribel)}`);
+check(
+  "itens base restaurados",
+  inv(harribel).getItem(0)?.typeId === "harribel:m1_zanpakuto",
+  String(inv(harribel).getItem(0)?.typeId)
+);
+dmgBefore = log.damages.length;
+advanceTicks(100, "maldita-agua-pos-reversao");
+check(
+  "sair da Resurrección não desfaz a maldição",
+  log.damages.slice(dmgBefore).filter((d) => d.target === "Presa").length === 5
+);
+
+scenario("Maldita Água: acaba quando o alvo morre");
+mark = errors.length;
+presa.kill();
+advanceTicks(40, "alvo-da-maldicao-morreu");
+noNewErrors("morte do alvo não quebra a maldição", mark);
+check(
+  "avisa no chat que a maldição acabou",
+  log.worldMessages.some(
+    (m) => m.to === "*" && m.message.includes("maldição") && m.message.includes("se desfez")
+  )
+);
+dmgBefore = log.damages.length;
+advanceTicks(100, "sem-alvo");
+check(
+  "e para de queimar",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "Presa")
+);
+
+scenario("Maldita Água: acaba se a Harribel sai de personagem");
+mark = errors.length;
+const presa2 = createDummy("Presa2", { x: 2806, y: 64, z: 2800 }, 500000);
+harribel.teleport({ x: 2800, y: 64, z: 2800 });
+harribel._view = { x: 1, y: 0, z: 0 };
+advanceTicks(3600, "cooldown-maldita-agua");
+dmgBefore = log.damages.length;
+useItem(harribel, "harribel:maldita_agua");
+advanceTicks(60, "maldicao-nova");
+check(
+  "maldição nova em andamento",
+  log.damages.slice(dmgBefore).filter((d) => d.target === "Presa2").length === 3
+);
+queueFormResponse(deactivateButtonIndex(harribel));
+useItem(harribel, "multiversal:character_selector");
+await Promise.resolve();
+await Promise.resolve();
+advanceTicks(10, "desativar-harribel");
+dmgBefore = log.damages.length;
+advanceTicks(100, "sem-personagem");
+noNewErrors("desativar com maldição no ar sem erro", mark);
+check(
+  "remover o personagem corta a maldição",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "Presa2")
+);
+presa2.kill();
 
 /* ================= dash universal ================= */
 

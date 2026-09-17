@@ -22,7 +22,8 @@ usar o seletor** passa pro próximo (dá a volta no último).
 | **Grimmjow Jaegerjaquez** | 800 | Resurrección: La Pantera — "Mutile, Pantera" (1200 de vida, speed 5, regen 4) |
 | **Ulquiorra Cifer** | 1600 | Resurrección: Murciélago — "Confine, Murciélago" (2000 de vida) |
 | **Coyote Starkk** | 4000 | Resurrección: Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
-| **Yammy Riyalgo** | 1000 | Resurrección: Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
+| **Yammy Llargo** | 1000 | Resurrección: Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
+| **Tier Harribel** | 2600 | Resurrección: Tiburón — "Reduce a cenizas, Tiburón" (3000 de vida) |
 
 ## Layout
 

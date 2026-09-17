@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "harribel:aquas_dash",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "harribel:aquas_dash",
+      "minecraft:display_name": {
+        "value": "Aqua's Dash"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "harribel_aquas_dash",
+        "duration": 10
+      }
+    }
+  }
+}

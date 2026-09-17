@@ -71,7 +71,8 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 | Grimmjow Jaegerjaquez | 800 | La Pantera — "Mutile, Pantera" (1200, speed 5, regen 4) |
 | Ulquiorra Cifer | 1600 | Murciélago — "Confine, Murciélago" (2000) |
 | Coyote Starkk | 4000 | Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
-| Yammy Riyalgo | 1000 | Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
+| Yammy Llargo | 1000 | Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
+| Tier Harribel | 2600 | Tiburón — "Reduce a cenizas, Tiburón" (3000) |
 
 ## Sistemas genéricos (reusar, não duplicar)
 
@@ -113,7 +114,22 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    em speed/regen tem que chamar `reapplyFormEffects` ao acabar.
 6. **`runTimeout` dispara no tick exato do fim.** Guard do tipo
    `if (!estáAtivo()) return` faz a limpeza nunca rodar.
-7. **Player gigante só pelo resource pack.** Não existe setter de tamanho no
+7. **Efeito mais fraco não substitui o mais forte.** `addEffect` só troca o
+   efeito ativo quando o amplifier é **maior ou igual**. Voltar de um awakening
+   aplicando `health_boost` 244 por cima do 255 da forma desperta não fazia
+   nada: o teto continuava o antigo (era daí que vinham os "+44 de vida" do
+   Yammy, e o speed/regen que não voltavam ao base). Por isso
+   `setPermanentEffect` **remove antes de aplicar**. E como tirar o
+   `health_boost` derruba o teto pra 20 — e o jogo corta a vida atual junto —
+   `setMaxHealth` guarda a vida antes e devolve depois, limitada pelo teto
+   **calculado** (`realMaxHealthFor`), não pelo `effectiveMax`, que pode levar
+   um tick pra acompanhar.
+8. **Teleportar e empurrar no mesmo tick não funciona em player.** Num mob o
+   servidor manda na posição, mas o cliente é dono da posição do player: o
+   pacote de teleport chega depois e engole o `applyKnockback`. Era isso que
+   fazia o Face Hold arremessar mob e não arremessar player. A skill para de
+   teleportar, solta a lentidão e só empurra alguns ticks depois.
+9. **Player gigante só pelo resource pack.** Não existe setter de tamanho no
    Script API e `minecraft:scale` no BP pega todo mundo. O jeito que funciona é
    `scripts.scale` no client entity do player (`RP/entity/player.entity.json`),
    que aceita Molang e escala **só o modelo**. O gatilho é um item invisível
@@ -132,7 +148,10 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    hoje todos têm, então não aparece.
 4. **Pesquisa marca qualquer entidade**, não só player, e o +50% vale pro dano
    de **todos**, não só do Ulquiorra. Foi leitura minha do texto.
-5. **A hitbox do Yammy gigante continua 1,8 bloco.** O modelo escala pra 10
+5. **O "dente de tubarão no braço" da Harribel é um item, não um attachable.**
+   O addon não usa attachable em lugar nenhum; a arma da Resurrección é o item
+   `harribel:m1_diente` na mão, com textura de dente.
+6. **A hitbox do Yammy gigante continua 1,8 bloco.** O modelo escala pra 10
    blocos, mas acertar ele usa a caixa normal. Ver a armadilha 7.
 6. **O addon sobrescreve `RP/entity/player.entity.json`**, então conflita com
    outro addon que mexa no mesmo arquivo e pode defasar quando a Mojang mudar o
@@ -158,6 +177,10 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Cero Oscuras | cd 35s |
 | Lanza del Relámpago | 900 de dano, raio 18, cd 60s |
 | Hell's Cut desespero (Kenpachi) | 3× base **e** o +50% por cima = 337,5 |
+| Cero Metralleta (Starkk) | 30 por bala (era 60 com 1 fileira; agora são 4 por disparo) |
+| Aqua's Dash (Harribel) | 80 de dano de contato, 24 blocos |
+| M1 do Dente de Tubarão (Harribel) | 90 de dano |
+| Tsunami / Vórtice (Harribel) | largura 14 e altura 6; raio do vórtice 7 |
 
 ## Próximos passos sugeridos
 

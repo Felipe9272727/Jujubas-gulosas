@@ -196,6 +196,33 @@
     },
     "yammy:ira_marker": {
       "textures": "textures/items/yammy_ira_marker"
+    },
+    "harribel:m1_zanpakuto": {
+      "textures": "textures/items/harribel_m1_zanpakuto"
+    },
+    "harribel:tiburon_slash": {
+      "textures": "textures/items/harribel_tiburon_slash"
+    },
+    "harribel:shark_issues": {
+      "textures": "textures/items/harribel_shark_issues"
+    },
+    "harribel:water_prison": {
+      "textures": "textures/items/harribel_water_prison"
+    },
+    "harribel:aquas_dash": {
+      "textures": "textures/items/harribel_aquas_dash"
+    },
+    "harribel:m1_diente": {
+      "textures": "textures/items/harribel_m1_diente"
+    },
+    "harribel:tsunami": {
+      "textures": "textures/items/harribel_tsunami"
+    },
+    "harribel:vortice": {
+      "textures": "textures/items/harribel_vortice"
+    },
+    "harribel:maldita_agua": {
+      "textures": "textures/items/harribel_maldita_agua"
     }
   }
 }

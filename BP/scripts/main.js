@@ -4,6 +4,7 @@ import {
   EntityDamageCause,
   ItemStack,
   EquipmentSlot,
+  BlockPermutation,
 } from "@minecraft/server";
 import { ActionFormData, MessageFormData } from "@minecraft/server-ui";
 
@@ -266,7 +267,7 @@ const CHARACTERS = {
   },
   yammy: {
     id: "yammy",
-    name: "Yammy Riyalgo",
+    name: "Yammy Llargo",
     health: 1000,
     items: {
       0: "yammy:m1_punches",
@@ -311,6 +312,33 @@ const CHARACTERS = {
       },
     },
   },
+  harribel: {
+    id: "harribel",
+    name: "Tier Harribel",
+    health: 2600,
+    items: {
+      0: "harribel:m1_zanpakuto",
+      1: "harribel:tiburon_slash",
+      2: "harribel:shark_issues",
+      3: "harribel:water_prison",
+      4: "harribel:aquas_dash",
+    },
+    awakening: {
+      name: "Resurrección: Tiburón",
+      triggerItem: "harribel:m1_zanpakuto",
+      health: 3000,
+      onActivate: "battlecry",
+      chatLine: "Reduce a cenizas, Tiburón",
+      cryParticle: "harribel:agua",
+      cryPitch: 1.4,
+      items: {
+        0: "harribel:m1_diente",
+        1: "harribel:tsunami",
+        2: "harribel:vortice",
+        3: "harribel:maldita_agua",
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -342,7 +370,7 @@ const ARCS = [
   {
     id: "hueco_mundo",
     name: "Arrancar / Hueco Mundo",
-    characters: ["grimmjow", "ulquiorra", "starkk", "yammy"],
+    characters: ["grimmjow", "ulquiorra", "starkk", "yammy", "harribel"],
   },
 ];
 
@@ -401,6 +429,11 @@ const HEALTH_BOOST_LEVEL_FOR = (targetMaxHealth) => {
   const level = Math.max(0, Math.ceil(extra / 4) - 1);
   return Math.min(level, MAX_EFFECT_AMPLIFIER);
 };
+
+// teto REAL que esse maxHealth vira depois de arredondar pro nivel do efeito
+function realMaxHealthFor(virtualMaxHealth) {
+  return 20 + (HEALTH_BOOST_LEVEL_FOR(virtualMaxHealth) + 1) * 4;
+}
 
 // Acima do teto a vida vira "virtual": o pool real fica em 1044 e todo dano do
 // addon e dividido por essa escala antes de entrar. Pra quem cabe no teto a
@@ -487,6 +520,13 @@ const SKILL_COOLDOWN_TICKS = {
   "yammy:quebramundos": 800, // 40s - nao especificado
   "yammy:cero_barrage": 700, // 35s - nao especificado
   "yammy:rugido_diablo": 600, // 30s - nao especificado
+  "harribel:tiburon_slash": 160, // 8s
+  "harribel:shark_issues": 180, // 9s
+  "harribel:water_prison": 300, // 15s
+  "harribel:aquas_dash": 200, // 10s
+  "harribel:tsunami": 200, // 10s
+  "harribel:vortice": 500, // 25s
+  "harribel:maldita_agua": 3600, // 180s
 };
 
 const SKILL_NAMES = {
@@ -538,6 +578,13 @@ const SKILL_NAMES = {
   "yammy:quebramundos": "Quebramundos",
   "yammy:cero_barrage": "Gran Rey Cero Barrage",
   "yammy:rugido_diablo": "Rugido del Diablo",
+  "harribel:tiburon_slash": "Tiburon's Slash",
+  "harribel:shark_issues": "Shark Issues",
+  "harribel:water_prison": "Water Prison",
+  "harribel:aquas_dash": "Aqua's Dash",
+  "harribel:tsunami": "Tsunami",
+  "harribel:vortice": "Vórtice de Agua",
+  "harribel:maldita_agua": "Maldita Água",
 };
 
 // dano aumentado
@@ -596,8 +643,8 @@ const DAMAGE = {
   cuchillosM1: 100,
   lilynetteShot: 120, // tambem usado pelo Rifle, por tiro
   escopeta: 240, // dobro do disparo comum
-  ceroMetralletaBullet: 60, // por bala; sao 6 por fileira, 15 fileiras
-  // Yammy Riyalgo
+  ceroMetralletaBullet: 30, // por bala; 6 por fileira, 4 fileiras por disparo, 15 disparos
+  // Yammy Llargo
   yammyM1: 20,
   punchesBarrage: 80, // por soco
   wrathsSmash: 60, // por explosao da onda
@@ -606,6 +653,16 @@ const DAMAGE = {
   iraM1: 300,
   quebramundos: 1000,
   rugidoDiabloTick: 50, // por tick, por 3s
+  // Tier Harribel
+  harribelM1: 50,
+  tiburonSlash: 180,
+  sharkIssues: 100, // por tubarao, sao 4
+  aquasDash: 80, // nao especificado
+  // Resurreccion: Tiburon
+  dienteM1: 90, // nao especificado
+  tsunami: 750,
+  vorticePerSecond: 200, // por segundo, por 5s
+  malditaAguaPerSecond: 20, // por segundo, ate alguem morrer
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -710,6 +767,9 @@ const KAMARADA = {
   maxTicks: 100, // tempo de vida maximo caso nao acerte nada
   hitRadius: 2,
   turnRate: 0.35, // quao forte cada lobo corrige rumo ao alvo por tick
+  particle: "grimmjow:cero",
+  // funcao porque o DAMAGE e declarado depois desse bloco
+  damage: () => DAMAGE.kamarada,
 };
 // Resurreccion: Los Lobos (persona Lilynette)
 const LILYNETTE_SHOT = {
@@ -720,7 +780,7 @@ const LILYNETTE_SHOT = {
 const RIFLE = { shots: 3, gapTicks: 4, radius: 0.9, range: 26, speed: 1.6, searchRadius: 30 };
 const ESCOPETA = { radius: 1.3, range: 12, speed: 2 };
 // dispara FILEIRAS de balas: varias de uma vez, pausa, outra fileira
-// Yammy Riyalgo
+// Yammy Llargo
 const PUNCHES_BARRAGE = { punches: 5, gapTicks: 6, forward: 4, width: 3, blastRadius: 2.5 };
 const FACE_HOLD = {
   searchRadius: 12,
@@ -728,6 +788,7 @@ const FACE_HOLD = {
   holdTicks: 60, // 3s segurando pelo rosto
   launchHorizontal: 5.5,
   launchVertical: 1.4,
+  launchDelayTicks: 3, // folga entre o ultimo teleport e o arremesso
 };
 const WRATHS_SMASH = {
   jumpStrength: 2.2,
@@ -747,10 +808,52 @@ const QUEBRAMUNDOS = { blastRadius: 26 }; // maior que a Lanza del Relampago (18
 const CERO_BARRAGE = { shots: 10, gapTicks: 8 };
 const RUGIDO_DIABLO = { radius: 12, durationTicks: 60 }; // 50 por tick por 3s
 
+// Tier Harribel
+const TIBURON_SLASH = { radius: 4, thickness: 1.3, range: 26, speed: 2.2 };
+const SHARK_ISSUES = {
+  count: 4,
+  searchRadius: 30,
+  speed: 1.3,
+  maxTicks: 120,
+  hitRadius: 2.2,
+  turnRate: 0.35,
+  particle: "harribel:agua",
+  summonSound: "mob.dolphin.splash",
+  damage: () => DAMAGE.sharkIssues,
+};
+const WATER_PRISON = {
+  range: 30, // alcance da mira
+  radius: 1, // 1 bloco pra cada lado = caixa 3x3
+  durationTicks: 200, // 10s
+  leash: 0.7, // se andar mais que isso, volta pro centro da cela
+};
+const AQUAS_DASH = { distance: 24, steps: 12 };
+// Resurreccion: Tiburon
+const TSUNAMI = {
+  width: 14,
+  height: 6,
+  range: 30,
+  speed: 1.5,
+  knockbackHorizontal: 3.2,
+  knockbackVertical: 0.9,
+};
+const VORTICE = {
+  range: 30,
+  radius: 7,
+  durationTicks: 100, // 5s
+  tickInterval: 20, // 200 de dano por segundo
+  spinSpeed: 0.4, // radianos por tick que o alvo gira em volta do centro
+  minOrbit: 2.5, // quem esta no olho do vortice e jogado pra fora pra girar
+};
+const MALDITA_AGUA = { range: 30, tickInterval: 20 }; // 20 por segundo, sem prazo
+
 const CERO_METRALLETA = {
   volleys: 15,
-  volleyGapTicks: 20, // 15 fileiras em 15s
-  bulletsPerVolley: 6,
+  volleyGapTicks: 20, // 15 disparos em 15s
+  rowsPerVolley: 4, // cada disparo e um pente de 4 fileiras, nao uma so
+  rowGapTicks: 3, // as fileiras do mesmo disparo saem coladas
+  rowHeightStep: 0.45, // cada fileira sai um pouco mais alta que a anterior
+  bulletsPerRow: 6,
   rowWidth: 4, // largura da fileira, as balas saem lado a lado
   radius: 0.8,
   range: 40,
@@ -848,6 +951,38 @@ function healToMax(player, maxHealth) {
   }
 }
 
+// Um efeito novo so substitui o que ja esta ativo quando o amplifier e MAIOR OU
+// IGUAL: aplicar health_boost 244 (os 1000 do Yammy base) por cima do 255 da Ira
+// nao fazia NADA, entao o player saia do awakening com o teto da forma desperta
+// - eram esses os +44 de vida. Valia pro speed e pro regen tambem. Por isso todo
+// efeito permanente e removido antes de ser reaplicado.
+const PERMANENT_EFFECT_TICKS = 20000000;
+
+function setPermanentEffect(player, effect, amplifier) {
+  try {
+    player.removeEffect(effect);
+  } catch (e) {}
+  try {
+    player.addEffect(effect, PERMANENT_EFFECT_TICKS, {
+      amplifier,
+      showParticles: false,
+    });
+  } catch (e) {}
+}
+
+// Tirar o health_boost derruba o teto pra 20 e o jogo corta a vida atual junto,
+// entao a vida e guardada antes e devolvida logo depois. O limite usado e o teto
+// CALCULADO da forma nova, nao o effectiveMax: o jogo pode levar um tick pra
+// atualizar o atributo e nesse meio tempo ele ainda reporta o teto antigo.
+function setMaxHealth(player, maxHealth) {
+  const before = player.getComponent("minecraft:health")?.currentValue ?? 0;
+
+  setPermanentEffect(player, "health_boost", HEALTH_BOOST_LEVEL_FOR(maxHealth));
+
+  const hp = player.getComponent("minecraft:health");
+  if (hp) hp.setCurrentValue(Math.min(before, realMaxHealthFor(maxHealth)));
+}
+
 function applyCharacterEffects(
   player,
   maxHealth,
@@ -857,15 +992,8 @@ function applyCharacterEffects(
 ) {
   player.setDynamicProperty(DP.healthScale, healthScaleFor(maxHealth));
 
-  const level = HEALTH_BOOST_LEVEL_FOR(maxHealth);
-  player.addEffect("health_boost", 20000000, {
-    amplifier: level,
-    showParticles: false,
-  });
-  player.addEffect("speed", 20000000, {
-    amplifier: speedAmplifier,
-    showParticles: false,
-  });
+  setMaxHealth(player, maxHealth);
+  setPermanentEffect(player, "speed", speedAmplifier);
 
   // regenAmplifier null = forma sem regeneracao passiva. A Ira do Yammy troca
   // ela por uma cura em bloco a cada 4s; somar as duas descaracterizaria o numero.
@@ -874,20 +1002,12 @@ function applyCharacterEffects(
       player.removeEffect("regeneration");
     } catch (e) {}
   } else {
-    player.addEffect("regeneration", 20000000, {
-      amplifier: regenAmplifier,
-      showParticles: false,
-    });
+    setPermanentEffect(player, "regeneration", regenAmplifier);
   }
 
   // efeitos permanentes proprios da forma (lentidao e fadiga da Ira)
   for (const extra of extraEffects ?? []) {
-    try {
-      player.addEffect(extra.effect, 20000000, {
-        amplifier: extra.amplifier ?? 0,
-        showParticles: false,
-      });
-    } catch (e) {}
+    setPermanentEffect(player, extra.effect, extra.amplifier ?? 0);
   }
 }
 
@@ -1222,6 +1342,7 @@ function deactivateCharacter(player) {
   player.setDynamicProperty(DP.starkkForm, "starkk");
   clearComboCounters(player);
   removeZonesOwnedBy(player.id);
+  removeCursesBy(player.id);
 
   system.runTimeout(() => {
     const hp = player.getComponent("minecraft:health");
@@ -1302,10 +1423,16 @@ function revertAwakening(player, reason) {
     inv.setItem(Number(slot), new ItemStack(character.items[slot], 1));
   }
 
-  // mantem a vida atual do player, so limita ao novo maximo (nao cura)
+  // mantem a vida atual do player, so limita ao novo maximo (nao cura). O teto
+  // vem do calculo da forma base porque o effectiveMax pode demorar um tick pra
+  // acompanhar o health_boost novo e ainda reportar o da forma desperta.
   system.runTimeout(() => {
     const hp = player.getComponent("minecraft:health");
-    if (hp) hp.setCurrentValue(Math.min(previousHealth, hp.effectiveMax));
+    if (hp) {
+      hp.setCurrentValue(
+        Math.min(previousHealth, realMaxHealthFor(character.health))
+      );
+    }
   }, 2);
 
   player.sendMessage(
@@ -1753,6 +1880,27 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "yammy:rugido_diablo":
       castRugidoDiablo(player);
       break;
+    case "harribel:tiburon_slash":
+      castTiburonSlash(player);
+      break;
+    case "harribel:shark_issues":
+      castSharkIssues(player);
+      break;
+    case "harribel:water_prison":
+      castWaterPrison(player);
+      break;
+    case "harribel:aquas_dash":
+      castAquasDash(player);
+      break;
+    case "harribel:tsunami":
+      castTsunami(player);
+      break;
+    case "harribel:vortice":
+      castVortice(player);
+      break;
+    case "harribel:maldita_agua":
+      castMalditaAgua(player);
+      break;
   }
 });
 
@@ -1958,6 +2106,8 @@ function fireCrescentWave(player, options) {
     particle = "minecraft:crit_particle",
     burst = "minecraft:large_explosion",
     rows = 12,
+    // corte deitado: o arco abre pros lados em vez de pra cima e pra baixo
+    horizontal = false,
   } = options;
 
   const dim = player.dimension;
@@ -1977,11 +2127,17 @@ function fireCrescentWave(player, options) {
 
       for (let s = 0; s <= 2; s++) {
         const localX = backLocal + ((frontLocal - backLocal) * s) / 2;
-        const p = {
-          x: origin.x + dir.x * (travelled + localX) + perp.x * 0.1,
-          y: origin.y + 1 + dy,
-          z: origin.z + dir.z * (travelled + localX) + perp.z * 0.1,
-        };
+        const p = horizontal
+          ? {
+              x: origin.x + dir.x * (travelled + localX) + perp.x * dy,
+              y: origin.y + 1.1,
+              z: origin.z + dir.z * (travelled + localX) + perp.z * dy,
+            }
+          : {
+              x: origin.x + dir.x * (travelled + localX) + perp.x * 0.1,
+              y: origin.y + 1 + dy,
+              z: origin.z + dir.z * (travelled + localX) + perp.z * 0.1,
+            };
         try {
           dim.spawnParticle(particle, p);
           if (s === 2) {
@@ -3542,15 +3698,17 @@ function castCrescentCanines(player) {
   launchCrescentCanine(player, -angle);
 }
 
-// um lobo guiado: persegue o alvo mais proximo com correcao gradual de rumo
-function summonKamaradaWolf(player, index) {
+// uma fera guiada: persegue o alvo mais proximo com correcao gradual de rumo e
+// explode ao encostar. Os Lobos do Starkk e os Tubaroes da Harribel sao a mesma
+// coisa com particula, contagem e dano diferentes.
+function summonHomingBeast(player, index, cfg) {
   const dim = player.dimension;
   const dir = forwardDirection(player);
   const perp = { x: -dir.z, z: dir.x };
   const origin = player.location;
 
   // saem em leque pra nao virar uma bola so
-  const spread = (index - (KAMARADA.count - 1) / 2) * 0.6;
+  const spread = (index - (cfg.count - 1) / 2) * 0.6;
   let position = {
     x: origin.x + dir.x * 1.5 + perp.x * spread,
     y: origin.y + 1,
@@ -3563,7 +3721,7 @@ function summonKamaradaWolf(player, index) {
     ticks++;
 
     // mira em qualquer entidade com vida, nao so player
-    const target = nearestTarget(player, KAMARADA.searchRadius, position);
+    const target = nearestTarget(player, cfg.searchRadius, position);
     if (target) {
       try {
         const loc = target.location;
@@ -3574,9 +3732,9 @@ function summonKamaradaWolf(player, index) {
 
         // correcao gradual: o lobo curva rumo ao alvo em vez de virar de uma vez
         heading = {
-          x: heading.x + (wx / want - heading.x) * KAMARADA.turnRate,
-          y: heading.y + (wy / want - heading.y) * KAMARADA.turnRate,
-          z: heading.z + (wz / want - heading.z) * KAMARADA.turnRate,
+          x: heading.x + (wx / want - heading.x) * cfg.turnRate,
+          y: heading.y + (wy / want - heading.y) * cfg.turnRate,
+          z: heading.z + (wz / want - heading.z) * cfg.turnRate,
         };
         const norm =
           Math.sqrt(
@@ -3589,14 +3747,14 @@ function summonKamaradaWolf(player, index) {
     }
 
     position = {
-      x: position.x + heading.x * KAMARADA.speed,
-      y: position.y + heading.y * KAMARADA.speed,
-      z: position.z + heading.z * KAMARADA.speed,
+      x: position.x + heading.x * cfg.speed,
+      y: position.y + heading.y * cfg.speed,
+      z: position.z + heading.z * cfg.speed,
     };
 
     for (let i = 0; i < 4; i++) {
       try {
-        dim.spawnParticle("grimmjow:cero", {
+        dim.spawnParticle(cfg.particle, {
           x: position.x + (Math.random() - 0.5) * 0.7,
           y: position.y + (Math.random() - 0.5) * 0.7,
           z: position.z + (Math.random() - 0.5) * 0.7,
@@ -3606,7 +3764,7 @@ function summonKamaradaWolf(player, index) {
 
     // explode ao encostar em alguem
     const touched = dim
-      .getEntities({ location: position, maxDistance: KAMARADA.hitRadius })
+      .getEntities({ location: position, maxDistance: cfg.hitRadius })
       .some(
         (entity) =>
           entity.id !== player.id && entity.getComponent("minecraft:health")
@@ -3624,12 +3782,12 @@ function summonKamaradaWolf(player, index) {
           });
         }
       } catch (e) {}
-      damageNearbyEntities(player, position, KAMARADA.hitRadius, DAMAGE.kamarada);
+      damageNearbyEntities(player, position, cfg.hitRadius, cfg.damage());
       return;
     }
 
-    // sem acertar ninguem o lobo se dissipa, sem dano
-    if (ticks >= KAMARADA.maxTicks) {
+    // sem acertar ninguem a fera se dissipa, sem dano
+    if (ticks >= cfg.maxTicks) {
       system.clearRun(interval);
     }
   }, 1);
@@ -3645,7 +3803,7 @@ function castKamarada(player) {
   });
 
   for (let i = 0; i < KAMARADA.count; i++) {
-    summonKamaradaWolf(player, i);
+    summonHomingBeast(player, i, KAMARADA);
   }
 }
 
@@ -3733,9 +3891,10 @@ function castCeroMetralleta(player) {
   world.sendMessage(`§9§l${player.name}: CERO METRALLETA!`);
   dim.playSound("mob.wither.death", player.location, { volume: 1.6, pitch: 1.4 });
 
-  // Uma fileira = varias balas saindo lado a lado no mesmo instante. A rajada e
-  // uma sequencia dessas fileiras, nao um tiro atras do outro.
-  const fireVolley = () => {
+  // Uma fileira = varias balas saindo lado a lado no mesmo instante. Um disparo
+  // e um PENTE de fileiras coladas (4 delas, cada uma um pouco mais alta), e a
+  // rajada e uma sequencia desses pentes.
+  const fireRow = (rowIndex) => {
     let origin;
     let dir;
     try {
@@ -3748,12 +3907,16 @@ function castCeroMetralleta(player) {
 
     const perp = { x: -dir.z, z: dir.x };
     const half = CERO_METRALLETA.rowWidth / 2;
+    // fileiras empilhadas em volta da linha de tiro, sem subir o pente inteiro
+    const height =
+      (rowIndex - (CERO_METRALLETA.rowsPerVolley - 1) / 2) *
+      CERO_METRALLETA.rowHeightStep;
 
-    for (let i = 0; i < CERO_METRALLETA.bulletsPerVolley; i++) {
+    for (let i = 0; i < CERO_METRALLETA.bulletsPerRow; i++) {
       const t =
-        CERO_METRALLETA.bulletsPerVolley === 1
+        CERO_METRALLETA.bulletsPerRow === 1
           ? 0.5
-          : i / (CERO_METRALLETA.bulletsPerVolley - 1);
+          : i / (CERO_METRALLETA.bulletsPerRow - 1);
       const lateral = -half + t * CERO_METRALLETA.rowWidth;
 
       fireEnergySphere(player, {
@@ -3765,7 +3928,7 @@ function castCeroMetralleta(player) {
         shellParticles: 6,
         origin: {
           x: origin.x + perp.x * lateral,
-          y: origin.y,
+          y: origin.y + height,
           z: origin.z + perp.z * lateral,
         },
       });
@@ -3774,7 +3937,16 @@ function castCeroMetralleta(player) {
     return true;
   };
 
-  let volley = 1; // a primeira fileira sai na hora, logo abaixo
+  // dispara as 4 fileiras do pente com alguns ticks entre elas
+  const fireVolley = () => {
+    if (!fireRow(0)) return false;
+    for (let row = 1; row < CERO_METRALLETA.rowsPerVolley; row++) {
+      system.runTimeout(() => fireRow(row), row * CERO_METRALLETA.rowGapTicks);
+    }
+    return true;
+  };
+
+  let volley = 1; // o primeiro pente sai na hora, logo abaixo
   const interval = system.runInterval(() => {
     if (volley >= CERO_METRALLETA.volleys) {
       system.clearRun(interval);
@@ -3791,7 +3963,7 @@ function castCeroMetralleta(player) {
 }
 
 /* ---------------------------------------------------------
-   Skills do Yammy Riyalgo
+   Skills do Yammy Llargo
    --------------------------------------------------------- */
 
 function castPunchesBarrage(player) {
@@ -3894,11 +4066,26 @@ function castFaceHold(player) {
     if (held < FACE_HOLD.holdTicks) return;
 
     system.clearRun(interval);
+    launchFaceHold(player, victim, victimName, grip);
+  }, 1);
+}
 
-    // arremesso na direcao em que o Yammy esta olhando
+// O arremesso NAO pode sair no mesmo tick do ultimo teleport. Num mob isso passa
+// porque o servidor manda na posicao dele, mas o player e dono da propria
+// posicao: o pacote de teleport (que zera a velocidade) chega depois e engole o
+// knockback - por isso o Face Hold so arremessava entidades. Soltamos a lentidao,
+// paramos de teleportar e so entao, alguns ticks depois, empurramos.
+function launchFaceHold(player, victim, victimName, grip) {
+  let dir;
+  try {
+    dir = forwardDirection(player);
+    victim.removeEffect("slowness");
+  } catch (e) {
+    return; // player ou alvo saiu do mundo enquanto segurava
+  }
+
+  system.runTimeout(() => {
     try {
-      const dir = forwardDirection(player);
-      victim.removeEffect("slowness");
       victim.applyKnockback(
         {
           x: dir.x * FACE_HOLD.launchHorizontal,
@@ -3906,12 +4093,14 @@ function castFaceHold(player) {
         },
         FACE_HOLD.launchVertical
       );
-      player.dimension.playSound("random.explode", grip, { volume: 1.4, pitch: 0.9 });
-      world.sendMessage(`§c${player.name} §7arremessou §4${victimName}§7!`);
     } catch (e) {
-      // alvo saiu do mundo antes do arremesso
+      return; // alvo saiu do mundo antes do arremesso
     }
-  }, 1);
+    try {
+      player.dimension.playSound("random.explode", grip, { volume: 1.4, pitch: 0.9 });
+    } catch (e) {}
+    world.sendMessage(`§c${player.name} §7arremessou §4${victimName}§7!`);
+  }, FACE_HOLD.launchDelayTicks);
 }
 
 function castWrathsSmash(player) {
@@ -4127,6 +4316,431 @@ function castRugidoDiablo(player) {
       system.clearRun(interval);
     }
   }, 1);
+}
+
+/* ---------------------------------------------------------
+   Skills da Tier Harribel
+   --------------------------------------------------------- */
+
+// alvo NA MIRA (nao o mais proximo): a Water Prison, o Vortice e a Maldita Agua
+// escolhem quem o player esta olhando
+function targetInView(player, range) {
+  try {
+    return player
+      .getEntitiesFromViewDirection({ maxDistance: range })
+      .map((hit) => hit.entity)
+      .find(
+        (entity) =>
+          entity && entity.id !== player.id && entity.getComponent("minecraft:health")
+      );
+  } catch (e) {
+    return undefined;
+  }
+}
+
+function nameOf(entity) {
+  try {
+    return entity.typeId === "minecraft:player" ? entity.name : entity.typeId;
+  } catch (e) {
+    return "alguém";
+  }
+}
+
+function castTiburonSlash(player) {
+  if (!tryUseSkill(player, "harribel:tiburon_slash")) return;
+
+  world.sendMessage(`§b${player.name} §7usou §3Tiburon's Slash§7!`);
+  try {
+    player.dimension.playSound("mob.guardian.attack", player.location, {
+      volume: 1.3,
+      pitch: 1.2,
+    });
+  } catch (e) {}
+
+  // mesma onda crescente do Getsuga, so que DEITADA: o arco abre pros lados
+  fireCrescentWave(player, {
+    radius: TIBURON_SLASH.radius,
+    thickness: TIBURON_SLASH.thickness,
+    range: TIBURON_SLASH.range,
+    speed: TIBURON_SLASH.speed,
+    damage: DAMAGE.tiburonSlash,
+    particle: "harribel:agua",
+    burst: "harribel:agua",
+    horizontal: true,
+  });
+}
+
+function castSharkIssues(player) {
+  if (!tryUseSkill(player, "harribel:shark_issues")) return;
+
+  world.sendMessage(`§b${player.name} §7soltou os §3Tubarões§7!`);
+  try {
+    player.dimension.playSound(SHARK_ISSUES.summonSound, player.location, {
+      volume: 1.4,
+      pitch: 0.8,
+    });
+  } catch (e) {}
+
+  // mesma fera guiada dos Lobos do Starkk, com agua no lugar do cero
+  for (let i = 0; i < SHARK_ISSUES.count; i++) {
+    summonHomingBeast(player, i, SHARK_ISSUES);
+  }
+}
+
+// apaga a agua e devolve o que estava no lugar. Roda tambem quando o alvo morre
+// no meio da prisao: a cela nao pode ficar de pe pra sempre.
+function releaseWaterPrison(victim, placed) {
+  for (const entry of placed) {
+    try {
+      entry.block.setPermutation(entry.was);
+    } catch (e) {}
+  }
+  try {
+    victim.removeEffect("slowness");
+    victim.dimension.playSound("random.splash", victim.location, {
+      volume: 1,
+      pitch: 1.4,
+    });
+  } catch (e) {}
+}
+
+function castWaterPrison(player) {
+  const victim = targetInView(player, WATER_PRISON.range);
+  if (!victim) {
+    player.sendMessage("§7Você não está olhando pra ninguém.");
+    return;
+  }
+  if (!tryUseSkill(player, "harribel:water_prison")) return;
+
+  const dim = player.dimension;
+  const loc0 = victim.location;
+  // centro do bloco em que o alvo esta, pra cela nascer alinhada
+  const anchor = {
+    x: Math.floor(loc0.x) + 0.5,
+    y: Math.floor(loc0.y),
+    z: Math.floor(loc0.z) + 0.5,
+  };
+
+  // guarda o que estava ali pra devolver quando a cela abrir
+  const placed = [];
+  const water = BlockPermutation.resolve("minecraft:water");
+  const r = WATER_PRISON.radius;
+  for (let dx = -r; dx <= r; dx++) {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dy = 0; dy <= 2 * r; dy++) {
+        try {
+          const block = dim.getBlock({
+            x: anchor.x + dx,
+            y: anchor.y + dy,
+            z: anchor.z + dz,
+          });
+          if (!block) continue;
+          placed.push({ block, was: block.permutation });
+          block.setPermutation(water);
+        } catch (e) {
+          // chunk descarregado: pula esse bloco em vez de derrubar a skill
+        }
+      }
+    }
+  }
+
+  const victimName = nameOf(victim);
+  world.sendMessage(
+    `§b${player.name} §7prendeu §3${victimName}§7 numa §3Water Prison§7!`
+  );
+  try {
+    dim.playSound("random.splash", anchor, { volume: 1.3, pitch: 0.8 });
+  } catch (e) {}
+
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed++;
+
+    let up = true;
+    try {
+      // travado: lentidao no maximo e puxao de volta se tentar andar pra fora
+      victim.addEffect("slowness", 40, { amplifier: 255, showParticles: false });
+      const loc = victim.location;
+      const drift = Math.sqrt(
+        (loc.x - anchor.x) * (loc.x - anchor.x) + (loc.z - anchor.z) * (loc.z - anchor.z)
+      );
+      if (drift > WATER_PRISON.leash) {
+        victim.teleport({ x: anchor.x, y: loc.y, z: anchor.z }, { keepVelocity: false });
+      }
+
+      for (let i = 0; i < 3; i++) {
+        dim.spawnParticle("harribel:agua", {
+          x: anchor.x + (Math.random() - 0.5) * 2,
+          y: anchor.y + Math.random() * 3,
+          z: anchor.z + (Math.random() - 0.5) * 2,
+        });
+      }
+    } catch (e) {
+      up = false; // alvo morreu ou saiu do mundo
+    }
+
+    if (up && elapsed < WATER_PRISON.durationTicks) return;
+
+    system.clearRun(interval);
+    releaseWaterPrison(victim, placed);
+    world.sendMessage(`§7A Water Prison se abriu e soltou §3${victimName}§7.`);
+  }, 1);
+}
+
+function castAquasDash(player) {
+  if (!tryUseSkill(player, "harribel:aquas_dash")) return;
+
+  world.sendMessage(`§b${player.name} §7usou §3Aqua's Dash§7!`);
+  try {
+    player.dimension.playSound("random.splash", player.location, {
+      volume: 1.3,
+      pitch: 1.3,
+    });
+  } catch (e) {}
+
+  performDashStrike(player, {
+    distance: AQUAS_DASH.distance,
+    steps: AQUAS_DASH.steps,
+    damage: DAMAGE.aquasDash,
+    particle: "harribel:agua",
+    burst: "harribel:agua",
+  });
+}
+
+/* ---------------------------------------------------------
+   Resurrección: Tiburón
+   --------------------------------------------------------- */
+
+function castTsunami(player) {
+  if (!tryUseSkill(player, "harribel:tsunami")) return;
+
+  const dim = player.dimension;
+  world.sendMessage(`§b§l${player.name}: TSUNAMI!`);
+  try {
+    dim.playSound("ambient.weather.rain", player.location, { volume: 1.6, pitch: 0.6 });
+  } catch (e) {}
+
+  const origin = player.location;
+  const dir = forwardDirection(player);
+  const perp = { x: -dir.z, z: dir.x };
+  const half = TSUNAMI.width / 2;
+  const hitEntities = new Set();
+
+  let travelled = 0;
+  const interval = system.runInterval(() => {
+    // parede de agua avancando. Sao SO particulas: a onda passa e nao deixa
+    // bloco de agua nenhum pra tras, como o pedido pede.
+    for (let c = -half; c <= half; c += 1.5) {
+      for (let h = 0; h < TSUNAMI.height; h += 1.2) {
+        try {
+          dim.spawnParticle("harribel:agua", {
+            x: origin.x + dir.x * travelled + perp.x * c,
+            y: origin.y + h,
+            z: origin.z + dir.z * travelled + perp.z * c,
+          });
+        } catch (e) {}
+      }
+    }
+
+    const center = {
+      x: origin.x + dir.x * travelled,
+      y: origin.y + 1,
+      z: origin.z + dir.z * travelled,
+    };
+    const finalDamage = DAMAGE.tsunami * dmgMultiplier(player);
+
+    for (const entity of dim.getEntities({ location: center, maxDistance: TSUNAMI.width })) {
+      if (entity.id === player.id || hitEntities.has(entity.id)) continue;
+      if (!entity.getComponent("minecraft:health")) continue;
+
+      const loc = entity.location;
+      const dx = loc.x - center.x;
+      const dz = loc.z - center.z;
+      const along = dx * dir.x + dz * dir.z; // profundidade dentro da onda
+      const lateral = dx * perp.x + dz * perp.z; // posicao na largura
+      const height = loc.y - origin.y;
+      if (Math.abs(along) > TSUNAMI.speed + 1) continue;
+      if (Math.abs(lateral) > half) continue;
+      if (height > TSUNAMI.height || height < -3) continue;
+
+      hitEntities.add(entity.id);
+      dealDamage(entity, finalDamage, player);
+      try {
+        entity.applyKnockback(
+          {
+            x: dir.x * TSUNAMI.knockbackHorizontal,
+            z: dir.z * TSUNAMI.knockbackHorizontal,
+          },
+          TSUNAMI.knockbackVertical
+        );
+      } catch (e) {}
+    }
+
+    travelled += TSUNAMI.speed;
+    if (travelled >= TSUNAMI.range) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7A onda passou. §8(a água não fica)");
+      } catch (e) {}
+    }
+  }, 1);
+}
+
+function castVortice(player) {
+  const victim = targetInView(player, VORTICE.range);
+  if (!victim) {
+    player.sendMessage("§7Você não está olhando pra ninguém.");
+    return;
+  }
+  if (!tryUseSkill(player, "harribel:vortice")) return;
+
+  const dim = player.dimension;
+  const center = { ...victim.location };
+
+  world.sendMessage(
+    `§b${player.name} §7abriu um §3Vórtice de Agua §7em volta de §3${nameOf(victim)}§7!`
+  );
+  try {
+    dim.playSound("mob.guardian.curse", center, { volume: 1.5, pitch: 0.7 });
+  } catch (e) {}
+
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed++;
+
+    // funil: aneis de agua girando, mais apertados quanto mais alto
+    for (let ring = 0; ring < 4; ring++) {
+      const radius = VORTICE.radius * (1 - ring * 0.18);
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 + elapsed * VORTICE.spinSpeed;
+        try {
+          dim.spawnParticle("harribel:agua", {
+            x: center.x + Math.cos(angle) * radius,
+            y: center.y + ring * 1.4,
+            z: center.z + Math.sin(angle) * radius,
+          });
+        } catch (e) {}
+      }
+    }
+
+    // gira de verdade quem esta dentro: cada um orbita o centro do vortice
+    for (const entity of dim.getEntities({ location: center, maxDistance: VORTICE.radius })) {
+      if (entity.id === player.id) continue;
+      try {
+        if (!entity.getComponent("minecraft:health")) continue;
+        const loc = entity.location;
+        const dx = loc.x - center.x;
+        const dz = loc.z - center.z;
+        const angle = Math.atan2(dz, dx) + VORTICE.spinSpeed;
+        const orbit = Math.max(VORTICE.minOrbit, Math.sqrt(dx * dx + dz * dz));
+        entity.teleport(
+          {
+            x: center.x + Math.cos(angle) * orbit,
+            y: loc.y,
+            z: center.z + Math.sin(angle) * orbit,
+          },
+          { keepVelocity: false }
+        );
+      } catch (e) {
+        // entidade saiu do mundo no meio do giro
+      }
+    }
+
+    // 200 por SEGUNDO, nao por tick
+    if (elapsed % VORTICE.tickInterval === 0) {
+      damageNearbyEntities(player, center, VORTICE.radius, DAMAGE.vorticePerSecond);
+    }
+
+    if (elapsed >= VORTICE.durationTicks) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7O vórtice se desfez.");
+      } catch (e) {}
+    }
+  }, 1);
+}
+
+/* ---------------------------------------------------------
+   Maldita Água: a unica skill sem prazo. So acaba quando a
+   Harribel morre, troca de personagem ou sai do mundo, ou
+   quando o proprio alvo cai.
+   --------------------------------------------------------- */
+
+const activeCurses = [];
+
+function removeCursesBy(ownerId) {
+  for (let i = activeCurses.length - 1; i >= 0; i--) {
+    if (activeCurses[i].ownerId !== ownerId) continue;
+    system.clearRun(activeCurses[i].intervalId);
+    activeCurses.splice(i, 1);
+  }
+}
+
+function isCurseOwnerUp(player) {
+  try {
+    if (getActiveCharacter(player)?.id !== "harribel") return false;
+    const hp = player.getComponent("minecraft:health");
+    return !!hp && hp.currentValue > 0;
+  } catch (e) {
+    return false; // saiu do mundo
+  }
+}
+
+function endMalditaAgua(ownerId, message) {
+  removeCursesBy(ownerId);
+  world.sendMessage(message);
+}
+
+function castMalditaAgua(player) {
+  const victim = targetInView(player, MALDITA_AGUA.range);
+  if (!victim) {
+    player.sendMessage("§7Você não está olhando pra ninguém.");
+    return;
+  }
+  if (!tryUseSkill(player, "harribel:maldita_agua")) return;
+
+  const ownerId = player.id;
+  const victimName = nameOf(victim);
+
+  world.sendMessage(
+    `§b§l${player.name} amaldiçoou ${victimName}: §r§9ficou sem respirar§7.`
+  );
+  try {
+    player.dimension.playSound("mob.guardian.curse", player.location, {
+      volume: 1.4,
+      pitch: 0.5,
+    });
+  } catch (e) {}
+
+  const intervalId = system.runInterval(() => {
+    if (!isCurseOwnerUp(player)) {
+      endMalditaAgua(ownerId, `§7A maldição sobre §3${victimName}§7 se desfez.`);
+      return;
+    }
+
+    try {
+      const hp = victim.getComponent("minecraft:health");
+      if (!hp || hp.currentValue <= 0) {
+        endMalditaAgua(ownerId, `§3${victimName}§7 se afogou. A maldição acabou.`);
+        return;
+      }
+
+      dealDamage(victim, DAMAGE.malditaAguaPerSecond * dmgMultiplier(player), player);
+
+      const loc = victim.location;
+      for (let i = 0; i < 6; i++) {
+        victim.dimension.spawnParticle("harribel:agua", {
+          x: loc.x + (Math.random() - 0.5) * 0.9,
+          y: loc.y + 1.5 + Math.random() * 0.7,
+          z: loc.z + (Math.random() - 0.5) * 0.9,
+        });
+      }
+    } catch (e) {
+      endMalditaAgua(ownerId, `§7A maldição sobre §3${victimName}§7 se desfez.`);
+    }
+  }, MALDITA_AGUA.tickInterval);
+
+  activeCurses.push({ ownerId, intervalId });
 }
 
 /* ---------------------------------------------------------
@@ -4491,6 +5105,16 @@ const MELEE_WEAPONS = {
   "yammy:m1_ira": {
     baseDamage: DAMAGE.iraM1,
     particle: "yammy:wrath",
+    dot: null,
+  },
+  "harribel:m1_zanpakuto": {
+    baseDamage: DAMAGE.harribelM1,
+    particle: "harribel:agua",
+    dot: null,
+  },
+  "harribel:m1_diente": {
+    baseDamage: DAMAGE.dienteM1,
+    particle: "harribel:agua",
     dot: null,
   },
   "starkk:m1_zanpakuto": {
@@ -4917,6 +5541,7 @@ system.runInterval(() => {
 world.afterEvents.playerLeave.subscribe((ev) => {
   const playerId = ev.playerId;
   removeZonesOwnedBy(playerId);
+  removeCursesBy(playerId);
   senkeiChargeTicks.delete(playerId);
   senkeiChargeReady.delete(playerId);
   wasSneakJumping.delete(playerId);
