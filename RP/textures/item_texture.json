@@ -193,6 +193,9 @@
     },
     "yammy:rugido_diablo": {
       "textures": "textures/items/yammy_rugido_diablo"
+    },
+    "yammy:ira_marker": {
+      "textures": "textures/items/yammy_ira_marker"
     }
   }
 }

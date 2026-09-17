@@ -33,7 +33,8 @@ BP/                     behavior pack
   scripts/main.js       TODO o gameplay (@minecraft/server 2.0 + server-ui)
 RP/                     resource pack
   manifest.json
-  particles/            partículas customizadas (sakura:leaf, mayuri:poison_fog, grimmjow:cero)
+  entity/               override do player (escala do modelo por Molang)
+  particles/            partículas customizadas (sakura:leaf, mayuri:poison_fog, grimmjow:cero, ...)
   textures/items/*.png  uma textura por item
   textures/item_texture.json
 tools/
@@ -88,14 +89,34 @@ O dano do m1 também passa pela escala: os itens de m1 têm
 `MELEE_WEAPONS[].baseDamage` → `dealDamage()`. (Sobra 1 de dano vanilla por
 golpe, que é o soco base e não dá pra zerar — desprezível.)
 
-### Tamanho de player não dá pra mudar
+### Player gigante (a forma Ira)
 
-`minecraft:scale` é componente de **definição** no BP: não existe setter no
-Script API, e mexer no `player.json` escalaria todo mundo no mundo. Por isso a
-forma Ira do Yammy **não fica visualmente gigante** — ela entrega o resto
-(vida, lentidão, fadiga, cura em bloco) e usa `awakening.tallView` como
-substituto: a câmera vai pro alto da cabeça, que é o efeito prático de enxergar
-como um gigante.
+O Script API não tem setter de tamanho, e `minecraft:scale` no BP escalaria
+**todo mundo**. O caminho que funciona é pelo **resource pack**: o client entity
+do player tem `scripts.scale`, que aceita Molang e escala **só o modelo**.
+
+`RP/entity/player.entity.json` é uma cópia do vanilla com uma linha trocada:
+
+```json
+"scale": "query.is_item_name_any('slot.weapon.offhand', 0, 'yammy:ira_marker') ? 5.208 : 0.9375"
+```
+
+O script trava um item invisível (`yammy:ira_marker`, textura 100% transparente)
+na offhand enquanto a Ira está ativa — é o gatilho que o Molang lê. `0.9375` é a
+escala vanilla e renderiza 1,8 bloco, então `5.208` dá **10 blocos**.
+
+Duas consequências a saber:
+
+- **A hitbox não muda.** `scripts.scale` é só visual; acertar o Yammy continua
+  usando a caixa de 1,8 bloco. Mudar a hitbox exigiria `minecraft:scale` no BP,
+  que pegaria todos os players.
+- **Sobrescrever `player.entity.json` conflita** com qualquer outro addon que
+  mexa no mesmo arquivo, e pode ficar defasado quando a Mojang atualizar o
+  arquivo vanilla. O `validate.py` confere que as chaves principais do vanilla
+  continuam lá e que o item citado no Molang existe.
+
+Como o modelo fica gigante, a câmera do player fica dentro do peito dele — por
+isso `awakening.tallView` (agachar + m1 da forma) joga a visão pro alto.
 
 ### Versão dos packs (multiplayer)
 
@@ -131,7 +152,7 @@ O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
 personagens, ativa awakening/máscara/Kageyoshi/Senkei/Pressão, mata alvos no
 meio de um DoT, simula reload do mundo e desconexão, e roda 2000 ticks livres
 no fim. São
-424 checks — qualquer exceção em qualquer callback é capturada e reportada.
+428 checks — qualquer exceção em qualquer callback é capturada e reportada.
 
 Foi assim que apareceram os bugs de cooldown pós-reload, a máscara que nunca
 era removida e o buraco na contenção do Senkei.

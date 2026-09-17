@@ -2051,6 +2051,11 @@ check("lentidão 1 (amplifier 0)", yammy.getEffect("slowness")?.amplifier === 0,
 check("fadiga 2 (amplifier 1)", yammy.getEffect("mining_fatigue")?.amplifier === 1, `${yammy.getEffect("mining_fatigue")?.amplifier}`);
 check("sem regeneração passiva (a cura é em bloco)", !yammy.getEffect("regeneration"));
 check(
+  "marcador invisível travado na offhand (é ele que escala o modelo)",
+  yammy.getComponent("minecraft:equippable").getEquipment("Offhand")?.typeId === "yammy:ira_marker",
+  String(yammy.getComponent("minecraft:equippable").getEquipment("Offhand")?.typeId)
+);
+check(
   "4 itens da Ira",
   JSON.stringify(slotIds(yammy, 4)) ===
     JSON.stringify([
@@ -2062,6 +2067,13 @@ check(
   JSON.stringify(slotIds(yammy, 4))
 );
 
+yammy.getComponent("minecraft:equippable").setEquipment("Offhand", undefined);
+advanceTicks(15, "marcador-removido");
+check(
+  "o loop devolve o marcador se alguém tirar",
+  yammy.getComponent("minecraft:equippable").getEquipment("Offhand")?.typeId === "yammy:ira_marker"
+);
+
 dmgBefore = log.damages.length;
 hitWith(yammy, sacoDePancada, "yammy:m1_ira");
 check(
@@ -2071,23 +2083,25 @@ check(
 
 scenario("Ira: cura 100 a cada 4 segundos");
 mark = errors.length;
-hp(yammy).setCurrentValue(hp(yammy).effectiveMax * 0.4);
+hp(yammy).setCurrentValue(hp(yammy).effectiveMax * 0.3);
 const vidaAntes = virtualHp(yammy);
-advanceTicks(85, "cura-em-bloco");
+advanceTicks(400, "cura-em-bloco"); // 20s = 5 intervalos de 4s
 noNewErrors("cura em bloco sem erro", mark);
 const ganho = virtualHp(yammy) - vidaAntes;
 check(
-  "curou ~100 de vida virtual",
-  Math.abs(ganho - 100) < 1,
-  `curou ${ganho.toFixed(1)}`
+  "cura ~100 de vida virtual a cada 4s (5 blocos em 20s)",
+  ganho >= 400 && ganho <= 600,
+  `curou ${ganho.toFixed(1)} em 20s`
 );
 
+// e em BLOCOS, nao aos pouquinhos: num segundo cura 0 ou 100, nunca no meio
 const vidaMeio = virtualHp(yammy);
-advanceTicks(40, "meio-intervalo");
+advanceTicks(20, "um-segundo");
+const passo = virtualHp(yammy) - vidaMeio;
 check(
-  "não cura de novo antes dos 4s",
-  Math.abs(virtualHp(yammy) - vidaMeio) < 1,
-  `mudou ${(virtualHp(yammy) - vidaMeio).toFixed(1)}`
+  "a cura vem em bloco, não pingando",
+  Math.abs(passo) < 1 || Math.abs(passo - 100) < 1,
+  `mudou ${passo.toFixed(1)} em 1s`
 );
 
 scenario("Ira: visão lá de cima");
@@ -2187,6 +2201,10 @@ check("fadiga da forma some", !yammy.getEffect("mining_fatigue"));
 check("regeneração passiva volta", yammy.getEffect("regeneration")?.amplifier === 1);
 check("visão alta desligada", !yammy.getDynamicProperty("mv:tall_view"));
 check(
+  "marcador sai da offhand (volta ao tamanho normal)",
+  !yammy.getComponent("minecraft:equippable").getEquipment("Offhand")
+);
+check(
   "itens base restaurados",
   inv(yammy).getItem(0)?.typeId === "yammy:m1_punches",
   String(inv(yammy).getItem(0)?.typeId)
@@ -2229,6 +2247,11 @@ const droppedSelector = overworld.spawnEntity("minecraft:item", { x: 0, y: 64, z
 droppedSelector.itemStackComponent = { itemStack: new ItemStack("multiversal:character_selector", 1) };
 emit("entitySpawn", { entity: droppedSelector });
 check("seletor largado é removido", !droppedSelector.isValid);
+
+const droppedMarker = overworld.spawnEntity("minecraft:item", { x: 0, y: 64, z: 0 });
+droppedMarker.itemStackComponent = { itemStack: new ItemStack("yammy:ira_marker", 1) };
+emit("entitySpawn", { entity: droppedMarker });
+check("marcador da Ira largado é removido", !droppedMarker.isValid);
 
 const droppedVanilla = overworld.spawnEntity("minecraft:item", { x: 0, y: 64, z: 0 });
 droppedVanilla.itemStackComponent = { itemStack: new ItemStack("minecraft:dirt", 1) };

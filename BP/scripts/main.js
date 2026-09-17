@@ -292,6 +292,11 @@ const CHARACTERS = {
         { effect: "mining_fatigue", amplifier: 1 }, // fadiga 2
       ],
       healPerInterval: { amount: 100, ticks: 80 }, // 100 de vida a cada 4s
+      // Item invisivel travado na offhand. O player.entity.json do RP olha essa
+      // slot por Molang e escala o modelo pra 10 blocos enquanto ele estiver la.
+      // E o unico jeito de escalar UM player: nao existe setter de tamanho no
+      // Script API, e mexer no minecraft:scale escalaria todo mundo.
+      offhandMarker: "yammy:ira_marker",
       // agachar + usar os Punhos de la Ira alterna a camera pro alto da cabeca
       tallView: {
         triggerItem: "yammy:m1_ira",
@@ -316,6 +321,9 @@ const BYAKUYA_ALT_WEAPONS = [
 
 // itens da persona Lilynette do Starkk (so existem no registro "items" quando
 // a persona esta ativa, entao precisam de registro proprio pro ITEM_OWNER)
+// itens que nao ficam em slot de hotbar mas precisam de dono (pra nao serem dropados)
+const EXTRA_OWNED_ITEMS = { "yammy:ira_marker": "yammy" };
+
 const STARKK_ALT_WEAPONS = [
   "starkk:lilynette_shot",
   "starkk:rifle",
@@ -356,6 +364,9 @@ for (const weaponId of BYAKUYA_ALT_WEAPONS) {
 }
 for (const weaponId of STARKK_ALT_WEAPONS) {
   ITEM_OWNER[weaponId] = "starkk";
+}
+for (const itemId in EXTRA_OWNED_ITEMS) {
+  ITEM_OWNER[itemId] = EXTRA_OWNED_ITEMS[itemId];
 }
 
 // O Bedrock guarda o amplificador de efeito num byte, entao o teto e 255. Com
@@ -897,6 +908,23 @@ function reapplyFormEffects(player) {
   );
 }
 
+function setOffhandMarker(player, itemId) {
+  try {
+    const equip = player.getComponent("minecraft:equippable");
+    if (!equip) return;
+    const current = equip.getEquipment(EquipmentSlot.Offhand);
+    if (itemId) {
+      if (current?.typeId !== itemId) {
+        equip.setEquipment(EquipmentSlot.Offhand, new ItemStack(itemId, 1));
+      }
+    } else if (current) {
+      equip.setEquipment(EquipmentSlot.Offhand, undefined);
+    }
+  } catch (e) {
+    // sem equippable ou player invalido
+  }
+}
+
 // tira os efeitos permanentes que so existiam na forma desperta
 function clearFormExtras(player, form) {
   for (const extra of form?.extraEffects ?? []) {
@@ -904,6 +932,7 @@ function clearFormExtras(player, form) {
       player.removeEffect(extra.effect);
     } catch (e) {}
   }
+  if (form?.offhandMarker) setOffhandMarker(player, undefined);
   disableTallView(player);
 }
 
@@ -1237,6 +1266,9 @@ function activateAwakening(player, character) {
 
   world.sendMessage(`§d§l${player.name} despertou: ${form.name}!`);
   player.sendMessage(`§d§lAwakening ativado! §r§dVocê é agora ${form.name}.`);
+
+  // o marcador da offhand e o que faz o modelo ficar gigante no cliente
+  if (form.offhandMarker) setOffhandMarker(player, form.offhandMarker);
 
   switch (form.onActivate) {
     case "pressure":
@@ -4757,6 +4789,10 @@ system.runInterval(() => {
     for (const slot in activeItems) {
       forceGiveLockedItem(inv, Number(slot), activeItems[slot]);
     }
+
+    // o marcador da offhand precisa continuar la: e ele que segura a escala
+    const marker = character.awakening?.offhandMarker;
+    if (marker && isAwakened(player)) setOffhandMarker(player, marker);
   }
 }, 10);
 

@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 424 checks na simulação, zero exceções. Packs na versão 1.7.0.
+- **Estado**: 428 checks na simulação, zero exceções. Packs na versão 1.8.0.
 
 ## Como trabalhar aqui
 
@@ -113,11 +113,12 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    em speed/regen tem que chamar `reapplyFormEffects` ao acabar.
 6. **`runTimeout` dispara no tick exato do fim.** Guard do tipo
    `if (!estáAtivo()) return` faz a limpeza nunca rodar.
-7. **Tamanho de player não dá pra mudar por script.** `minecraft:scale` é
-   componente de definição no BP e não tem setter no Script API; mexer no
-   `player.json` escalaria todo mundo. Substituto: câmera alta
-   (`player.camera.setCamera("minecraft:free", ...)` reposicionada a cada 2
-   ticks), que é o que a forma Ira usa.
+7. **Player gigante só pelo resource pack.** Não existe setter de tamanho no
+   Script API e `minecraft:scale` no BP pega todo mundo. O jeito que funciona é
+   `scripts.scale` no client entity do player (`RP/entity/player.entity.json`),
+   que aceita Molang e escala **só o modelo**. O gatilho é um item invisível
+   travado na offhand, lido por `query.is_item_name_any`. A **hitbox não muda** —
+   isso é inerente ao método.
 
 ## Bugs conhecidos / limitações em aberto
 
@@ -131,8 +132,11 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    hoje todos têm, então não aparece.
 4. **Pesquisa marca qualquer entidade**, não só player, e o +50% vale pro dano
    de **todos**, não só do Ulquiorra. Foi leitura minha do texto.
-5. **A forma Ira do Yammy não fica visualmente gigante** — ver a armadilha 7.
-   O resto da "individualidade" (vida, lentidão, fadiga, cura) está implementado.
+5. **A hitbox do Yammy gigante continua 1,8 bloco.** O modelo escala pra 10
+   blocos, mas acertar ele usa a caixa normal. Ver a armadilha 7.
+6. **O addon sobrescreve `RP/entity/player.entity.json`**, então conflita com
+   outro addon que mexa no mesmo arquivo e pode defasar quando a Mojang mudar o
+   vanilla. O `validate.py` confere que as chaves principais continuam lá.
 5. **Sem limite de um personagem por player no servidor** — dois players podem
    escolher o mesmo.
 6. **`fireCrescentWave` usa `dmgMultiplier(player)` dentro do interval** sem

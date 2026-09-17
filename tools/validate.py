@@ -216,6 +216,32 @@ try:
 except ImportError:
     notes.append("aviso: tools/textures.py nao pode ser importado")
 
+# ------------------------------------------- override do player no RP (escala)
+player_entity = RP / "entity" / "player.entity.json"
+if player_entity.exists():
+    data = parsed.get(player_entity)
+    if data:
+        scale = (
+            data.get("minecraft:client_entity", {})
+            .get("description", {})
+            .get("scripts", {})
+            .get("scale")
+        )
+        if not scale:
+            fail("RP/entity/player.entity.json nao define scripts.scale")
+        else:
+            notes.append(f"escala do player: {scale}")
+            # o Molang olha um item na offhand; ele tem que existir de verdade
+            for name in re.findall(r"'([a-z_]+:[a-z0-9_]+)'", scale):
+                if name not in bp_items:
+                    fail(
+                        f"o scripts.scale do player cita o item '{name}', "
+                        f"mas nao existe BP/items/*.json pra ele"
+                    )
+            for required in ("identifier", "geometry", "render_controllers", "textures"):
+                if required not in data["minecraft:client_entity"]["description"]:
+                    fail(f"RP/entity/player.entity.json perdeu a chave '{required}' do vanilla")
+
 # ---------------------------------------------------------------- particulas
 particle_ids = set()
 for path in sorted(RP.glob("particles/*.json")):
