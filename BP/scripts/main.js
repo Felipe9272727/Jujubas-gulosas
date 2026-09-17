@@ -21,6 +21,7 @@ const DP = {
   maskEnd: "mv:mask_end",
   byakuyaWeapon: "mv:byakuya_weapon", // "base" | "senkei" | "finisher"
   starkkForm: "mv:starkk_form", // "starkk" | "lilynette"
+  tallView: "mv:tall_view", // camera alta da forma gigante
   arc: "mv:arc", // indice do arco escolhido no seletor
   healthScale: "mv:health_scale", // vida virtual / vida real
   markedEnd: "mv:marked_end", // marca da Pesquisa do Ulquiorra
@@ -263,6 +264,48 @@ const CHARACTERS = {
       },
     },
   },
+  yammy: {
+    id: "yammy",
+    name: "Yammy Riyalgo",
+    health: 1000,
+    items: {
+      0: "yammy:m1_punches",
+      1: "yammy:punches_barrage",
+      2: "yammy:face_hold",
+      3: "yammy:wraths_smash",
+      4: "yammy:wraths_punch",
+    },
+    awakening: {
+      name: "Resurrección: Ira",
+      triggerItem: "yammy:m1_punches",
+      health: 10000,
+      speedAmplifier: 0, // speed 1
+      // a Ira troca a regeneracao passiva por uma cura em bloco
+      regenAmplifier: null,
+      onActivate: "battlecry",
+      chatLine: "Os Espadas são numerados de 0-9, não de 1-10!",
+      cryParticle: "yammy:wrath",
+      cryPitch: 0.5,
+      // individualidade da forma: lento e pesado, mas se cura em blocos
+      extraEffects: [
+        { effect: "slowness", amplifier: 0 }, // lentidao 1
+        { effect: "mining_fatigue", amplifier: 1 }, // fadiga 2
+      ],
+      healPerInterval: { amount: 100, ticks: 80 }, // 100 de vida a cada 4s
+      // agachar + usar os Punhos de la Ira alterna a camera pro alto da cabeca
+      tallView: {
+        triggerItem: "yammy:m1_ira",
+        height: 9,
+        back: 6,
+      },
+      items: {
+        0: "yammy:m1_ira",
+        1: "yammy:quebramundos",
+        2: "yammy:cero_barrage",
+        3: "yammy:rugido_diablo",
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -291,7 +334,7 @@ const ARCS = [
   {
     id: "hueco_mundo",
     name: "Arrancar / Hueco Mundo",
-    characters: ["grimmjow", "ulquiorra", "starkk"],
+    characters: ["grimmjow", "ulquiorra", "starkk", "yammy"],
   },
 ];
 
@@ -426,6 +469,13 @@ const SKILL_COOLDOWN_TICKS = {
   "starkk:rifle": 400, // 20s
   "starkk:escopeta": 360, // 18s
   "starkk:cero_metralleta": 800, // 40s
+  "yammy:punches_barrage": 300, // 15s
+  "yammy:face_hold": 300, // 15s
+  "yammy:wraths_smash": 400, // 20s
+  "yammy:wraths_punch": 600, // 30s
+  "yammy:quebramundos": 800, // 40s - nao especificado
+  "yammy:cero_barrage": 700, // 35s - nao especificado
+  "yammy:rugido_diablo": 600, // 30s - nao especificado
 };
 
 const SKILL_NAMES = {
@@ -470,6 +520,13 @@ const SKILL_NAMES = {
   "starkk:rifle": "Rifle",
   "starkk:escopeta": "Escopeta",
   "starkk:cero_metralleta": "Cero Metralleta",
+  "yammy:punches_barrage": "Punches Barrage",
+  "yammy:face_hold": "Face Hold",
+  "yammy:wraths_smash": "Wrath's Smash",
+  "yammy:wraths_punch": "Wrath's Punch",
+  "yammy:quebramundos": "Quebramundos",
+  "yammy:cero_barrage": "Gran Rey Cero Barrage",
+  "yammy:rugido_diablo": "Rugido del Diablo",
 };
 
 // dano aumentado
@@ -528,7 +585,16 @@ const DAMAGE = {
   cuchillosM1: 100,
   lilynetteShot: 120, // tambem usado pelo Rifle, por tiro
   escopeta: 240, // dobro do disparo comum
-  ceroMetralletaTick: 10, // por "pulso" do chuveiro - nao especificado, ajustavel
+  ceroMetralletaBullet: 60, // por bala; sao 6 por fileira, 15 fileiras
+  // Yammy Riyalgo
+  yammyM1: 20,
+  punchesBarrage: 80, // por soco
+  wrathsSmash: 60, // por explosao da onda
+  wrathsPunch: 200,
+  // Resurreccion: Ira
+  iraM1: 300,
+  quebramundos: 1000,
+  rugidoDiabloTick: 50, // por tick, por 3s
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -642,11 +708,42 @@ const LILYNETTE_SHOT = {
 };
 const RIFLE = { shots: 3, gapTicks: 4, radius: 0.9, range: 26, speed: 1.6, searchRadius: 30 };
 const ESCOPETA = { radius: 1.3, range: 12, speed: 2 };
+// dispara FILEIRAS de balas: varias de uma vez, pausa, outra fileira
+// Yammy Riyalgo
+const PUNCHES_BARRAGE = { punches: 5, gapTicks: 6, forward: 4, width: 3, blastRadius: 2.5 };
+const FACE_HOLD = {
+  searchRadius: 12,
+  holdDistance: 2.2,
+  holdTicks: 60, // 3s segurando pelo rosto
+  launchHorizontal: 5.5,
+  launchVertical: 1.4,
+};
+const WRATHS_SMASH = {
+  jumpStrength: 2.2,
+  maxAirTicks: 70,
+  rings: 4,
+  ringGapTicks: 6,
+  maxRadius: 12,
+};
+const WRATHS_PUNCH = {
+  forward: 5,
+  width: 4,
+  knockbackHorizontal: 6.5,
+  knockbackVertical: 1.1,
+};
+// Resurreccion: Ira
+const QUEBRAMUNDOS = { blastRadius: 26 }; // maior que a Lanza del Relampago (18)
+const CERO_BARRAGE = { shots: 10, gapTicks: 8 };
+const RUGIDO_DIABLO = { radius: 12, durationTicks: 60 }; // 50 por tick por 3s
+
 const CERO_METRALLETA = {
-  durationTicks: 300, // 15s
-  tickInterval: 2, // "o mais rapido possivel" sem virar spam de eventos
-  forward: 22,
-  width: 3,
+  volleys: 15,
+  volleyGapTicks: 20, // 15 fileiras em 15s
+  bulletsPerVolley: 6,
+  rowWidth: 4, // largura da fileira, as balas saem lado a lado
+  radius: 0.8,
+  range: 40,
+  speed: 2.5,
 };
 
 
@@ -744,7 +841,8 @@ function applyCharacterEffects(
   player,
   maxHealth,
   speedAmplifier,
-  regenAmplifier = REGEN_AMPLIFIER
+  regenAmplifier = REGEN_AMPLIFIER,
+  extraEffects
 ) {
   player.setDynamicProperty(DP.healthScale, healthScaleFor(maxHealth));
 
@@ -757,10 +855,29 @@ function applyCharacterEffects(
     amplifier: speedAmplifier,
     showParticles: false,
   });
-  player.addEffect("regeneration", 20000000, {
-    amplifier: regenAmplifier,
-    showParticles: false,
-  });
+
+  // regenAmplifier null = forma sem regeneracao passiva. A Ira do Yammy troca
+  // ela por uma cura em bloco a cada 4s; somar as duas descaracterizaria o numero.
+  if (regenAmplifier === null) {
+    try {
+      player.removeEffect("regeneration");
+    } catch (e) {}
+  } else {
+    player.addEffect("regeneration", 20000000, {
+      amplifier: regenAmplifier,
+      showParticles: false,
+    });
+  }
+
+  // efeitos permanentes proprios da forma (lentidao e fadiga da Ira)
+  for (const extra of extraEffects ?? []) {
+    try {
+      player.addEffect(extra.effect, 20000000, {
+        amplifier: extra.amplifier ?? 0,
+        showParticles: false,
+      });
+    } catch (e) {}
+  }
 }
 
 // Reaplica os efeitos permanentes da forma atual. Um buff temporario (o Disparo
@@ -775,8 +892,19 @@ function reapplyFormEffects(player) {
     player,
     form?.health ?? character.health,
     form?.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
-    form?.regenAmplifier ?? REGEN_AMPLIFIER
+    form && "regenAmplifier" in form ? form.regenAmplifier : REGEN_AMPLIFIER,
+    form?.extraEffects
   );
+}
+
+// tira os efeitos permanentes que so existiam na forma desperta
+function clearFormExtras(player, form) {
+  for (const extra of form?.extraEffects ?? []) {
+    try {
+      player.removeEffect(extra.effect);
+    } catch (e) {}
+  }
+  disableTallView(player);
 }
 
 function isAwakened(player) {
@@ -1052,6 +1180,7 @@ function deactivateCharacter(player) {
     }
   }
 
+  clearFormExtras(player, character.awakening);
   player.removeEffect("health_boost");
   player.removeEffect("speed");
   player.removeEffect("regeneration");
@@ -1091,7 +1220,8 @@ function activateAwakening(player, character) {
     player,
     health,
     form.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
-    form.regenAmplifier ?? REGEN_AMPLIFIER
+    "regenAmplifier" in form ? form.regenAmplifier : REGEN_AMPLIFIER,
+    form.extraEffects
   );
 
   const inv = getInv(player);
@@ -1132,6 +1262,7 @@ function revertAwakening(player, reason) {
 
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.starkkForm, "starkk");
+  clearFormExtras(player, character.awakening);
   applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
 
   const inv = getInv(player);
@@ -1412,6 +1543,17 @@ world.afterEvents.itemUse.subscribe((ev) => {
     return;
   }
 
+  // agachado + usar o m1 da forma gigante alterna a camera pro alto da cabeca
+  if (
+    character.awakening?.tallView &&
+    isAwakened(player) &&
+    player.isSneaking &&
+    itemStack.typeId === character.awakening.tallView.triggerItem
+  ) {
+    toggleTallView(player, character.awakening.tallView);
+    return;
+  }
+
   // agachado + usar a arma m1 atual (Cuchillos ou disparo da Lilynette) com a
   // Resurrección ativa alterna entre as duas personas
   if (
@@ -1557,6 +1699,27 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "starkk:cero_metralleta":
       castCeroMetralleta(player);
+      break;
+    case "yammy:punches_barrage":
+      castPunchesBarrage(player);
+      break;
+    case "yammy:face_hold":
+      castFaceHold(player);
+      break;
+    case "yammy:wraths_smash":
+      castWrathsSmash(player);
+      break;
+    case "yammy:wraths_punch":
+      castWrathsPunch(player);
+      break;
+    case "yammy:quebramundos":
+      castQuebramundos(player);
+      break;
+    case "yammy:cero_barrage":
+      castCeroBarrage(player);
+      break;
+    case "yammy:rugido_diablo":
+      castRugidoDiablo(player);
       break;
   }
 });
@@ -2465,6 +2628,7 @@ function fireEnergySphere(player, options) {
     particle = "grimmjow:cero",
     shellParticles = 22,
     direction,
+    origin: customOrigin,
   } = options;
 
   const dim = player.dimension;
@@ -2472,7 +2636,8 @@ function fireEnergySphere(player, options) {
   const length =
     Math.sqrt(view.x * view.x + view.y * view.y + view.z * view.z) || 1;
   const step = { x: view.x / length, y: view.y / length, z: view.z / length };
-  const origin = player.location;
+  // origem customizada deixa varias balas sairem lado a lado, formando fileira
+  const origin = customOrigin ?? player.location;
 
   let travelled = radius;
   const hitEntities = new Set();
@@ -3536,48 +3701,428 @@ function castCeroMetralleta(player) {
   world.sendMessage(`§9§l${player.name}: CERO METRALLETA!`);
   dim.playSound("mob.wither.death", player.location, { volume: 1.6, pitch: 1.4 });
 
-  // Chuveiro continuo: em vez de centenas de projeteis (que viraria spam de
-  // intervals), e dano por pulso numa caixa frontal que acompanha a mira.
-  let elapsed = 0;
-  const interval = system.runInterval(() => {
+  // Uma fileira = varias balas saindo lado a lado no mesmo instante. A rajada e
+  // uma sequencia dessas fileiras, nao um tiro atras do outro.
+  const fireVolley = () => {
     let origin;
     let dir;
     try {
       origin = player.location;
       dir = forwardDirection(player);
-      dim.playSound("mob.wither.shoot", origin, { volume: 0.5, pitch: 2 });
+      dim.playSound("mob.wither.shoot", origin, { volume: 1.1, pitch: 1.9 });
+    } catch (e) {
+      return false; // player saiu do mundo no meio da rajada
+    }
+
+    const perp = { x: -dir.z, z: dir.x };
+    const half = CERO_METRALLETA.rowWidth / 2;
+
+    for (let i = 0; i < CERO_METRALLETA.bulletsPerVolley; i++) {
+      const t =
+        CERO_METRALLETA.bulletsPerVolley === 1
+          ? 0.5
+          : i / (CERO_METRALLETA.bulletsPerVolley - 1);
+      const lateral = -half + t * CERO_METRALLETA.rowWidth;
+
+      fireEnergySphere(player, {
+        radius: CERO_METRALLETA.radius,
+        range: CERO_METRALLETA.range,
+        speed: CERO_METRALLETA.speed,
+        damage: DAMAGE.ceroMetralletaBullet,
+        particle: "grimmjow:cero",
+        shellParticles: 6,
+        origin: {
+          x: origin.x + perp.x * lateral,
+          y: origin.y,
+          z: origin.z + perp.z * lateral,
+        },
+      });
+    }
+
+    return true;
+  };
+
+  let volley = 1; // a primeira fileira sai na hora, logo abaixo
+  const interval = system.runInterval(() => {
+    if (volley >= CERO_METRALLETA.volleys) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7O Cero Metralleta parou.");
+      } catch (e) {}
+      return;
+    }
+    volley++;
+    if (!fireVolley()) system.clearRun(interval);
+  }, CERO_METRALLETA.volleyGapTicks);
+
+  fireVolley();
+}
+
+/* ---------------------------------------------------------
+   Skills do Yammy Riyalgo
+   --------------------------------------------------------- */
+
+function castPunchesBarrage(player) {
+  if (!tryUseSkill(player, "yammy:punches_barrage")) return;
+
+  world.sendMessage(`§c${player.name} §7usou §4Punches Barrage§7!`);
+
+  let punch = 0;
+  const throwPunch = () => {
+    punch++;
+    let origin;
+    let dir;
+    try {
+      origin = player.location;
+      dir = forwardDirection(player);
+      player.dimension.playSound("random.explode", origin, {
+        volume: 1.1,
+        pitch: 1.1 + punch * 0.08,
+      });
+    } catch (e) {
+      return; // player saiu do mundo no meio da sequencia
+    }
+
+    const impact = {
+      x: origin.x + dir.x * (PUNCHES_BARRAGE.forward * 0.6),
+      y: origin.y + 1.1,
+      z: origin.z + dir.z * (PUNCHES_BARRAGE.forward * 0.6),
+    };
+    for (let i = 0; i < 6; i++) {
+      try {
+        player.dimension.spawnParticle("minecraft:large_explosion", {
+          x: impact.x + (Math.random() - 0.5) * PUNCHES_BARRAGE.blastRadius,
+          y: impact.y + (Math.random() - 0.5) * 1.4,
+          z: impact.z + (Math.random() - 0.5) * PUNCHES_BARRAGE.blastRadius,
+        });
+      } catch (e) {}
+    }
+
+    // cada soco tem sua propria caixa: ficar na frente os 5 leva os 5
+    const finalDamage = DAMAGE.punchesBarrage * dmgMultiplier(player);
+    for (const entity of entitiesInFrontBox(player, PUNCHES_BARRAGE)) {
+      dealDamage(entity, finalDamage, player);
+    }
+
+    if (punch < PUNCHES_BARRAGE.punches) {
+      system.runTimeout(throwPunch, PUNCHES_BARRAGE.gapTicks);
+    }
+  };
+
+  throwPunch();
+}
+
+function castFaceHold(player) {
+  // pega qualquer entidade com vida, nao so player
+  const victim = nearestTarget(player, FACE_HOLD.searchRadius);
+  if (!victim) {
+    player.sendMessage("§7Não tem ninguém por perto pra agarrar.");
+    return;
+  }
+  if (!tryUseSkill(player, "yammy:face_hold")) return;
+
+  const victimName = victim.typeId === "minecraft:player" ? victim.name : victim.typeId;
+  world.sendMessage(`§c${player.name} §7agarrou §4${victimName}§7 pelo rosto!`);
+  try {
+    player.dimension.playSound("mob.enderdragon.growl", player.location, {
+      volume: 1.4,
+      pitch: 0.6,
+    });
+  } catch (e) {}
+
+  let held = 0;
+  const interval = system.runInterval(() => {
+    held++;
+
+    let grip;
+    try {
+      const anchor = player.location;
+      const dir = forwardDirection(player);
+      // preso na frente do Yammy, na altura do rosto, seguindo a mira dele
+      grip = {
+        x: anchor.x + dir.x * FACE_HOLD.holdDistance,
+        y: anchor.y + 1,
+        z: anchor.z + dir.z * FACE_HOLD.holdDistance,
+      };
+      victim.teleport(grip, { keepVelocity: false, facingLocation: anchor });
+      victim.addEffect("slowness", 20, { amplifier: 255, showParticles: false });
+
+      for (let i = 0; i < 3; i++) {
+        player.dimension.spawnParticle("yammy:wrath", {
+          x: grip.x + (Math.random() - 0.5) * 0.8,
+          y: grip.y + 0.6 + Math.random() * 0.6,
+          z: grip.z + (Math.random() - 0.5) * 0.8,
+        });
+      }
     } catch (e) {
       system.clearRun(interval);
       return;
     }
 
-    const perp = { x: -dir.z, z: dir.x };
-    const half = CERO_METRALLETA.width / 2;
-    for (let i = 0; i < 6; i++) {
-      const along = 1 + Math.random() * (CERO_METRALLETA.forward - 1);
-      const lateral = (Math.random() - 0.5) * 2 * half;
+    if (held < FACE_HOLD.holdTicks) return;
+
+    system.clearRun(interval);
+
+    // arremesso na direcao em que o Yammy esta olhando
+    try {
+      const dir = forwardDirection(player);
+      victim.removeEffect("slowness");
+      victim.applyKnockback(
+        {
+          x: dir.x * FACE_HOLD.launchHorizontal,
+          z: dir.z * FACE_HOLD.launchHorizontal,
+        },
+        FACE_HOLD.launchVertical
+      );
+      player.dimension.playSound("random.explode", grip, { volume: 1.4, pitch: 0.9 });
+      world.sendMessage(`§c${player.name} §7arremessou §4${victimName}§7!`);
+    } catch (e) {
+      // alvo saiu do mundo antes do arremesso
+    }
+  }, 1);
+}
+
+function castWrathsSmash(player) {
+  if (!tryUseSkill(player, "yammy:wraths_smash")) return;
+
+  world.sendMessage(`§c${player.name} §7usou §4Wrath's Smash§7!`);
+
+  try {
+    // pulo bem alto: knockback so na vertical
+    player.applyKnockback({ x: 0, z: 0 }, WRATHS_SMASH.jumpStrength);
+    player.dimension.playSound("mob.enderdragon.flap", player.location, {
+      volume: 1.4,
+      pitch: 0.6,
+    });
+  } catch (e) {
+    return;
+  }
+
+  // espera voltar pro chao (ou desiste depois de maxAirTicks)
+  let airTicks = 0;
+  const falling = system.runInterval(() => {
+    airTicks++;
+
+    let landed = false;
+    try {
+      landed = airTicks > 10 && player.isOnGround;
+    } catch (e) {
+      system.clearRun(falling);
+      return;
+    }
+
+    if (!landed && airTicks < WRATHS_SMASH.maxAirTicks) return;
+
+    system.clearRun(falling);
+    smashShockwave(player);
+  }, 1);
+}
+
+// ondas de explosao que vao crescendo a partir do ponto de impacto
+function smashShockwave(player) {
+  let impact;
+  try {
+    impact = player.location;
+    player.dimension.playSound("random.explode", impact, { volume: 2, pitch: 0.5 });
+  } catch (e) {
+    return;
+  }
+
+  for (let ring = 1; ring <= WRATHS_SMASH.rings; ring++) {
+    system.runTimeout(() => {
+      const radius = (WRATHS_SMASH.maxRadius * ring) / WRATHS_SMASH.rings;
       try {
-        dim.spawnParticle("grimmjow:cero", {
-          x: origin.x + dir.x * along + perp.x * lateral,
-          y: origin.y + 1.1 + (Math.random() - 0.5) * 0.8,
-          z: origin.z + dir.z * along + perp.z * lateral,
+        const points = 10 + ring * 6;
+        for (let i = 0; i < points; i++) {
+          const angle = (i / points) * Math.PI * 2;
+          player.dimension.spawnParticle("minecraft:large_explosion", {
+            x: impact.x + Math.cos(angle) * radius,
+            y: impact.y + 0.4,
+            z: impact.z + Math.sin(angle) * radius,
+          });
+        }
+        player.dimension.playSound("random.explode", impact, {
+          volume: 1.4,
+          pitch: 1.1 - ring * 0.15,
         });
-      } catch (e) {}
-    }
+      } catch (e) {
+        return;
+      }
 
-    const finalDamage = DAMAGE.ceroMetralletaTick * dmgMultiplier(player);
-    for (const entity of entitiesInFrontBox(player, CERO_METRALLETA)) {
-      dealDamage(entity, finalDamage, player);
-    }
+      // cada onda bate em quem estiver dentro dela: quem fica no centro come todas
+      damageNearbyEntities(player, impact, radius, DAMAGE.wrathsSmash);
+    }, (ring - 1) * WRATHS_SMASH.ringGapTicks + 1);
+  }
+}
 
-    elapsed += CERO_METRALLETA.tickInterval;
-    if (elapsed >= CERO_METRALLETA.durationTicks) {
-      system.clearRun(interval);
+function castWrathsPunch(player) {
+  if (!tryUseSkill(player, "yammy:wraths_punch")) return;
+
+  world.sendMessage(`§c§l${player.name}: WRATH'S PUNCH!`);
+  try {
+    player.dimension.playSound("random.explode", player.location, {
+      volume: 2,
+      pitch: 0.4,
+    });
+  } catch (e) {}
+
+  drawSweep(player, WRATHS_PUNCH, "yammy:wrath", false);
+
+  const dir = forwardDirection(player);
+  const finalDamage = DAMAGE.wrathsPunch * dmgMultiplier(player);
+  for (const entity of entitiesInFrontBox(player, WRATHS_PUNCH)) {
+    dealDamage(entity, finalDamage, player);
+    try {
+      entity.applyKnockback(
+        {
+          x: dir.x * WRATHS_PUNCH.knockbackHorizontal,
+          z: dir.z * WRATHS_PUNCH.knockbackHorizontal,
+        },
+        WRATHS_PUNCH.knockbackVertical
+      );
+    } catch (e) {}
+  }
+}
+
+/* ---------------------------------------------------------
+   Resurrección: Ira
+   --------------------------------------------------------- */
+
+function castQuebramundos(player) {
+  if (!tryUseSkill(player, "yammy:quebramundos")) return;
+
+  world.sendMessage(`§4§l${player.name}: QUEBRAMUNDOS!`);
+
+  let impact;
+  try {
+    impact = player.location;
+    player.dimension.playSound("mob.wither.death", impact, { volume: 2, pitch: 0.2 });
+  } catch (e) {
+    return;
+  }
+
+  // a maior explosao do addon ate agora, acima da Lanza del Relampago
+  for (let ring = 1; ring <= 7; ring++) {
+    const radius = (QUEBRAMUNDOS.blastRadius * ring) / 7;
+    const points = 14 + ring * 6;
+    for (let i = 0; i < points; i++) {
+      const angle = (i / points) * Math.PI * 2;
+      for (const height of [0.3, 2.5, 5]) {
+        try {
+          player.dimension.spawnParticle(
+            ring > 5 ? "yammy:wrath" : "minecraft:large_explosion",
+            {
+              x: impact.x + Math.cos(angle) * radius,
+              y: impact.y + height,
+              z: impact.z + Math.sin(angle) * radius,
+            }
+          );
+        } catch (e) {}
+      }
+    }
+  }
+
+  damageNearbyEntities(player, impact, QUEBRAMUNDOS.blastRadius, DAMAGE.quebramundos);
+}
+
+function castCeroBarrage(player) {
+  if (!tryUseSkill(player, "yammy:cero_barrage")) return;
+
+  world.sendMessage(`§4${player.name} §7disparou uma §cbarragem de Gran Rey Ceros§7!`);
+
+  for (let shot = 0; shot < CERO_BARRAGE.shots; shot++) {
+    system.runTimeout(() => {
       try {
-        player.sendMessage("§7O Cero Metralleta parou.");
-      } catch (e) {}
+        player.dimension.playSound("mob.wither.death", player.location, {
+          volume: 1.3,
+          pitch: 0.6,
+        });
+      } catch (e) {
+        return; // player saiu do mundo no meio da barragem
+      }
+
+      // o mesmo Gran Rey Cero, dez vezes seguidas
+      fireEnergySphere(player, {
+        radius: GRAN_REY_CERO.radius,
+        range: GRAN_REY_CERO.range,
+        speed: GRAN_REY_CERO.speed,
+        damage: DAMAGE.granReyCero,
+      });
+    }, shot * CERO_BARRAGE.gapTicks + 1);
+  }
+}
+
+function castRugidoDiablo(player) {
+  if (!tryUseSkill(player, "yammy:rugido_diablo")) return;
+
+  world.sendMessage(`§4§l${player.name} rugiu!`);
+  try {
+    player.dimension.playSound("mob.enderdragon.growl", player.location, {
+      volume: 2,
+      pitch: 0.3,
+    });
+  } catch (e) {}
+
+  let ticks = 0;
+  const interval = system.runInterval(() => {
+    ticks++;
+
+    let center;
+    try {
+      center = player.location;
+    } catch (e) {
+      system.clearRun(interval);
+      return;
     }
-  }, CERO_METRALLETA.tickInterval);
+
+    if (ticks % 4 === 1) {
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const dist = RUGIDO_DIABLO.radius * (0.3 + Math.random() * 0.7);
+        try {
+          player.dimension.spawnParticle("yammy:wrath", {
+            x: center.x + Math.cos(angle) * dist,
+            y: center.y + 0.5 + Math.random() * 3,
+            z: center.z + Math.sin(angle) * dist,
+          });
+        } catch (e) {}
+      }
+    }
+
+    damageNearbyEntities(player, center, RUGIDO_DIABLO.radius, DAMAGE.rugidoDiabloTick);
+
+    if (ticks >= RUGIDO_DIABLO.durationTicks) {
+      system.clearRun(interval);
+    }
+  }, 1);
+}
+
+/* ---------------------------------------------------------
+   Camera alta da forma gigante
+   --------------------------------------------------------- */
+
+function disableTallView(player) {
+  try {
+    if (!player.getDynamicProperty(DP.tallView)) return;
+    player.setDynamicProperty(DP.tallView, false);
+    player.camera.clear();
+  } catch (e) {
+    // sem camera disponivel ou player invalido
+  }
+}
+
+function toggleTallView(player, cfg) {
+  const next = !player.getDynamicProperty(DP.tallView);
+  player.setDynamicProperty(DP.tallView, next);
+
+  if (next) {
+    player.sendMessage("§6Visão lá de cima: você enxerga como um gigante.");
+  } else {
+    try {
+      player.camera.clear();
+    } catch (e) {}
+    player.sendMessage("§7Visão normal de volta.");
+  }
 }
 
 /* ---------------------------------------------------------
@@ -3906,6 +4451,16 @@ const MELEE_WEAPONS = {
       message: "§5Ashisogi Jizō cortou os tendões!",
     },
   },
+  "yammy:m1_punches": {
+    baseDamage: DAMAGE.yammyM1,
+    particle: "yammy:wrath",
+    dot: null,
+  },
+  "yammy:m1_ira": {
+    baseDamage: DAMAGE.iraM1,
+    particle: "yammy:wrath",
+    dot: null,
+  },
   "starkk:m1_zanpakuto": {
     baseDamage: DAMAGE.starkkM1,
     particle: "minecraft:crit_particle",
@@ -4219,6 +4774,87 @@ world.afterEvents.entitySpawn.subscribe((ev) => {
 });
 
 /* ---------------------------------------------------------
+   Cura em bloco da forma desperta (a Ira do Yammy)
+   --------------------------------------------------------- */
+
+// contador por sessao: nao vale gravar em dynamic property porque o tick
+// reinicia com o mundo
+const formHealTicks = new Map();
+
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    const heal = isAwakened(player)
+      ? getActiveCharacter(player)?.awakening?.healPerInterval
+      : undefined;
+
+    if (!heal) {
+      formHealTicks.delete(player.id);
+      continue;
+    }
+
+    const elapsed = (formHealTicks.get(player.id) ?? 0) + 20;
+    if (elapsed < heal.ticks) {
+      formHealTicks.set(player.id, elapsed);
+      continue;
+    }
+    formHealTicks.set(player.id, 0);
+
+    try {
+      const hp = player.getComponent("minecraft:health");
+      if (!hp) continue;
+      // a cura e em vida VIRTUAL: divide pela escala igual o dealDamage faz
+      const gain = heal.amount / healthScaleOf(player);
+      hp.setCurrentValue(Math.min(hp.effectiveMax, hp.currentValue + gain));
+    } catch (e) {
+      formHealTicks.delete(player.id);
+    }
+  }
+}, 20);
+
+/* ---------------------------------------------------------
+   Camera alta: reposiciona toda hora pra acompanhar o player
+   --------------------------------------------------------- */
+
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    let on;
+    try {
+      on = player.getDynamicProperty(DP.tallView);
+    } catch (e) {
+      continue;
+    }
+    if (!on) continue;
+
+    // se saiu da forma desperta, a camera volta ao normal sozinha
+    if (!isAwakened(player) || !getActiveCharacter(player)?.awakening?.tallView) {
+      disableTallView(player);
+      continue;
+    }
+
+    const cfg = getActiveCharacter(player).awakening.tallView;
+    try {
+      const loc = player.location;
+      const view = player.getViewDirection();
+      player.camera.setCamera("minecraft:free", {
+        location: {
+          x: loc.x - view.x * cfg.back,
+          y: loc.y + cfg.height,
+          z: loc.z - view.z * cfg.back,
+        },
+        facingLocation: {
+          x: loc.x + view.x * 10,
+          y: loc.y + 1 + view.y * 10,
+          z: loc.z + view.z * 10,
+        },
+      });
+    } catch (e) {
+      // API de camera indisponivel: desliga em vez de insistir todo tick
+      disableTallView(player);
+    }
+  }
+}, 2);
+
+/* ---------------------------------------------------------
    Drena o awakening 1%/segundo enquanto ativo, desativa em 0%
    --------------------------------------------------------- */
 
@@ -4248,4 +4884,5 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   senkeiChargeTicks.delete(playerId);
   senkeiChargeReady.delete(playerId);
   wasSneakJumping.delete(playerId);
+  formHealTicks.delete(playerId);
 });

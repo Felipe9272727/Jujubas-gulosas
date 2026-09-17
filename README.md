@@ -22,6 +22,7 @@ usar o seletor** passa pro próximo (dá a volta no último).
 | **Grimmjow Jaegerjaquez** | 800 | Resurrección: La Pantera — "Mutile, Pantera" (1200 de vida, speed 5, regen 4) |
 | **Ulquiorra Cifer** | 1600 | Resurrección: Murciélago — "Confine, Murciélago" (2000 de vida) |
 | **Coyote Starkk** | 4000 | Resurrección: Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
+| **Yammy Riyalgo** | 1000 | Resurrección: Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
 
 ## Layout
 
@@ -87,6 +88,15 @@ O dano do m1 também passa pela escala: os itens de m1 têm
 `MELEE_WEAPONS[].baseDamage` → `dealDamage()`. (Sobra 1 de dano vanilla por
 golpe, que é o soco base e não dá pra zerar — desprezível.)
 
+### Tamanho de player não dá pra mudar
+
+`minecraft:scale` é componente de **definição** no BP: não existe setter no
+Script API, e mexer no `player.json` escalaria todo mundo no mundo. Por isso a
+forma Ira do Yammy **não fica visualmente gigante** — ela entrega o resto
+(vida, lentidão, fadiga, cura em bloco) e usa `awakening.tallView` como
+substituto: a câmera vai pro alto da cabeça, que é o efeito prático de enxergar
+como um gigante.
+
 ### Versão dos packs (multiplayer)
 
 O cliente do Minecraft guarda cada pack por **(uuid, versão)**. Se o conteúdo
@@ -121,7 +131,7 @@ O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
 personagens, ativa awakening/máscara/Kageyoshi/Senkei/Pressão, mata alvos no
 meio de um DoT, simula reload do mundo e desconexão, e roda 2000 ticks livres
 no fim. São
-365 checks — qualquer exceção em qualquer callback é capturada e reportada.
+424 checks — qualquer exceção em qualquer callback é capturada e reportada.
 
 Foi assim que apareceram os bugs de cooldown pós-reload, a máscara que nunca
 era removida e o buraco na contenção do Senkei.
@@ -139,6 +149,10 @@ era removida e o buraco na contenção do Senkei.
 | `superAttack.onTrigger` | Agachar + m1 com o medidor em 100%. Cada personagem escolhe seu efeito (`"byakuya"` → Kageyoshi/Senkei, `"konjiki"` → Bankai do Mayuri) |
 | `awakening.altForm` | Troca de persona dentro da forma desperta: agachar + usar a arma atual alterna entre dois conjuntos de itens (Starkk ↔ Lilynette) |
 | `nearestTarget` / `directionToward` | Alvo mais próximo com vida (não só player) e vetor fixo até ele, pra mirar tiro sem depender da mira |
+| `awakening.extraEffects` | Efeitos permanentes só da forma desperta (lentidão e fadiga da Ira). Removidos ao reverter |
+| `awakening.regenAmplifier: null` | Forma sem regeneração passiva, pra quem tem outra fonte de cura |
+| `awakening.healPerInterval` | Cura em bloco (`amount` de vida **virtual** a cada `ticks`), dividida pela escala igual o `dealDamage` |
+| `awakening.tallView` | Agachar + m1 da forma alterna a câmera pro alto da cabeça (`minecraft:free`, reposicionada a cada 2 ticks) |
 | `awakening.onActivate` | Efeito de entrada da forma desperta (`"pressure"` → Kenpachi, `"resurreccion"` → Grimmjow) |
 | `fireEnergySphere(player, opts)` | Esfera de energia que viaja pela direção da visão e some no primeiro alvo ou no fim do alcance (Gran Rey Cero) |
 | `reapplyFormEffects(player)` | Devolve os efeitos permanentes da forma atual. Buff temporário **sobrescreve** o permanente em vez de somar, então todo buff que mexe em speed/regen precisa chamar isso ao acabar |

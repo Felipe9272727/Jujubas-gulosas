@@ -51,9 +51,11 @@ function noNewErrors(label, mark) {
 
 // espelho do registro ARCS do main.js: o menu so mostra o arco atual, entao o
 // indice do botao e relativo ao arco, nao ao CHARACTERS inteiro
+const CERO_METRALLETA_BULLETS = 6; // espelho da constante do main.js
+
 const ROSTER = [
   { name: "Invasão à Soul Society", ids: ["ichigo", "byakuya", "kenpachi", "mayuri"] },
-  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra", "starkk"] },
+  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra", "starkk", "yammy"] },
 ];
 
 function locate(id) {
@@ -103,6 +105,12 @@ function hp(p) {
 }
 // vida maxima do jeito que o player enxerga: acima do teto do Bedrock o pool
 // real e menor e a escala repoe a diferenca
+// vida atual do jeito que o player enxerga
+function virtualHp(p) {
+  const scale = p.getDynamicProperty("mv:health_scale") ?? 1;
+  return hp(p).currentValue * scale;
+}
+
 function virtualMax(p) {
   const scale = p.getDynamicProperty("mv:health_scale") ?? 1;
   return Math.round(hp(p).effectiveMax * scale);
@@ -980,7 +988,7 @@ check(
 );
 check(
   "segundo arco traz os Arrancar",
-  ["Grimmjow", "Ulquiorra", "Starkk"].every((n) => shown.buttons.join(" ").includes(n)),
+  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy"].every((n) => shown.buttons.join(" ").includes(n)),
   shown.buttons.join(", ")
 );
 
@@ -1829,22 +1837,38 @@ starkk._view = { x: 1, y: 0, z: 0 };
 alvoTiro.teleport({ x: -590, y: 64, z: -600 }); // 10 à frente, dentro da caixa
 const foraDaCaixa = createDummy("ForaDaCaixa", { x: -590, y: 64, z: -594 }, 500000); // 6 de lado
 dmgBefore = log.damages.length;
+const partBeforeVolley = log.particles.length;
 useItem(starkk, "starkk:cero_metralleta");
-advanceTicks(20, "metralleta-inicio");
+advanceTicks(18, "metralleta-primeira-fileira");
 noNewErrors("Cero Metralleta executa limpo", mark);
-const metralletaHits = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro");
+
+// a primeira fileira sai inteira de uma vez: varias balas, nao uma seguida da outra
+const primeiraFileira = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro");
 check(
-  "pulsos de 10 de dano em quem está na frente",
-  metralletaHits.length >= 5 && metralletaHits.every((d) => d.amount === 10),
-  `${metralletaHits.length} pulsos`
+  "a fileira inteira acerta de uma vez (balas de 60)",
+  primeiraFileira.length >= 2 && primeiraFileira.every((d) => d.amount === 60),
+  `${primeiraFileira.length} balas de ${JSON.stringify([...new Set(primeiraFileira.map((d) => d.amount))])}`
 );
 check(
-  "quem está fora da caixa frontal não leva",
+  "só uma fileira saiu até aqui",
+  primeiraFileira.length <= CERO_METRALLETA_BULLETS,
+  `${primeiraFileira.length} acertos`
+);
+check(
+  "quem está fora da largura da fileira não leva",
   !log.damages.slice(dmgBefore).some((d) => d.target === "ForaDaCaixa")
 );
 
+// a proxima fileira so vem depois da pausa
+dmgBefore = log.damages.length;
+advanceTicks(30, "metralleta-segunda-fileira");
+check(
+  "vem outra fileira depois da pausa",
+  log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro").length >= 2
+);
+
 mark = errors.length;
-advanceTicks(300, "metralleta-fim");
+advanceTicks(320, "metralleta-fim");
 noNewErrors("Cero Metralleta roda os 15s sem erro", mark);
 check(
   "para sozinha no fim",
@@ -1876,6 +1900,298 @@ check(
   JSON.stringify(slotIds(starkk, 5))
 );
 alvoTiro.kill();
+
+/* ================= Yammy Riyalgo ================= */
+
+scenario("Yammy Riyalgo: ativação");
+const yammy = createPlayer("YammyPlayer", { x: 1500, y: 64, z: 1500 });
+const sacoDePancada = createDummy("SacoDePancada", { x: 1503, y: 64, z: 1500 }, 500000);
+emit("playerSpawn", { player: yammy, initialSpawn: true });
+advanceTicks(20, "spawn-yammy");
+
+mark = errors.length;
+await pickCharacter(yammy, "yammy");
+advanceTicks(20, "ativar-yammy");
+noNewErrors("ativar Yammy sem erro", mark);
+check("vida maxima 1000", virtualMax(yammy) === 1000, `${virtualMax(yammy)}`);
+check(
+  "5 itens base nos slots 0-4",
+  JSON.stringify(slotIds(yammy, 5)) ===
+    JSON.stringify([
+      "yammy:m1_punches",
+      "yammy:punches_barrage",
+      "yammy:face_hold",
+      "yammy:wraths_smash",
+      "yammy:wraths_punch",
+    ]),
+  JSON.stringify(slotIds(yammy, 5))
+);
+
+dmgBefore = log.damages.length;
+hitWith(yammy, sacoDePancada, "yammy:m1_punches");
+check(
+  "m1 dá 20 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "SacoDePancada" && d.amount === 20)
+);
+
+scenario("Punches Barrage");
+mark = errors.length;
+yammy.teleport({ x: 1500, y: 64, z: 1500 });
+yammy._view = { x: 1, y: 0, z: 0 };
+sacoDePancada.teleport({ x: 1502, y: 64, z: 1500 });
+dmgBefore = log.damages.length;
+useItem(yammy, "yammy:punches_barrage");
+advanceTicks(50, "punches-barrage");
+noNewErrors("Punches Barrage executa limpo", mark);
+const socos = log.damages.slice(dmgBefore).filter((d) => d.target === "SacoDePancada");
+check(
+  "5 socos de 80 em quem fica na frente",
+  socos.length === 5 && socos.every((d) => d.amount === 80),
+  JSON.stringify(socos.map((d) => d.amount))
+);
+
+scenario("Face Hold: segura pelo rosto e arremessa");
+mark = errors.length;
+yammy.teleport({ x: 1500, y: 64, z: 1500 });
+yammy._view = { x: 1, y: 0, z: 0 };
+sacoDePancada.teleport({ x: 1504, y: 64, z: 1500 });
+const kbBefore = log.knockbacks.length;
+useItem(yammy, "yammy:face_hold");
+advanceTicks(20, "face-hold-segurando");
+noNewErrors("Face Hold executa limpo", mark);
+const faceDist = Math.hypot(
+  sacoDePancada.location.x - yammy.location.x,
+  sacoDePancada.location.z - yammy.location.z
+);
+check("segura a vítima na frente do Yammy", faceDist <= 2.6, `dist=${faceDist.toFixed(2)}`);
+check("vítima não consegue se mexer", sacoDePancada.getEffect("slowness")?.amplifier === 255);
+check("ainda não arremessou", log.knockbacks.length === kbBefore);
+
+advanceTicks(50, "face-hold-arremesso");
+const arremesso = log.knockbacks.slice(kbBefore).find((k) => k.target === "SacoDePancada");
+check("arremessa depois dos 3 segundos", !!arremesso);
+check(
+  "arremessa na direção em que o Yammy olha",
+  arremesso && arremesso.horizontal.x > 4 && Math.abs(arremesso.horizontal.z) < 0.01,
+  JSON.stringify(arremesso?.horizontal)
+);
+check("solta a vítima", !sacoDePancada.getEffect("slowness"));
+
+scenario("Wrath's Smash: pula e esmaga");
+mark = errors.length;
+yammy.teleport({ x: 1500, y: 64, z: 1500 });
+sacoDePancada.teleport({ x: 1502, y: 64, z: 1500 });
+const naBorda = createDummy("NaBorda", { x: 1511, y: 64, z: 1500 }, 500000); // 11 do centro
+const foraDoSmash = createDummy("ForaDoSmash", { x: 1520, y: 64, z: 1500 }, 500000);
+const kbBeforeSmash = log.knockbacks.length;
+dmgBefore = log.damages.length;
+useItem(yammy, "yammy:wraths_smash");
+advanceTicks(60, "wraths-smash");
+noNewErrors("Wrath's Smash executa limpo", mark);
+check(
+  "o player é lançado pra cima",
+  log.knockbacks.slice(kbBeforeSmash).some((k) => k.target === "YammyPlayer" && k.verticalStrength > 1)
+);
+hits = log.damages.slice(dmgBefore);
+check(
+  "quem está no centro come as ondas (60 cada)",
+  hits.filter((d) => d.target === "SacoDePancada" && d.amount === 60).length >= 3,
+  `${hits.filter((d) => d.target === "SacoDePancada").length} ondas`
+);
+check(
+  "as ondas crescem: a borda só é pega pelas últimas",
+  hits.filter((d) => d.target === "NaBorda").length >= 1 &&
+    hits.filter((d) => d.target === "NaBorda").length <
+      hits.filter((d) => d.target === "SacoDePancada").length
+);
+check("fora do alcance máximo não leva", !hits.some((d) => d.target === "ForaDoSmash"));
+naBorda.kill();
+foraDoSmash.kill();
+
+scenario("Wrath's Punch");
+mark = errors.length;
+yammy.teleport({ x: 1500, y: 64, z: 1500 });
+yammy._view = { x: 1, y: 0, z: 0 };
+sacoDePancada.teleport({ x: 1503, y: 64, z: 1500 });
+dmgBefore = log.damages.length;
+const kbBeforePunch = log.knockbacks.length;
+useItem(yammy, "yammy:wraths_punch");
+advanceTicks(10, "wraths-punch");
+noNewErrors("Wrath's Punch executa limpo", mark);
+check(
+  "200 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "SacoDePancada" && d.amount === 200)
+);
+check(
+  "knockback alto na direção do soco",
+  log.knockbacks.slice(kbBeforePunch).some(
+    (k) => k.target === "SacoDePancada" && k.horizontal.x > 6
+  )
+);
+
+scenario("Resurrección: Ira");
+mark = errors.length;
+yammy.teleport({ x: 1500, y: 64, z: 1500 });
+yammy.setDynamicProperty(DP.awakening, 100);
+const msgsBeforeIra = log.worldMessages.length;
+yammy.isSneaking = true;
+useItem(yammy, "yammy:m1_punches");
+yammy.isSneaking = false;
+advanceTicks(20, "ira");
+noNewErrors("Resurrección sem erro", mark);
+check(
+  "manda a fala no chat",
+  log.worldMessages
+    .slice(msgsBeforeIra)
+    .some((m) => m.message === "<YammyPlayer> Os Espadas são numerados de 0-9, não de 1-10!")
+);
+check("vida maxima 10000", virtualMax(yammy) === 10000, `${virtualMax(yammy)}`);
+check("speed 1 (amplifier 0)", yammy.getEffect("speed")?.amplifier === 0, `${yammy.getEffect("speed")?.amplifier}`);
+check("lentidão 1 (amplifier 0)", yammy.getEffect("slowness")?.amplifier === 0, `${yammy.getEffect("slowness")?.amplifier}`);
+check("fadiga 2 (amplifier 1)", yammy.getEffect("mining_fatigue")?.amplifier === 1, `${yammy.getEffect("mining_fatigue")?.amplifier}`);
+check("sem regeneração passiva (a cura é em bloco)", !yammy.getEffect("regeneration"));
+check(
+  "4 itens da Ira",
+  JSON.stringify(slotIds(yammy, 4)) ===
+    JSON.stringify([
+      "yammy:m1_ira",
+      "yammy:quebramundos",
+      "yammy:cero_barrage",
+      "yammy:rugido_diablo",
+    ]),
+  JSON.stringify(slotIds(yammy, 4))
+);
+
+dmgBefore = log.damages.length;
+hitWith(yammy, sacoDePancada, "yammy:m1_ira");
+check(
+  "Punhos de la Ira dão 300 por hit",
+  log.damages.slice(dmgBefore).some((d) => d.target === "SacoDePancada" && d.amount === 300)
+);
+
+scenario("Ira: cura 100 a cada 4 segundos");
+mark = errors.length;
+hp(yammy).setCurrentValue(hp(yammy).effectiveMax * 0.4);
+const vidaAntes = virtualHp(yammy);
+advanceTicks(85, "cura-em-bloco");
+noNewErrors("cura em bloco sem erro", mark);
+const ganho = virtualHp(yammy) - vidaAntes;
+check(
+  "curou ~100 de vida virtual",
+  Math.abs(ganho - 100) < 1,
+  `curou ${ganho.toFixed(1)}`
+);
+
+const vidaMeio = virtualHp(yammy);
+advanceTicks(40, "meio-intervalo");
+check(
+  "não cura de novo antes dos 4s",
+  Math.abs(virtualHp(yammy) - vidaMeio) < 1,
+  `mudou ${(virtualHp(yammy) - vidaMeio).toFixed(1)}`
+);
+
+scenario("Ira: visão lá de cima");
+mark = errors.length;
+const camBefore = log.cameras.length;
+yammy.isSneaking = true;
+useItem(yammy, "yammy:m1_ira");
+yammy.isSneaking = false;
+advanceTicks(10, "camera-alta");
+noNewErrors("alternar a câmera sem erro", mark);
+check("marca a visão alta", yammy.getDynamicProperty("mv:tall_view") === true);
+const camSet = log.cameras.slice(camBefore).filter((c) => c.preset === "minecraft:free");
+check("põe a câmera no modo livre", camSet.length >= 1);
+check(
+  "a câmera fica bem acima do player",
+  camSet.length > 0 && camSet[camSet.length - 1].options.location.y - yammy.location.y >= 8,
+  camSet.length ? `${(camSet[camSet.length - 1].options.location.y - yammy.location.y).toFixed(1)} acima` : "n/a"
+);
+
+yammy.isSneaking = true;
+useItem(yammy, "yammy:m1_ira");
+yammy.isSneaking = false;
+advanceTicks(10, "camera-normal");
+check("volta pra visão normal", !yammy.getDynamicProperty("mv:tall_view"));
+check(
+  "e limpa a câmera",
+  log.cameras.slice(-3).some((c) => c.player === "YammyPlayer" && c.preset === undefined)
+);
+
+scenario("Quebramundos");
+mark = errors.length;
+yammy.teleport({ x: 1500, y: 64, z: 1500 });
+sacoDePancada.teleport({ x: 1502, y: 64, z: 1500 });
+const aVinteEQuatro = createDummy("AVinteEQuatro", { x: 1524, y: 64, z: 1500 }, 500000);
+const aTrinta = createDummy("ATrinta", { x: 1530, y: 64, z: 1500 }, 500000);
+dmgBefore = log.damages.length;
+useItem(yammy, "yammy:quebramundos");
+advanceTicks(10, "quebramundos");
+noNewErrors("Quebramundos executa limpo", mark);
+hits = log.damages.slice(dmgBefore);
+check("1000 de dano", hits.some((d) => d.target === "SacoDePancada" && d.amount === 1000));
+check(
+  "alcança 24 blocos, mais que a Lanza del Relámpago (18)",
+  hits.some((d) => d.target === "AVinteEQuatro")
+);
+check("mas não 30", !hits.some((d) => d.target === "ATrinta"));
+aVinteEQuatro.kill();
+aTrinta.kill();
+
+scenario("Gran Rey Cero Barrage");
+mark = errors.length;
+yammy.teleport({ x: 1500, y: 64, z: 1500 });
+yammy._view = { x: 1, y: 0, z: 0 };
+sacoDePancada.teleport({ x: 1510, y: 64, z: 1500 });
+dmgBefore = log.damages.length;
+useItem(yammy, "yammy:cero_barrage");
+advanceTicks(140, "cero-barrage");
+noNewErrors("Barragem executa limpo", mark);
+const ceros = log.damages.slice(dmgBefore).filter((d) => d.target === "SacoDePancada");
+check(
+  "10 Gran Rey Ceros de 350",
+  ceros.length === 10 && ceros.every((d) => d.amount === 350),
+  `${ceros.length} ceros: ${JSON.stringify([...new Set(ceros.map((d) => d.amount))])}`
+);
+
+scenario("Rugido del Diablo");
+mark = errors.length;
+yammy.teleport({ x: 1500, y: 64, z: 1500 });
+sacoDePancada.teleport({ x: 1505, y: 64, z: 1500 });
+const foraDoRugido = createDummy("ForaDoRugido", { x: 1520, y: 64, z: 1500 }, 500000);
+dmgBefore = log.damages.length;
+useItem(yammy, "yammy:rugido_diablo");
+advanceTicks(70, "rugido");
+noNewErrors("Rugido executa limpo", mark);
+const diabloHits = log.damages.slice(dmgBefore).filter((d) => d.target === "SacoDePancada");
+check(
+  "50 de dano por tick durante 3 segundos (60 ticks)",
+  diabloHits.length === 60 && diabloHits.every((d) => d.amount === 50),
+  `${diabloHits.length} ticks de ${JSON.stringify([...new Set(diabloHits.map((d) => d.amount))])}`
+);
+check("fora do raio não leva", !log.damages.slice(dmgBefore).some((d) => d.target === "ForaDoRugido"));
+
+dmgBefore = log.damages.length;
+advanceTicks(40, "rugido-acabou");
+check("para sozinho", !log.damages.slice(dmgBefore).some((d) => d.target === "SacoDePancada"));
+foraDoRugido.kill();
+
+scenario("Fim da Ira");
+mark = errors.length;
+yammy.setDynamicProperty(DP.awakening, 2);
+advanceTicks(90, "drenar-ira");
+noNewErrors("reversão sem erro", mark);
+check("awakened = false", yammy.getDynamicProperty(DP.awakened) === false);
+check("vida maxima volta pra 1000", virtualMax(yammy) === 1000, `${virtualMax(yammy)}`);
+check("lentidão da forma some", !yammy.getEffect("slowness"));
+check("fadiga da forma some", !yammy.getEffect("mining_fatigue"));
+check("regeneração passiva volta", yammy.getEffect("regeneration")?.amplifier === 1);
+check("visão alta desligada", !yammy.getDynamicProperty("mv:tall_view"));
+check(
+  "itens base restaurados",
+  inv(yammy).getItem(0)?.typeId === "yammy:m1_punches",
+  String(inv(yammy).getItem(0)?.typeId)
+);
+sacoDePancada.kill();
 
 /* ================= dash universal ================= */
 

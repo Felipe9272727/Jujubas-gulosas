@@ -166,6 +166,33 @@
     },
     "starkk:cero_metralleta": {
       "textures": "textures/items/starkk_cero_metralleta"
+    },
+    "yammy:m1_punches": {
+      "textures": "textures/items/yammy_m1_punches"
+    },
+    "yammy:punches_barrage": {
+      "textures": "textures/items/yammy_punches_barrage"
+    },
+    "yammy:face_hold": {
+      "textures": "textures/items/yammy_face_hold"
+    },
+    "yammy:wraths_smash": {
+      "textures": "textures/items/yammy_wraths_smash"
+    },
+    "yammy:wraths_punch": {
+      "textures": "textures/items/yammy_wraths_punch"
+    },
+    "yammy:m1_ira": {
+      "textures": "textures/items/yammy_m1_ira"
+    },
+    "yammy:quebramundos": {
+      "textures": "textures/items/yammy_quebramundos"
+    },
+    "yammy:cero_barrage": {
+      "textures": "textures/items/yammy_cero_barrage"
+    },
+    "yammy:rugido_diablo": {
+      "textures": "textures/items/yammy_rugido_diablo"
     }
   }
 }

@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 365 checks na simulação, zero exceções. Packs na versão 1.6.0.
+- **Estado**: 424 checks na simulação, zero exceções. Packs na versão 1.7.0.
 
 ## Como trabalhar aqui
 
@@ -38,7 +38,7 @@ tools/
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~2000 linhas, 365 checks
+  run.mjs               ~2200 linhas, 424 checks
 ```
 
 ### A simulação
@@ -71,6 +71,7 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 | Grimmjow Jaegerjaquez | 800 | La Pantera — "Mutile, Pantera" (1200, speed 5, regen 4) |
 | Ulquiorra Cifer | 1600 | Murciélago — "Confine, Murciélago" (2000) |
 | Coyote Starkk | 4000 | Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
+| Yammy Riyalgo | 1000 | Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
 
 ## Sistemas genéricos (reusar, não duplicar)
 
@@ -112,6 +113,11 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    em speed/regen tem que chamar `reapplyFormEffects` ao acabar.
 6. **`runTimeout` dispara no tick exato do fim.** Guard do tipo
    `if (!estáAtivo()) return` faz a limpeza nunca rodar.
+7. **Tamanho de player não dá pra mudar por script.** `minecraft:scale` é
+   componente de definição no BP e não tem setter no Script API; mexer no
+   `player.json` escalaria todo mundo. Substituto: câmera alta
+   (`player.camera.setCamera("minecraft:free", ...)` reposicionada a cada 2
+   ticks), que é o que a forma Ira usa.
 
 ## Bugs conhecidos / limitações em aberto
 
@@ -125,6 +131,8 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    hoje todos têm, então não aparece.
 4. **Pesquisa marca qualquer entidade**, não só player, e o +50% vale pro dano
    de **todos**, não só do Ulquiorra. Foi leitura minha do texto.
+5. **A forma Ira do Yammy não fica visualmente gigante** — ver a armadilha 7.
+   O resto da "individualidade" (vida, lentidão, fadiga, cura) está implementado.
 5. **Sem limite de um personagem por player no servidor** — dois players podem
    escolher o mesmo.
 6. **`fireCrescentWave` usa `dmgMultiplier(player)` dentro do interval** sem

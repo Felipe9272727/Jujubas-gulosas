@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "yammy:rugido_diablo",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "yammy:rugido_diablo",
+      "minecraft:display_name": {
+        "value": "Rugido del Diablo"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "yammy_rugido_diablo",
+        "duration": 30
+      }
+    }
+  }
+}

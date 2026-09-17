@@ -15,6 +15,8 @@ export const log = {
   actionBars: [],
   titles: [],
   explosions: [],
+  knockbacks: [],
+  cameras: [],
 };
 
 function record(err, phase) {
@@ -179,6 +181,31 @@ class EquippableComponent {
   }
 }
 
+// Camera do player. No jogo o preset "minecraft:free" solta a camera do corpo,
+// entao quem usa tem que reposicionar sempre - o stub so guarda o ultimo estado.
+class PlayerCamera {
+  constructor(entity) {
+    this.entity = entity;
+    this.preset = undefined;
+    this.options = undefined;
+  }
+  setCamera(preset, options) {
+    this.entity._assertValid();
+    if (typeof preset !== "string" || !preset.includes(":")) {
+      throw new Error(`preset de camera invalido: ${preset}`);
+    }
+    this.preset = preset;
+    this.options = options;
+    log.cameras.push({ player: this.entity.name, preset, options });
+  }
+  clear() {
+    this.entity._assertValid();
+    this.preset = undefined;
+    this.options = undefined;
+    log.cameras.push({ player: this.entity.name, preset: undefined });
+  }
+}
+
 class OnScreenDisplay {
   constructor(entity) {
     this.entity = entity;
@@ -220,6 +247,7 @@ export class Entity {
     this._health_c = new HealthComponent(this);
     this._equippable = new EquippableComponent(this);
     this.onScreenDisplay = new OnScreenDisplay(this);
+    this.camera = new PlayerCamera(this);
     this.itemStackComponent = undefined; // usado por entidades minecraft:item
 
     this.dimension._entities.add(this);
@@ -388,6 +416,11 @@ export class Entity {
 
   applyKnockback(horizontal, verticalStrength) {
     this._assertValid();
+    log.knockbacks.push({
+      target: this.name,
+      horizontal: { ...horizontal },
+      verticalStrength,
+    });
     // API 2.0: applyKnockback(VectorXZ, number)
     if (typeof horizontal !== "object" || horizontal === null) {
       throw new Error("applyKnockback espera um objeto {x, z} na API 2.0");
