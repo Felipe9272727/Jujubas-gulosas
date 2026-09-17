@@ -253,11 +253,25 @@ if player_entity.exists():
                 f"na description (achei: {engine!r}) - sem isso a skin de persona quebra"
             )
 
+# ------------------------------- vidas que o Bedrock nao consegue representar
+# health_boost anda de 4 em 4 a partir de 20, entao todo teto de vida e 20+4k.
+# Uma vida fora dessa grade e arredondada PRA CIMA e o personagem fica com 1 a 3
+# de vida a mais do que o configurado.
+main_js_text = (BP / "scripts" / "main.js").read_text(encoding="utf-8")
+for raw in sorted(set(re.findall(r"health:\s*(\d+)", main_js_text)), key=int):
+    configured = int(raw)
+    if (configured - 20) % 4 == 0:
+        continue
+    real = 20 + (-(-(configured - 20) // 4)) * 4
+    notes.append(
+        f"aviso: vida {configured} nao cai na grade do health_boost (20+4k), "
+        f"o jogo vai dar {real}"
+    )
+
 # ------------------------------- itens que o script manda pra offhand
 # O Bedrock recusa a offhand EM SILENCIO pra item sem minecraft:allow_off_hand.
 # O marcador da forma gigante mora nessa slot: sem o componente, o modelo nunca
 # escala e nada no jogo diz por que.
-main_js_text = (BP / "scripts" / "main.js").read_text(encoding="utf-8")
 for marker in sorted(set(re.findall(r'offhandMarker:\s*"([^"]+)"', main_js_text))):
     path = bp_items.get(marker)
     if path is None:

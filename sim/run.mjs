@@ -57,7 +57,16 @@ const CERO_METRALLETA_ROWS = 4; // fileiras por disparo (espelho do main.js)
 
 const ROSTER = [
   { name: "Invasão à Soul Society", ids: ["ichigo", "byakuya", "kenpachi", "mayuri"] },
-  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra", "starkk", "yammy", "harribel", "barragan"] },
+  { name: "Arrancar / Hueco Mundo", ids: [
+      "grimmjow",
+      "ulquiorra",
+      "starkk",
+      "yammy",
+      "harribel",
+      "barragan",
+      "szayelaporro",
+    ],
+  },
 ];
 
 function locate(id) {
@@ -1009,7 +1018,7 @@ check(
 );
 check(
   "segundo arco traz os Arrancar",
-  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy", "Harribel", "Barragan"].every((n) =>
+  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy", "Harribel", "Barragan", "Szayelaporro"].every((n) =>
     shown.buttons.join(" ").includes(n)
   ),
   shown.buttons.join(", ")
@@ -2884,8 +2893,8 @@ dmgBefore = log.damages.length;
 advanceTicks(70, "withers-deterioracao");
 const podre = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo");
 check(
-  "e 100 por segundo por 3 segundos",
-  podre.length === 3 && podre.every((d) => d.amount === 100),
+  "e 80 por segundo por 3 segundos",
+  podre.length === 3 && podre.every((d) => d.amount === 80),
   `${podre.length} segundos de ${JSON.stringify([...new Set(podre.map((d) => d.amount))])}`
 );
 dmgBefore = log.damages.length;
@@ -2939,8 +2948,8 @@ advanceTicks(150, "ruir-del-rey");
 noNewErrors("Ruir del Rey executa limpo", mark);
 const ruina = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo");
 check(
-  "100 por segundo por 7 segundos",
-  ruina.length === 7 && ruina.every((d) => d.amount === 100),
+  "80 por segundo por 7 segundos",
+  ruina.length === 7 && ruina.every((d) => d.amount === 80),
   `${ruina.length} segundos de ${JSON.stringify([...new Set(ruina.map((d) => d.amount))])}`
 );
 
@@ -3004,8 +3013,8 @@ check(
 advanceTicks(100, "el-maldito-deterioracao");
 const maldicaoHits = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo");
 check(
-  "100 por segundo por 4 segundos, sem empilhar",
-  maldicaoHits.length === 4 && maldicaoHits.every((d) => d.amount === 100),
+  "80 por segundo por 4 segundos, sem empilhar",
+  maldicaoHits.length === 4 && maldicaoHits.every((d) => d.amount === 80),
   `${maldicaoHits.length} segundos de ${JSON.stringify([...new Set(maldicaoHits.map((d) => d.amount))])}`
 );
 
@@ -3023,9 +3032,9 @@ dmgBefore = log.damages.length;
 hitWith(barragan, servo, "barragan:m1_arrogante");
 check("gasta a carga no primeiro toque", barragan.getDynamicProperty("mv:muerte_armed") === false);
 advanceTicks(420, "la-muerte-deterioracao");
-const muerteHits = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo" && d.amount === 100);
+const muerteHits = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo" && d.amount === 80);
 check(
-  "100 por segundo por 20 segundos",
+  "80 por segundo por 20 segundos",
   muerteHits.length === 20,
   `${muerteHits.length} segundos`
 );
@@ -3052,6 +3061,362 @@ check(
   String(inv(barragan).getItem(0)?.typeId)
 );
 servo.kill();
+
+/* ================= Szayelaporro Granz ================= */
+
+scenario("Szayelaporro Granz: ativação");
+const szayel = createPlayer("SzayelPlayer", { x: 4000, y: 64, z: 4000 });
+const cobaiaSzayel = createDummy("Cobaia", { x: 4003, y: 64, z: 4000 }, 500000);
+emit("playerSpawn", { player: szayel, initialSpawn: true });
+advanceTicks(20, "spawn-szayel");
+
+mark = errors.length;
+await pickCharacter(szayel, "szayelaporro");
+advanceTicks(20, "ativar-szayel");
+noNewErrors("ativar Szayelaporro sem erro", mark);
+// 750 nao cai na grade do health_boost (20+4k), entao o jogo arredonda pra 752
+check("vida maxima 752 (750 arredondado)", virtualMax(szayel) === 752, `${virtualMax(szayel)}`);
+check(
+  "5 itens base nos slots 0-4",
+  JSON.stringify(slotIds(szayel, 5)) ===
+    JSON.stringify([
+      "szayel:m1_zanpakuto",
+      "szayel:rush_and_pierce",
+      "szayel:ascendent_cut",
+      "szayel:carbon_copy",
+      "szayel:learn_and_adapt",
+    ]),
+  JSON.stringify(slotIds(szayel, 5))
+);
+dmgBefore = log.damages.length;
+hitWith(szayel, cobaiaSzayel, "szayel:m1_zanpakuto");
+check(
+  "m1 dá 17 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Cobaia" && d.amount === 17)
+);
+
+scenario("Rush and Pierce: teleguiado, não erra");
+mark = errors.length;
+szayel.teleport({ x: 4000, y: 64, z: 4000 });
+szayel._view = { x: 1, y: 0, z: 0 };
+// de propósito FORA da mira: o avanço tem que curvar até ele
+cobaiaSzayel.teleport({ x: 4008, y: 64, z: 4008 });
+dmgBefore = log.damages.length;
+useItem(szayel, "szayel:rush_and_pierce");
+advanceTicks(20, "rush-and-pierce");
+noNewErrors("Rush and Pierce executa limpo", mark);
+check(
+  "75 de dano mesmo com o alvo fora da mira",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Cobaia" && d.amount === 75),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Cobaia"))
+);
+const distDoAlvo = Math.hypot(szayel.location.x - 4008, szayel.location.z - 4008);
+check("e avança até o alvo", distDoAlvo < 4, `dist=${distDoAlvo.toFixed(2)}`);
+
+scenario("Ascendent Cut");
+mark = errors.length;
+szayel.teleport({ x: 4100, y: 64, z: 4100 });
+szayel._view = { x: 1, y: 0, z: 0 };
+cobaiaSzayel.teleport({ x: 4108, y: 64, z: 4100 });
+dmgBefore = log.damages.length;
+const kbAntesDoCorte = log.knockbacks.length;
+useItem(szayel, "szayel:ascendent_cut");
+advanceTicks(20, "ascendent-cut");
+noNewErrors("Ascendent Cut executa limpo", mark);
+check(
+  "50 de dano, uma vez só por alvo",
+  log.damages.slice(dmgBefore).filter((d) => d.target === "Cobaia" && d.amount === 50)
+    .length === 1,
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Cobaia"))
+);
+check(
+  "ascendente: joga o alvo pra cima",
+  log.knockbacks
+    .slice(kbAntesDoCorte)
+    .some((k) => k.target === "Cobaia" && k.verticalStrength > 0),
+  JSON.stringify(log.knockbacks.slice(kbAntesDoCorte).filter((k) => k.target === "Cobaia"))
+);
+
+scenario("Carbon-Copy: devolve o m1 do alvo nele mesmo");
+mark = errors.length;
+szayel.teleport({ x: 4200, y: 64, z: 4200 });
+szayel._view = { x: 1, y: 0, z: 0 };
+// alvo com personagem: a cópia tem que usar o m1 DELE (Kenpachi = 14)
+const copiado = createPlayer("Copiado", { x: 4205, y: 64, z: 4200 });
+emit("playerSpawn", { player: copiado, initialSpawn: true });
+advanceTicks(20, "spawn-copiado");
+await pickCharacter(copiado, "kenpachi");
+advanceTicks(20, "ativar-copiado");
+dmgBefore = log.damages.length;
+useItem(szayel, "szayel:carbon_copy");
+advanceTicks(120, "carbon-copy");
+noNewErrors("Carbon-Copy executa limpo", mark);
+const golpesDaCopia = log.damages.slice(dmgBefore).filter((d) => d.target === "Copiado");
+check(
+  "a cópia bate no alvo com o m1 do próprio alvo (14 do Kenpachi)",
+  golpesDaCopia.length >= 1 && golpesDaCopia.every((d) => d.amount === 14),
+  `${golpesDaCopia.length} golpes de ${JSON.stringify([
+    ...new Set(golpesDaCopia.map((d) => d.amount)),
+  ])}`
+);
+check(
+  "e a cópia bate no ALVO, não no Szayelaporro",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "SzayelPlayer")
+);
+mark = errors.length;
+advanceTicks(140, "carbon-copy-fim");
+noNewErrors("a cópia se desfaz sozinha", mark);
+dmgBefore = log.damages.length;
+advanceTicks(60, "carbon-copy-sumiu");
+check("e para de bater", !log.damages.slice(dmgBefore).some((d) => d.target === "Copiado"));
+
+scenario("Learn and Adapt: dobra o dano recebido");
+mark = errors.length;
+szayel.teleport({ x: 4300, y: 64, z: 4300 });
+szayel._view = { x: 1, y: 0, z: 0 };
+copiado.teleport({ x: 4305, y: 64, z: 4300 });
+useItem(szayel, "szayel:learn_and_adapt");
+advanceTicks(5, "learn-and-adapt");
+noNewErrors("Learn and Adapt executa limpo", mark);
+dmgBefore = log.damages.length;
+hitWith(szayel, copiado, "szayel:m1_zanpakuto");
+check(
+  "o m1 de 17 vira 34 no alvo estudado",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Copiado" && d.amount === 34),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Copiado"))
+);
+// a marca da Pesquisa do Ulquiorra continua sendo 1.5x, não 2x
+advanceTicks(320, "marca-expira");
+dmgBefore = log.damages.length;
+hitWith(szayel, copiado, "szayel:m1_zanpakuto");
+check(
+  "passados os 15s o dano volta ao normal",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Copiado" && d.amount === 17)
+);
+
+scenario("Resurrección: Fornicarás");
+mark = errors.length;
+szayel.setDynamicProperty(DP.awakening, 100);
+const msgsBeforeFornicaras = log.worldMessages.length;
+szayel.isSneaking = true;
+useItem(szayel, "szayel:m1_zanpakuto");
+szayel.isSneaking = false;
+advanceTicks(20, "fornicaras");
+noNewErrors("Resurrección sem erro", mark);
+check(
+  "manda a fala no chat",
+  log.worldMessages
+    .slice(msgsBeforeFornicaras)
+    .some((m) => m.message === "<SzayelPlayer> Sorva...Fornicarás")
+);
+check("vida maxima 1000", virtualMax(szayel) === 1000, `${virtualMax(szayel)}`);
+check(
+  "4 itens da Resurrección nos slots 0-3",
+  JSON.stringify(slotIds(szayel, 4)) ===
+    JSON.stringify([
+      "szayel:m1_fornicaras",
+      "szayel:teatro_de_titeres",
+      "szayel:posse",
+      "szayel:gabriel",
+    ]),
+  JSON.stringify(slotIds(szayel, 4))
+);
+dmgBefore = log.damages.length;
+cobaiaSzayel.teleport({ x: 4303, y: 64, z: 4300 });
+hitWith(szayel, cobaiaSzayel, "szayel:m1_fornicaras");
+check(
+  "m1 da Resurrección dá 22",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Cobaia" && d.amount === 22)
+);
+
+scenario("Individualidade: 40 de vida a cada 6 segundos");
+mark = errors.length;
+// o contador da cura em bloco é por sessão e já estava rodando: espera a
+// próxima cura cair pra zerar a janela antes de medir
+hp(szayel).setCurrentValue(500);
+let curaAlinhada = false;
+for (let i = 0; i < 8 && !curaAlinhada; i++) {
+  advanceTicks(20, "alinhar-cura");
+  if (Math.round(virtualHp(szayel)) > 500) curaAlinhada = true;
+}
+check("a cura em bloco cai", curaAlinhada);
+
+hp(szayel).setCurrentValue(500);
+advanceTicks(100, "quase-6s");
+check("não cura antes dos 6s", Math.round(virtualHp(szayel)) === 500, `${virtualHp(szayel)}`);
+advanceTicks(40, "6s");
+check("cura 40 aos 6s", Math.round(virtualHp(szayel)) === 540, `${virtualHp(szayel)}`);
+advanceTicks(120, "12s");
+check("e outros 40 aos 12s", Math.round(virtualHp(szayel)) === 580, `${virtualHp(szayel)}`);
+noNewErrors("a cura em bloco roda sem erro", mark);
+
+scenario("Teatro de Títeres: trava os dois e corta o coração");
+mark = errors.length;
+szayel.teleport({ x: 4400, y: 64, z: 4400 });
+szayel._view = { x: 1, y: 0, z: 0 };
+// alvo com personagem pra dar pra medir os -30% de vida máxima
+const titere = createPlayer("Titere", { x: 4405, y: 64, z: 4400 });
+emit("playerSpawn", { player: titere, initialSpawn: true });
+advanceTicks(20, "spawn-titere");
+await pickCharacter(titere, "yammy");
+advanceTicks(20, "ativar-titere");
+check("o títere começa com 1000 de vida máxima", virtualMax(titere) === 1000, `${virtualMax(titere)}`);
+
+// o menu é o 4º botão: o coração
+queueFormResponse(3);
+useItem(szayel, "szayel:teatro_de_titeres");
+advanceTicks(2, "teatro-abre");
+await Promise.resolve();
+await Promise.resolve();
+advanceTicks(10, "teatro-escolhe");
+noNewErrors("Teatro de Títeres executa limpo", mark);
+check(
+  "coração furado: -30% da vida máxima (1000 -> 700)",
+  virtualMax(titere) === 700,
+  `${virtualMax(titere)}`
+);
+check("e solta os dois depois da escolha", !szayel.getDynamicProperty("mv:frozen_end"));
+
+scenario("Teatro de Títeres: uso único por Resurrección");
+mark = errors.length;
+advanceTicks(420, "cooldown-teatro");
+const msgsBeforeSegundoTeatro = log.worldMessages.length;
+useItem(szayel, "szayel:teatro_de_titeres");
+advanceTicks(5, "segundo-teatro");
+noNewErrors("recusa o segundo uso sem erro", mark);
+check(
+  "avisa que é uso único",
+  log.worldMessages
+    .slice(msgsBeforeSegundoTeatro)
+    .some((m) => m.to === "SzayelPlayer" && m.message.includes("uso único")),
+  JSON.stringify(log.worldMessages.slice(msgsBeforeSegundoTeatro).map((m) => m.message))
+);
+
+scenario("Teatro de Títeres: a mutilação cai quando um dos dois morre");
+// o lado que morre aqui é o DONO da mutilação, pra dar pra ler o alvo depois
+mark = errors.length;
+const szayelSombra = createPlayer("SzayelSombra", { x: 4450, y: 64, z: 4450 });
+const titere2 = createPlayer("Titere2", { x: 4455, y: 64, z: 4450 });
+emit("playerSpawn", { player: szayelSombra, initialSpawn: true });
+emit("playerSpawn", { player: titere2, initialSpawn: true });
+advanceTicks(20, "spawn-sombra");
+await pickCharacter(szayelSombra, "szayelaporro");
+await pickCharacter(titere2, "yammy");
+advanceTicks(20, "ativar-sombra");
+szayelSombra.setDynamicProperty(DP.awakening, 100);
+szayelSombra.isSneaking = true;
+useItem(szayelSombra, "szayel:m1_zanpakuto");
+szayelSombra.isSneaking = false;
+advanceTicks(20, "sombra-desperta");
+szayelSombra._view = { x: 1, y: 0, z: 0 };
+
+queueFormResponse(3); // coração
+useItem(szayelSombra, "szayel:teatro_de_titeres");
+advanceTicks(2, "teatro-sombra");
+await Promise.resolve();
+await Promise.resolve();
+advanceTicks(10, "teatro-sombra-escolhe");
+check("coração furado no segundo títere", virtualMax(titere2) === 700, `${virtualMax(titere2)}`);
+
+szayelSombra.kill();
+advanceTicks(30, "dono-morreu");
+noNewErrors("a morte do dono não quebra nada", mark);
+check("a mutilação foi devolvida", !titere2.getDynamicProperty("mv:cut_heart"));
+check(
+  "e a vida máxima do alvo volta pros 1000",
+  virtualMax(titere2) === 1000,
+  `${virtualMax(titere2)}`
+);
+titere.kill();
+titere2.kill();
+
+scenario("Posse: entidades domadas caçam outro player");
+mark = errors.length;
+szayel.teleport({ x: 4500, y: 64, z: 4500 });
+const domada = createDummy("Domada", { x: 4503, y: 64, z: 4500 }, 500000);
+const presaDaPosse = createPlayer("PresaDaPosse", { x: 4510, y: 64, z: 4500 });
+emit("playerSpawn", { player: presaDaPosse, initialSpawn: true });
+advanceTicks(20, "spawn-presa-posse");
+await pickCharacter(presaDaPosse, "ichigo");
+advanceTicks(20, "ativar-presa-posse");
+dmgBefore = log.damages.length;
+useItem(szayel, "szayel:posse");
+advanceTicks(200, "posse");
+noNewErrors("Posse executa limpo", mark);
+check(
+  "a entidade domada anda até a presa",
+  Math.abs(domada.location.x - 4510) < 3,
+  `x=${domada.location.x.toFixed(2)}`
+);
+check(
+  "e bate nela",
+  log.damages.slice(dmgBefore).some((d) => d.target === "PresaDaPosse"),
+  JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.target))
+);
+check(
+  "e não bate no Szayelaporro",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "SzayelPlayer")
+);
+mark = errors.length;
+advanceTicks(450, "posse-acaba");
+noNewErrors("a Posse acaba sozinha", mark);
+dmgBefore = log.damages.length;
+advanceTicks(80, "posse-acabou");
+check(
+  "e as entidades param",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "PresaDaPosse")
+);
+
+scenario("Gabriel: renasce de dentro do hospedeiro");
+mark = errors.length;
+szayel.teleport({ x: 4600, y: 64, z: 4600 });
+const hospedeiro = createDummy("Hospedeiro", { x: 4620, y: 64, z: 4600 }, 500000);
+useItem(szayel, "szayel:gabriel");
+advanceTicks(5, "gabriel-armado");
+check("fica armado", szayel.getDynamicProperty("mv:gabriel_armed") === true);
+
+hitWith(szayel, hospedeiro, "szayel:m1_fornicaras");
+advanceTicks(5, "gabriel-marca");
+check("marca o hospedeiro no primeiro hit", szayel.getDynamicProperty("mv:gabriel_armed") === false);
+check(
+  "avisa quem é o hospedeiro",
+  log.worldMessages.some((m) => m.message.includes("hospedeiro do"))
+);
+
+// ainda com vida: não renasce
+advanceTicks(40, "gabriel-espera");
+check("não renasce com vida cheia", Math.abs(szayel.location.x - 4600) < 1);
+
+// agora sim, abaixo de 50
+hp(szayel).setCurrentValue(30);
+advanceTicks(30, "gabriel-renasce");
+noNewErrors("o renascimento executa limpo", mark);
+check(
+  "teleporta no hospedeiro",
+  Math.abs(szayel.location.x - 4620) < 1.5,
+  `x=${szayel.location.x.toFixed(2)}`
+);
+check("explode o hospedeiro", !hospedeiro.isValid);
+check(
+  "e volta com a vida cheia",
+  Math.round(virtualHp(szayel)) === 1000,
+  `${virtualHp(szayel)}`
+);
+
+scenario("Fim da Resurrección do Szayelaporro");
+mark = errors.length;
+szayel.setDynamicProperty(DP.awakening, 2);
+advanceTicks(90, "drenar-fornicaras");
+noNewErrors("reversão sem erro", mark);
+check("awakened = false", szayel.getDynamicProperty(DP.awakened) === false);
+check("vida maxima volta pra 752", virtualMax(szayel) === 752, `${virtualMax(szayel)}`);
+check(
+  "itens base restaurados",
+  inv(szayel).getItem(0)?.typeId === "szayel:m1_zanpakuto",
+  String(inv(szayel).getItem(0)?.typeId)
+);
+cobaiaSzayel.kill();
+domada.kill();
 
 /* ================= dash universal ================= */
 

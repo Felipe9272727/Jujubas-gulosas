@@ -74,6 +74,7 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 | Yammy Llargo | 1000 | Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
 | Tier Harribel | 2600 | Tiburón — "Reduce a cenizas, Tiburón" (3000) |
 | Barragan Louisenbairn | 3000 | Arrogante — "Envelhece, Arrogante!" (mesma vida) |
+| Szayelaporro Granz | 750 (752) | Fornicarás — "Sorva...Fornicarás" (1000, cura 40 a cada 6s) |
 
 ## Sistemas genéricos (reusar, não duplicar)
 
@@ -93,6 +94,9 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 | `applyDeterioration` | `applyDot` + a marca visual do envelhecimento (5 skills do Barragan) |
 | `BLOCK` / `isBlocking` | Guarda universal. `dealDamage` corta metade; `{breaksBlock:true}` passa direto |
 | `isRespiring` | Imunidade a longo alcance: consultada pelos 3 sistemas de projétil |
+| `markTarget` / `markMultiplierOf` | Marca de dano recebido. Pesquisa = 1.5x, Learn and Adapt = 2x |
+| `activeMutilations` | Mutilações sem prazo do Teatro de Títeres; caem quando um dos dois morre |
+| `cutHealthFor` | Aplica o coração furado (-30%) em toda troca de forma, não só no corte |
 | `summonHomingBeast` | Fera guiada que explode ao encostar (Lobos, Tubarões) |
 | `spawnPoisonCloud` | Neblina parada; aceita partícula, cegueira e deterioração próprias |
 | `reapplyFormEffects` | Devolve os efeitos permanentes da forma |
@@ -143,10 +147,14 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    confiar na chamada, e avisa no chat quando falha. O `validate.py` exige o
    componente em todo item citado como `offhandMarker`, e o stub da simulação
    lê os `BP/items` de verdade pra recusar igual ao jogo.
-10. **O client entity do player precisa de `min_engine_version: "1.13.0"`.**
+10. **Vida só existe na grade `20 + 4k`.** `health_boost` anda de 4 em 4 a partir
+   de 20, então um valor fora dessa grade é arredondado **pra cima**: os 750 do
+   Szayelaporro viram 752 no jogo. É o único do elenco fora da grade; o
+   `validate.py` avisa quando entra outro.
+11. **O client entity do player precisa de `min_engine_version: "1.13.0"`.**
    Acima disso as skins de persona (Character Creator) quebram. O `format_version`
    do arquivo pode ser alto normalmente — é o `min_engine_version` que trava.
-11. **Player gigante só pelo resource pack.** Não existe setter de tamanho no
+12. **Player gigante só pelo resource pack.** Não existe setter de tamanho no
    Script API e `minecraft:scale` no BP pega todo mundo. O jeito que funciona é
    `scripts.scale` no client entity do player (`RP/entity/player.entity.json`),
    que aceita Molang e escala **só o modelo**. O gatilho é um item invisível
@@ -161,6 +169,22 @@ tecla quando realmente disparam (medidor cheio, vida baixa); se não disparam, a
 tecla cai pro bloqueio em vez de morrer. As duas do meio (câmera da Ira do Yammy,
 persona do Starkk) sempre disparam, então **nessas duas formas despertas não dá
 pra bloquear** — está travado na simulação de propósito.
+
+## Teatro de Títeres (o mais complicado do addon)
+
+Uso único **por Resurrección** (`DP.teatroUsed` zera em `activateAwakening`).
+Ao usar num alvo, os **dois lados** ficam presos (`DP.frozenEnd`): ninguém ataca
+nem usa skill, nem o próprio Szayelaporro. Um `ActionFormData` abre com as
+quatro escolhas; fechar sem escolher **solta os dois** (senão o Teatro trancaria
+os dois de graça até o prazo). As mutilações não têm prazo: valem até um dos dois
+cair, e um loop de 20 ticks devolve tudo quando isso acontece.
+
+| Escolha | Como é feito |
+|---|---|
+| Olhos | `darkness` **reaplicada** a cada 20 ticks — qualquer darkness curta de outra skill substituiria a permanente |
+| Perna | `DP.legCut`, lido pelo loop do dash |
+| Braço | `DP.armCut`, lido por `dmgMultiplier` |
+| Coração | `DP.heartCut`, lido por `cutHealthFor` dentro de `applyCharacterEffects` — vale em toda troca de forma, não só no momento do corte |
 
 ## Bugs conhecidos / limitações em aberto
 
@@ -210,6 +234,11 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | El Maldito (Barragan) | li "4 segundos" como a duração da névoa **e** da deterioração |
 | La Muerte (Barragan) | cooldown 2 min (não especificado) |
 | Resurrección: Arrogante | vida não especificada: mantém os 3000 da base, sem cura de graça |
+| Deterioração (Barragan) | 80/s em todas as cinco skills (era 100) |
+| Carbon-Copy (Szayelaporro) | dura 10s, bate a cada 1,5s; 20 de dano se o alvo não tem personagem |
+| Learn and Adapt | dura 15s, igual à Pesquisa |
+| Posse (Szayelaporro) | 20 de dano por investida, raio 20, alcance de caça 40 |
+| Gabriel (Szayelaporro) | o estouro do hospedeiro dá 100 num raio de 4 |
 | Cero Metralleta (Starkk) | 30 por bala (era 60 com 1 fileira; agora são 4 por disparo) |
 | Aqua's Dash (Harribel) | 80 de dano de contato, 24 blocos |
 | M1 do Dente de Tubarão (Harribel) | 90 de dano |

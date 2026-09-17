@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "szayel:carbon_copy",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "szayel:carbon_copy",
+      "minecraft:display_name": {
+        "value": "Carbon-Copy"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "szayel_carbon_copy",
+        "duration": 25
+      }
+    }
+  }
+}

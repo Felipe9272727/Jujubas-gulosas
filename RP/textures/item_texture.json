@@ -253,6 +253,33 @@
     },
     "barragan:la_muerte": {
       "textures": "textures/items/barragan_la_muerte"
+    },
+    "szayel:m1_zanpakuto": {
+      "textures": "textures/items/szayel_m1_zanpakuto"
+    },
+    "szayel:rush_and_pierce": {
+      "textures": "textures/items/szayel_rush_and_pierce"
+    },
+    "szayel:ascendent_cut": {
+      "textures": "textures/items/szayel_ascendent_cut"
+    },
+    "szayel:carbon_copy": {
+      "textures": "textures/items/szayel_carbon_copy"
+    },
+    "szayel:learn_and_adapt": {
+      "textures": "textures/items/szayel_learn_and_adapt"
+    },
+    "szayel:m1_fornicaras": {
+      "textures": "textures/items/szayel_m1_fornicaras"
+    },
+    "szayel:teatro_de_titeres": {
+      "textures": "textures/items/szayel_teatro_de_titeres"
+    },
+    "szayel:posse": {
+      "textures": "textures/items/szayel_posse"
+    },
+    "szayel:gabriel": {
+      "textures": "textures/items/szayel_gabriel"
     }
   }
 }

@@ -25,6 +25,7 @@ usar o seletor** passa pro próximo (dá a volta no último).
 | **Yammy Llargo** | 1000 | Resurrección: Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
 | **Tier Harribel** | 2600 | Resurrección: Tiburón — "Reduce a cenizas, Tiburón" (3000 de vida) |
 | **Barragan Louisenbairn** | 3000 | Resurrección: Arrogante — "Envelhece, Arrogante!" (mesma vida) |
+| **Szayelaporro Granz** | 750 (752) | Resurrección: Fornicarás — "Sorva...Fornicarás" (1000, cura 40 a cada 6s) |
 
 ## Layout
 

@@ -30,6 +30,14 @@ const DP = {
   blockCd: "mv:cd_block",
   respiraEnd: "mv:respira_end", // imunidade a longo alcance do Barragan
   muerteArmed: "mv:muerte_armed", // La Muerte esperando o primeiro toque
+  markMultiplier: "mv:mark_mult", // quanto a marca multiplica o dano recebido
+  teatroUsed: "mv:teatro_used", // Teatro de Títeres e uso unico por awakening
+  frozenEnd: "mv:frozen_end", // preso no Teatro: nao ataca nem usa skill
+  eyesCut: "mv:cut_eyes", // mutilacoes do Teatro, valem ate alguem morrer
+  legCut: "mv:cut_leg",
+  armCut: "mv:cut_arm",
+  heartCut: "mv:cut_heart",
+  gabrielArmed: "mv:gabriel_armed", // Gabriel esperando marcar um hospedeiro
 };
 
 const BASE_SPEED_AMPLIFIER = 1; // speed 2 pra todo personagem
@@ -372,6 +380,35 @@ const CHARACTERS = {
       },
     },
   },
+  szayelaporro: {
+    id: "szayelaporro",
+    name: "Szayelaporro Granz",
+    health: 750,
+    items: {
+      0: "szayel:m1_zanpakuto",
+      1: "szayel:rush_and_pierce",
+      2: "szayel:ascendent_cut",
+      3: "szayel:carbon_copy",
+      4: "szayel:learn_and_adapt",
+    },
+    awakening: {
+      name: "Resurrección: Fornicarás",
+      triggerItem: "szayel:m1_zanpakuto",
+      health: 1000,
+      onActivate: "battlecry",
+      chatLine: "Sorva...Fornicarás",
+      cryParticle: "szayel:esporo",
+      cryPitch: 1.2,
+      // individualidade: 40 de vida a cada 6s (mesmo sistema da Ira do Yammy)
+      healPerInterval: { amount: 40, ticks: 120 },
+      items: {
+        0: "szayel:m1_fornicaras",
+        1: "szayel:teatro_de_titeres",
+        2: "szayel:posse",
+        3: "szayel:gabriel",
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -410,6 +447,7 @@ const ARCS = [
       "yammy",
       "harribel",
       "barragan",
+      "szayelaporro",
     ],
   },
 ];
@@ -536,8 +574,27 @@ function showBlockSpark(target) {
 // "700 de dano" continue significando 700 da vida que ele ve na actionbar,
 // aplica a marca da Pesquisa do Ulquiorra e o bloqueio do alvo.
 // options.breaksBlock = golpe que passa direto pela guarda.
+// A marca guarda o proprio multiplicador: a Pesquisa do Ulquiorra da 1.5x e a
+// Learn and Adapt do Szayelaporro da 2x, na mesma estrutura.
+function markTarget(target, durationTicks, multiplier) {
+  target.setDynamicProperty(DP.markedEnd, system.currentTick + durationTicks);
+  target.setDynamicProperty(DP.markMultiplier, multiplier);
+}
+
+function markMultiplierOf(entity) {
+  if (!isMarked(entity)) return 1;
+  try {
+    const stored = entity.getDynamicProperty(DP.markMultiplier);
+    return typeof stored === "number" && stored > 0
+      ? stored
+      : PESQUISA.damageMultiplier;
+  } catch (e) {
+    return PESQUISA.damageMultiplier;
+  }
+}
+
 function dealDamage(target, amount, source, options) {
-  const marked = isMarked(target) ? PESQUISA.damageMultiplier : 1;
+  const marked = markMultiplierOf(target);
 
   const guarded = !options?.breaksBlock && isBlocking(target);
   if (guarded) showBlockSpark(target);
@@ -613,6 +670,13 @@ const SKILL_COOLDOWN_TICKS = {
   "barragan:respira": 400, // 20s
   "barragan:el_maldito": 360, // 18s
   "barragan:la_muerte": 2400, // 2 min - nao especificado
+  "szayel:rush_and_pierce": 340, // 17s
+  "szayel:ascendent_cut": 300, // 15s
+  "szayel:carbon_copy": 500, // 25s
+  "szayel:learn_and_adapt": 600, // 30s
+  "szayel:teatro_de_titeres": 400, // 20s - mas e uso unico por awakening
+  "szayel:posse": 500, // 25s
+  "szayel:gabriel": 500, // 25s
 };
 
 const SKILL_NAMES = {
@@ -679,6 +743,13 @@ const SKILL_NAMES = {
   "barragan:respira": "Respira",
   "barragan:el_maldito": "El Maldito",
   "barragan:la_muerte": "La Muerte",
+  "szayel:rush_and_pierce": "Rush and Pierce",
+  "szayel:ascendent_cut": "Ascendent Cut",
+  "szayel:carbon_copy": "Carbon-Copy",
+  "szayel:learn_and_adapt": "Learn and Adapt",
+  "szayel:teatro_de_titeres": "Teatro de Títeres",
+  "szayel:posse": "Posse",
+  "szayel:gabriel": "Gabriel",
 };
 
 // dano aumentado
@@ -763,9 +834,16 @@ const DAMAGE = {
   elReiOco: 40, // por cero; 8 direcoes x 5 rajadas
   royalCleave: 500, // unico golpe da addon que ignora bloqueio
   withersSlashesCut: 100, // o corte; a deterioracao vem por cima
-  deterioration: 100, // por segundo, em toda deterioracao do Barragan
+  deterioration: 80, // por segundo, em toda deterioracao do Barragan
   // Resurreccion: Arrogante
   arroganteM1: 70,
+  // Szayelaporro Granz
+  szayelM1: 17,
+  rushAndPierce: 75,
+  ascendentCut: 50,
+  // Resurreccion: Fornicaras
+  fornicarasM1: 22,
+  posseHit: 20, // por investida da entidade domada - nao especificado
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -950,6 +1028,39 @@ const VORTICE = {
 };
 const MALDITA_AGUA = { range: 30, tickInterval: 20 }; // 20 por segundo, sem prazo
 
+// Szayelaporro Granz
+const RUSH_AND_PIERCE = { searchRadius: 24, steps: 10, hitRadius: 2.6 };
+const ASCENDENT_CUT = { radius: 3.2, thickness: 1.2, range: 24, speed: 2, lift: 0.9 };
+const CARBON_COPY = {
+  searchRadius: 30,
+  durationTicks: 200, // 10s de vida da copia - nao especificado
+  strikeIntervalTicks: 30,
+  speed: 0.9,
+  hitRadius: 2.2,
+  fallbackDamage: 20, // alvo sem personagem ativo nao tem m1 pra copiar
+};
+const LEARN_AND_ADAPT = {
+  range: 40,
+  durationTicks: 300, // 15s, igual a Pesquisa - nao especificado
+  damageMultiplier: 2, // dobra o dano que o alvo recebe
+};
+// Resurreccion: Fornicaras
+const TEATRO = {
+  range: 24,
+  freezeTicks: 200, // 10s parados enquanto o menu esta aberto
+  armDamageCut: 0.2, // braco: -20% de dano do inimigo
+  heartHealthCut: 0.3, // coracao: -30% da vida maxima
+};
+const POSSE = {
+  radius: 20,
+  searchRadius: 40,
+  durationTicks: 600, // 30s domadas
+  tickInterval: 10,
+  hitRadius: 2.5,
+  speed: 0.9,
+};
+const GABRIEL = { healthThreshold: 50, blastRadius: 4, blastDamage: 100 }; // dano do estouro nao especificado
+
 // Barragan Louisenbairn
 const ARROGANTE_SLASH = {
   forward: 5,
@@ -982,7 +1093,7 @@ const EL_MALDITO = {
   blindnessAmplifier: 0,
   particlesPerTick: 60,
   particle: "barragan:podridao",
-  deterioration: { perSecond: 100, seconds: 4 },
+  deterioration: { perSecond: 80, seconds: 4 },
   endMessage: "§7A neblina do El Maldito se dissipou.",
 };
 const LA_MUERTE = { seconds: 20 };
@@ -1071,6 +1182,8 @@ function clearSessionTimers(player) {
   player.setDynamicProperty(DP.blockCd, undefined);
   player.setDynamicProperty(DP.respiraEnd, 0);
   player.setDynamicProperty(DP.muerteArmed, false);
+  player.setDynamicProperty(DP.frozenEnd, 0);
+  player.setDynamicProperty(DP.gabrielArmed, false);
 }
 
 function setCooldown(player, key, currentTick) {
@@ -1127,13 +1240,26 @@ function setMaxHealth(player, maxHealth) {
   if (hp) hp.setCurrentValue(Math.min(before, realMaxHealthFor(maxHealth)));
 }
 
+// O coracao cortado pelo Teatro de Títeres derruba o teto de vida em 30%. Entra
+// aqui pra valer em TODA troca de forma (ativar, despertar, reverter, respawn)
+// em vez de so no momento do corte.
+function cutHealthFor(player, maxHealth) {
+  try {
+    if (player.getDynamicProperty(DP.heartCut)) {
+      return Math.round(maxHealth * (1 - TEATRO.heartHealthCut));
+    }
+  } catch (e) {}
+  return maxHealth;
+}
+
 function applyCharacterEffects(
   player,
-  maxHealth,
+  configuredMaxHealth,
   speedAmplifier,
   regenAmplifier = REGEN_AMPLIFIER,
   extraEffects
 ) {
+  const maxHealth = cutHealthFor(player, configuredMaxHealth);
   player.setDynamicProperty(DP.healthScale, healthScaleFor(maxHealth));
 
   setMaxHealth(player, maxHealth);
@@ -1295,6 +1421,11 @@ function isMasked(player) {
 
 function dmgMultiplier(player) {
   let multiplier = isCoated(player) ? 1.2 : 1;
+
+  // braco cortado pelo Teatro de Títeres do Szayelaporro
+  try {
+    if (player.getDynamicProperty(DP.armCut)) multiplier *= 1 - TEATRO.armDamageCut;
+  } catch (e) {}
 
   // formas despertas que dao buff permanente de dano (Pressao do Kenpachi)
   const character = getActiveCharacter(player);
@@ -1618,6 +1749,8 @@ function deactivateCharacter(player) {
   clearComboCounters(player);
   removeZonesOwnedBy(player.id);
   removeCursesBy(player.id);
+  removeMutilationsBy(player.id);
+  gabrielHosts.delete(player.id);
   player.setDynamicProperty(DP.blockEnd, 0);
   player.setDynamicProperty(DP.respiraEnd, 0);
   player.setDynamicProperty(DP.muerteArmed, false);
@@ -1645,6 +1778,8 @@ function activateAwakening(player, character) {
   const items = form.items ?? character.items;
 
   player.setDynamicProperty(DP.awakened, true);
+  // o Teatro de Títeres e uso unico por Resurreccion, entao o crédito volta aqui
+  player.setDynamicProperty(DP.teatroUsed, false);
   applyCharacterEffects(
     player,
     health,
@@ -2011,6 +2146,12 @@ world.afterEvents.itemUse.subscribe((ev) => {
     return;
   }
 
+  // preso no Teatro de Títeres: ninguem usa skill, nem quem abriu o Teatro
+  if (itemStack.typeId in SKILL_COOLDOWN_TICKS && isFrozen(player)) {
+    player.sendMessage("§7O Teatro de Títeres trava as skills enquanto está aberto.");
+    return;
+  }
+
   // enquanto preso num senkei, ninguem pode usar skill - so a m1
   if (itemStack.typeId in SKILL_COOLDOWN_TICKS) {
     const blocking = skillBlockingZoneFor(player);
@@ -2209,6 +2350,27 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "barragan:la_muerte":
       castLaMuerte(player);
+      break;
+    case "szayel:rush_and_pierce":
+      castRushAndPierce(player);
+      break;
+    case "szayel:ascendent_cut":
+      castAscendentCut(player);
+      break;
+    case "szayel:carbon_copy":
+      castCarbonCopy(player);
+      break;
+    case "szayel:learn_and_adapt":
+      castLearnAndAdapt(player);
+      break;
+    case "szayel:teatro_de_titeres":
+      castTeatroDeTiteres(player);
+      break;
+    case "szayel:posse":
+      castPosse(player);
+      break;
+    case "szayel:gabriel":
+      castGabriel(player);
       break;
   }
 });
@@ -3628,7 +3790,7 @@ function castPesquisa(player) {
   }
   if (!tryUseSkill(player, "ulquiorra:pesquisa")) return;
 
-  target.setDynamicProperty(DP.markedEnd, system.currentTick + PESQUISA.durationTicks);
+  markTarget(target, PESQUISA.durationTicks, PESQUISA.damageMultiplier);
 
   const name = target.typeId === "minecraft:player" ? target.name : target.typeId;
   world.sendMessage(
@@ -5348,6 +5510,586 @@ function tryLaMuerteTouch(player, victim) {
 }
 
 /* ---------------------------------------------------------
+   Skills do Szayelaporro Granz
+   --------------------------------------------------------- */
+
+// dano do m1 QUE O ALVO usaria: a Carbon-Copy devolve o golpe dele nele mesmo
+function m1DamageOf(entity) {
+  try {
+    const character = getActiveCharacter(entity);
+    if (!character) return CARBON_COPY.fallbackDamage;
+
+    const items = getActiveItemsForPlayer(entity, character);
+    const weapon = MELEE_WEAPONS[items[0]];
+    return weapon ? weapon.baseDamage : CARBON_COPY.fallbackDamage;
+  } catch (e) {
+    return CARBON_COPY.fallbackDamage; // nao e player ou saiu do mundo
+  }
+}
+
+function castRushAndPierce(player) {
+  const victim = nearestTarget(player, RUSH_AND_PIERCE.searchRadius);
+  if (!victim) {
+    player.sendMessage("§7Não tem ninguém por perto pra perfurar.");
+    return;
+  }
+  if (!tryUseSkill(player, "szayel:rush_and_pierce")) return;
+
+  world.sendMessage(`§d${player.name} §7usou §5Rush and Pierce§7!`);
+  try {
+    player.dimension.playSound("mob.enderdragon.flap", player.location, {
+      volume: 1.1,
+      pitch: 1.7,
+    });
+  } catch (e) {}
+
+  // teleguiado: a cada passo o rumo e recalculado pro alvo, entao ele nao
+  // escapa desviando no meio do avanco
+  let step = 0;
+  const interval = system.runInterval(() => {
+    step++;
+
+    let arrived = false;
+    try {
+      const from = player.location;
+      const to = victim.location;
+      const dir = directionToward(from, to);
+      const gap = Math.sqrt(
+        (to.x - from.x) * (to.x - from.x) + (to.z - from.z) * (to.z - from.z)
+      );
+      const advance = Math.min(gap - 1.2, gap / (RUSH_AND_PIERCE.steps - step + 1));
+
+      if (advance > 0.05) {
+        player.teleport(
+          { x: from.x + dir.x * advance, y: from.y, z: from.z + dir.z * advance },
+          { keepVelocity: false, facingLocation: to }
+        );
+      }
+
+      for (let i = 0; i < 4; i++) {
+        player.dimension.spawnParticle("szayel:esporo", {
+          x: from.x + (Math.random() - 0.5) * 0.9,
+          y: from.y + 0.8 + Math.random() * 0.9,
+          z: from.z + (Math.random() - 0.5) * 0.9,
+        });
+      }
+
+      arrived = gap <= RUSH_AND_PIERCE.hitRadius;
+    } catch (e) {
+      system.clearRun(interval); // player ou alvo saiu do mundo
+      return;
+    }
+
+    if (!arrived && step < RUSH_AND_PIERCE.steps) return;
+
+    system.clearRun(interval);
+
+    // certeiro: chegou perto ou acabaram os passos, o golpe sai de qualquer jeito
+    try {
+      dealDamage(victim, DAMAGE.rushAndPierce * dmgMultiplier(player), player);
+      player.dimension.playSound("random.anvil_land", victim.location, {
+        volume: 1.1,
+        pitch: 1.6,
+      });
+    } catch (e) {}
+  }, 1);
+}
+
+function castAscendentCut(player) {
+  if (!tryUseSkill(player, "szayel:ascendent_cut")) return;
+
+  world.sendMessage(`§d${player.name} §7usou §5Ascendent Cut§7!`);
+  try {
+    player.dimension.playSound("mob.wither.shoot", player.location, {
+      volume: 1.1,
+      pitch: 1.6,
+    });
+  } catch (e) {}
+
+  // mesma onda crescente do Getsuga, em pe e comprida
+  fireCrescentWave(player, {
+    radius: ASCENDENT_CUT.radius,
+    thickness: ASCENDENT_CUT.thickness,
+    range: ASCENDENT_CUT.range,
+    speed: ASCENDENT_CUT.speed,
+    damage: DAMAGE.ascendentCut,
+    particle: "szayel:esporo",
+    burst: "szayel:esporo",
+  });
+
+  // ascendente: quem for pego sobe junto com o corte
+  system.runTimeout(() => {
+    try {
+      for (const victim of player.dimension.getEntities({
+        location: player.location,
+        maxDistance: ASCENDENT_CUT.range,
+      })) {
+        if (victim.id === player.id) continue;
+        if (!victim.getComponent("minecraft:health")) continue;
+        victim.applyKnockback({ x: 0, z: 0 }, ASCENDENT_CUT.lift);
+      }
+    } catch (e) {}
+  }, 2);
+}
+
+// A copia nao e uma entidade: o Bedrock nao deixa spawnar um player, entao ela e
+// um fantasma desenhado com particula que persegue o alvo e devolve o m1 DELE
+// nele mesmo.
+function castCarbonCopy(player) {
+  const victim = targetInView(player, CARBON_COPY.searchRadius) ??
+    nearestTarget(player, CARBON_COPY.searchRadius);
+  if (!victim) {
+    player.sendMessage("§7Não tem ninguém por perto pra copiar.");
+    return;
+  }
+  if (!tryUseSkill(player, "szayel:carbon_copy")) return;
+
+  const victimName = nameOf(victim);
+  const copyDamage = m1DamageOf(victim);
+
+  world.sendMessage(
+    `§d${player.name} §7fez uma §5Carbon-Copy §7de §5${victimName}§7 (${copyDamage} por golpe).`
+  );
+  try {
+    player.dimension.playSound("mob.slime.big", player.location, {
+      volume: 1.1,
+      pitch: 1.4,
+    });
+  } catch (e) {}
+
+  let position;
+  try {
+    const start = victim.location;
+    position = { x: start.x + 2, y: start.y, z: start.z + 2 };
+  } catch (e) {
+    return;
+  }
+
+  let ticks = 0;
+  let sinceStrike = 0;
+  const interval = system.runInterval(() => {
+    ticks++;
+    sinceStrike++;
+
+    try {
+      const target = victim.location;
+      const dir = directionToward(position, target);
+      const gap = Math.sqrt(
+        (target.x - position.x) * (target.x - position.x) +
+          (target.z - position.z) * (target.z - position.z)
+      );
+
+      if (gap > CARBON_COPY.hitRadius) {
+        position = {
+          x: position.x + dir.x * CARBON_COPY.speed,
+          y: target.y,
+          z: position.z + dir.z * CARBON_COPY.speed,
+        };
+      }
+
+      // silhueta: uma coluna de particulas do tamanho de um player
+      for (let i = 0; i < 6; i++) {
+        player.dimension.spawnParticle("szayel:esporo", {
+          x: position.x + (Math.random() - 0.5) * 0.7,
+          y: position.y + (i / 6) * 1.9,
+          z: position.z + (Math.random() - 0.5) * 0.7,
+        });
+      }
+
+      if (gap <= CARBON_COPY.hitRadius && sinceStrike >= CARBON_COPY.strikeIntervalTicks) {
+        sinceStrike = 0;
+        dealDamage(victim, copyDamage * dmgMultiplier(player), player);
+        player.dimension.playSound("game.player.attack.strong", position, {
+          volume: 0.9,
+          pitch: 1.3,
+        });
+      }
+    } catch (e) {
+      system.clearRun(interval); // alvo morreu ou saiu do mundo
+      return;
+    }
+
+    if (ticks >= CARBON_COPY.durationTicks) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage(`§7A cópia de §5${victimName}§7 se desfez.`);
+      } catch (e) {}
+    }
+  }, 1);
+}
+
+function castLearnAndAdapt(player) {
+  const victim = targetInView(player, LEARN_AND_ADAPT.range);
+  if (!victim) {
+    player.sendMessage("§7Você não está olhando pra ninguém.");
+    return;
+  }
+  if (!tryUseSkill(player, "szayel:learn_and_adapt")) return;
+
+  // mesma marca da Pesquisa do Ulquiorra, com multiplicador proprio
+  markTarget(victim, LEARN_AND_ADAPT.durationTicks, LEARN_AND_ADAPT.damageMultiplier);
+
+  world.sendMessage(
+    `§d${player.name} §7estudou §5${nameOf(victim)}§7: §cdobro do dano recebido §7por ${
+      LEARN_AND_ADAPT.durationTicks / 20
+    }s.`
+  );
+  try {
+    player.dimension.playSound("random.orb", player.location, { volume: 1, pitch: 1.8 });
+  } catch (e) {}
+
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed += 5;
+    if (elapsed > LEARN_AND_ADAPT.durationTicks || !isMarked(victim)) {
+      system.clearRun(interval);
+      return;
+    }
+    try {
+      const loc = victim.location;
+      for (let i = 0; i < 5; i++) {
+        const angle = (i / 5) * Math.PI * 2 + elapsed / 8;
+        victim.dimension.spawnParticle("szayel:esporo", {
+          x: loc.x + Math.cos(angle) * 0.9,
+          y: loc.y + 2.2,
+          z: loc.z + Math.sin(angle) * 0.9,
+        });
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 5);
+}
+
+/* ---------------------------------------------------------
+   Resurrección: Fornicarás
+   --------------------------------------------------------- */
+
+function isDownOrGone(entity) {
+  try {
+    const hp = entity.getComponent("minecraft:health");
+    return !hp || hp.currentValue <= 0;
+  } catch (e) {
+    return true; // saiu do mundo
+  }
+}
+
+// Preso no Teatro de Títeres: nem o alvo nem o Szayelaporro atacam ou usam
+// skill. Vale pros dois lados, e por isso e um estado e nao um efeito.
+function isFrozen(entity) {
+  try {
+    return (
+      system.currentTick < readTickDeadline(entity, DP.frozenEnd, TEATRO.freezeTicks)
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+/* As mutilacoes do Teatro valem ate UM DOS DOIS cair - nao tem prazo. Ficam
+   aqui em vez de num efeito porque o Bedrock nao tem efeito pra "sem dash" nem
+   pra "-30% de vida maxima". */
+const activeMutilations = [];
+
+const MUTILATIONS = {
+  eyes: {
+    label: "§8Acertar os olhos §7(cegueira até alguém cair)",
+    property: "eyesCut",
+    announce: "ficou cego",
+  },
+  leg: {
+    label: "§8Cortar uma perna §7(sem dash e sem skill de movimento)",
+    property: "legCut",
+    announce: "perdeu uma perna: sem dash",
+  },
+  arm: {
+    label: "§8Cortar um braço §7(-20% de dano)",
+    property: "armCut",
+    announce: "perdeu um braço: -20% de dano",
+  },
+  heart: {
+    label: "§8Furar o coração §7(-30% de vida máxima)",
+    property: "heartCut",
+    announce: "levou o coração furado: -30% de vida máxima",
+  },
+};
+
+const MUTILATION_ORDER = ["eyes", "leg", "arm", "heart"];
+
+function applyMutilation(player, victim, kind) {
+  const spec = MUTILATIONS[kind];
+  if (!spec) return;
+
+  victim.setDynamicProperty(DP[spec.property], true);
+  activeMutilations.push({ ownerId: player.id, owner: player, victim, kind });
+
+  // o coracao muda o teto de vida, entao a forma precisa ser reaplicada
+  if (kind === "heart") {
+    try {
+      reapplyFormEffects(victim);
+    } catch (e) {}
+  }
+
+  world.sendMessage(`§d${nameOf(victim)} §7${spec.announce}§7.`);
+}
+
+function liftMutilation(index) {
+  const entry = activeMutilations[index];
+  activeMutilations.splice(index, 1);
+
+  const spec = MUTILATIONS[entry.kind];
+  try {
+    entry.victim.setDynamicProperty(DP[spec.property], false);
+    if (entry.kind === "eyes") entry.victim.removeEffect("darkness");
+    if (entry.kind === "heart") reapplyFormEffects(entry.victim);
+  } catch (e) {
+    // alvo ja saiu do mundo: nao tem o que devolver
+  }
+}
+
+function removeMutilationsBy(ownerId) {
+  for (let i = activeMutilations.length - 1; i >= 0; i--) {
+    if (activeMutilations[i].ownerId !== ownerId) continue;
+    liftMutilation(i);
+  }
+}
+
+function castTeatroDeTiteres(player) {
+  if (player.getDynamicProperty(DP.teatroUsed)) {
+    player.sendMessage("§7O Teatro de Títeres é uso único por Resurrección.");
+    return;
+  }
+
+  const victim = targetInView(player, TEATRO.range);
+  if (!victim) {
+    player.sendMessage("§7Você não está olhando pra ninguém.");
+    return;
+  }
+  if (!tryUseSkill(player, "szayel:teatro_de_titeres")) return;
+
+  player.setDynamicProperty(DP.teatroUsed, true);
+
+  const until = system.currentTick + TEATRO.freezeTicks;
+  player.setDynamicProperty(DP.frozenEnd, until);
+  victim.setDynamicProperty(DP.frozenEnd, until);
+
+  const victimName = nameOf(victim);
+  world.sendMessage(
+    `§d§l${player.name} abriu o Teatro de Títeres §r§7em §5${victimName}§7. Ninguém ataca enquanto ele escolhe.`
+  );
+  try {
+    player.dimension.playSound("mob.slime.big", player.location, {
+      volume: 1.3,
+      pitch: 0.7,
+    });
+  } catch (e) {}
+
+  const form = new ActionFormData()
+    .title("Teatro de Títeres")
+    .body(`§7O que cortar em §5${victimName}§7?\n§8Vale até um dos dois cair.`);
+  for (const kind of MUTILATION_ORDER) form.button(MUTILATIONS[kind].label);
+
+  form.show(player).then((res) => {
+    // menu fechado sem escolher: solta os dois, senao o Teatro tranca os dois
+    // de graca ate o prazo acabar
+    const kind =
+      res.canceled || res.selection === undefined
+        ? undefined
+        : MUTILATION_ORDER[res.selection];
+
+    releaseTeatro(player, victim);
+    if (!kind) {
+      try {
+        player.sendMessage("§7Você fechou o Teatro sem cortar nada.");
+      } catch (e) {}
+      return;
+    }
+    applyMutilation(player, victim, kind);
+  });
+}
+
+function releaseTeatro(player, victim) {
+  for (const side of [player, victim]) {
+    try {
+      side.setDynamicProperty(DP.frozenEnd, 0);
+      side.removeEffect("slowness");
+    } catch (e) {}
+  }
+}
+
+function castPosse(player) {
+  if (!tryUseSkill(player, "szayel:posse")) return;
+
+  const dim = player.dimension;
+  const origin = player.location;
+
+  // so entidade que nao e player: "domar" outro player nao foi pedido
+  const tamed = dim
+    .getEntities({ location: origin, maxDistance: POSSE.radius })
+    .filter(
+      (entity) =>
+        entity.id !== player.id &&
+        entity.typeId !== "minecraft:player" &&
+        entity.getComponent("minecraft:health")
+    );
+
+  if (tamed.length === 0) {
+    player.sendMessage("§7Não tem nenhuma entidade por perto pra domar.");
+    return;
+  }
+
+  world.sendMessage(
+    `§d${player.name} §7domou §5${tamed.length}§7 ${
+      tamed.length === 1 ? "entidade" : "entidades"
+    } §7com a §5Posse§7.`
+  );
+  try {
+    dim.playSound("mob.slime.big", origin, { volume: 1.2, pitch: 0.9 });
+  } catch (e) {}
+
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed += POSSE.tickInterval;
+
+    for (const pet of tamed) {
+      try {
+        const from = pet.location;
+        // o player mais proximo que NAO e o Szayelaporro
+        const prey = nearestPlayer(player, POSSE.searchRadius, from);
+        if (!prey) continue;
+
+        const to = prey.location;
+        const dir = directionToward(from, to);
+        const gap = Math.sqrt(
+          (to.x - from.x) * (to.x - from.x) + (to.z - from.z) * (to.z - from.z)
+        );
+
+        if (gap > POSSE.hitRadius) {
+          pet.teleport(
+            {
+              x: from.x + dir.x * POSSE.speed,
+              y: from.y,
+              z: from.z + dir.z * POSSE.speed,
+            },
+            { keepVelocity: false, facingLocation: to }
+          );
+        } else {
+          dealDamage(prey, DAMAGE.posseHit * dmgMultiplier(player), player);
+        }
+
+        dim.spawnParticle("szayel:esporo", {
+          x: from.x,
+          y: from.y + 1.4,
+          z: from.z,
+        });
+      } catch (e) {
+        // entidade domada morreu ou saiu do mundo
+      }
+    }
+
+    if (elapsed >= POSSE.durationTicks) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7As entidades voltaram ao normal.");
+      } catch (e) {}
+    }
+  }, POSSE.tickInterval);
+}
+
+// hospedeiro marcado pelo Gabriel, por player. Nao vale gravar em dynamic
+// property porque o que precisamos guardar e a ENTIDADE, nao um numero.
+const gabrielHosts = new Map();
+
+function castGabriel(player) {
+  if (!tryUseSkill(player, "szayel:gabriel")) return;
+
+  player.setDynamicProperty(DP.gabrielArmed, true);
+  player.sendMessage(
+    `§dGabriel armado. §7Bata numa entidade (não player) pra marcar o hospedeiro.`
+  );
+  try {
+    player.dimension.playSound("mob.slime.small", player.location, {
+      volume: 1,
+      pitch: 0.8,
+    });
+  } catch (e) {}
+}
+
+// disparado no m1: marca o hospedeiro, mas so em entidade que nao e player
+function tryGabrielMark(player, victim) {
+  if (!player.getDynamicProperty(DP.gabrielArmed)) return;
+  if (victim.typeId === "minecraft:player") return;
+  try {
+    if (!victim.getComponent("minecraft:health")) return;
+  } catch (e) {
+    return; // o proprio m1 matou o alvo neste tick
+  }
+
+  player.setDynamicProperty(DP.gabrielArmed, false);
+  gabrielHosts.set(player.id, victim);
+  world.sendMessage(
+    `§d${player.name} §7marcou §5${nameOf(victim)}§7 como hospedeiro do §5Gabriel§7.`
+  );
+}
+
+// O renascimento e automatico: quando a vida cai abaixo do limite, ele
+// teleporta no hospedeiro, estoura ele e volta cheio.
+function tryGabrielRebirth(player) {
+  const host = gabrielHosts.get(player.id);
+  if (!host) return;
+
+  const character = getActiveCharacter(player);
+  if (!character) {
+    gabrielHosts.delete(player.id);
+    return;
+  }
+
+  let hostLocation;
+  try {
+    if (isDownOrGone(host)) {
+      gabrielHosts.delete(player.id);
+      return; // hospedeiro morreu antes de servir
+    }
+    hostLocation = host.location;
+    if (virtualHealth(player) >= GABRIEL.healthThreshold) return;
+  } catch (e) {
+    gabrielHosts.delete(player.id);
+    return;
+  }
+
+  gabrielHosts.delete(player.id);
+
+  try {
+    player.teleport(hostLocation, { keepVelocity: false });
+    for (let i = 0; i < 20; i++) {
+      player.dimension.spawnParticle("szayel:esporo", {
+        x: hostLocation.x + (Math.random() - 0.5) * 3,
+        y: hostLocation.y + Math.random() * 2.5,
+        z: hostLocation.z + (Math.random() - 0.5) * 3,
+      });
+    }
+    player.dimension.playSound("random.explode", hostLocation, {
+      volume: 1.5,
+      pitch: 0.8,
+    });
+  } catch (e) {}
+
+  // o estouro do hospedeiro pega quem estiver em volta (dano nao especificado)
+  try {
+    damageNearbyEntities(player, hostLocation, GABRIEL.blastRadius, GABRIEL.blastDamage);
+    host.kill();
+  } catch (e) {}
+
+  // renasce cheio: a forma desperta tem teto proprio
+  const form = isAwakened(player) ? character.awakening : undefined;
+  healToMax(player, cutHealthFor(player, form?.health ?? character.health));
+
+  world.sendMessage(
+    `§d§l${player.name} renasceu de dentro do hospedeiro! §r§7(Gabriel)`
+  );
+}
+
+/* ---------------------------------------------------------
    Camera alta da forma gigante
    --------------------------------------------------------- */
 
@@ -5732,6 +6474,16 @@ const MELEE_WEAPONS = {
     particle: "barragan:podridao",
     dot: null,
   },
+  "szayel:m1_zanpakuto": {
+    baseDamage: DAMAGE.szayelM1,
+    particle: "szayel:esporo",
+    dot: null,
+  },
+  "szayel:m1_fornicaras": {
+    baseDamage: DAMAGE.fornicarasM1,
+    particle: "szayel:esporo",
+    dot: null,
+  },
   "starkk:m1_zanpakuto": {
     baseDamage: DAMAGE.starkkM1,
     particle: "minecraft:crit_particle",
@@ -5784,6 +6536,9 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
   const { damagingEntity, hitEntity } = ev;
   if (!damagingEntity || damagingEntity.typeId !== "minecraft:player") return;
 
+  // preso no Teatro de Títeres: o golpe nao sai (vale pros dois lados)
+  if (isFrozen(damagingEntity)) return;
+
   const equip = damagingEntity.getComponent("minecraft:equippable");
   const held = equip?.getEquipment(EquipmentSlot.Mainhand);
   if (!held) return;
@@ -5826,6 +6581,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
         applyDot(hitEntity, damagingEntity, weapon.dot.perSecond, weapon.dot.seconds);
       }
       tryLaMuerteTouch(damagingEntity, hitEntity);
+      tryGabrielMark(damagingEntity, hitEntity);
       if (weapon.combo) {
         applyMeleeCombo(damagingEntity, hitEntity, held.typeId, weapon.combo);
       }
@@ -5851,6 +6607,9 @@ system.runInterval(() => {
     const character = getActiveCharacter(player);
     if (!character) continue;
     if (trappingZoneFor(player)) continue;
+    // perna cortada pelo Teatro de Títeres: sem dash
+    if (player.getDynamicProperty(DP.legCut)) continue;
+    if (isFrozen(player)) continue;
 
     const vel = player.getVelocity();
     const horizontalSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
@@ -5979,6 +6738,43 @@ system.runInterval(() => {
     }
   }
 }, 4);
+
+/* ---------------------------------------------------------
+   Teatro de Títeres: segura quem esta preso, mantem a mutilacao
+   e devolve tudo quando um dos dois cai. E o Gabriel renasce aqui.
+   --------------------------------------------------------- */
+
+system.runInterval(() => {
+  // segura quem esta preso no Teatro
+  for (const player of world.getPlayers()) {
+    if (!isFrozen(player)) continue;
+    try {
+      player.addEffect("slowness", 40, { amplifier: 255, showParticles: false });
+    } catch (e) {}
+  }
+
+  for (let i = activeMutilations.length - 1; i >= 0; i--) {
+    const entry = activeMutilations[i];
+
+    // "vale ate um dos dois cair": qualquer um dos lados encerra
+    if (isDownOrGone(entry.owner) || isDownOrGone(entry.victim)) {
+      liftMutilation(i);
+      continue;
+    }
+
+    // a cegueira e reaplicada de proposito: qualquer darkness curta de outra
+    // skill substituiria a permanente e devolveria a visao antes da hora
+    if (entry.kind === "eyes") {
+      try {
+        entry.victim.addEffect("darkness", 200, { amplifier: 0, showParticles: false });
+      } catch (e) {}
+    }
+  }
+
+  for (const player of world.getPlayers()) {
+    tryGabrielRebirth(player);
+  }
+}, 20);
 
 /* ---------------------------------------------------------
    Guarda: desenha o escudo e derruba o bloqueio no fim do prazo
@@ -6190,6 +6986,8 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   removeCursesBy(playerId);
   warnedOffhand.delete(playerId);
   blockingNow.delete(playerId);
+  removeMutilationsBy(playerId);
+  gabrielHosts.delete(playerId);
   senkeiChargeTicks.delete(playerId);
   senkeiChargeReady.delete(playerId);
   wasSneakJumping.delete(playerId);
