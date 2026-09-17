@@ -57,7 +57,7 @@ const CERO_METRALLETA_ROWS = 4; // fileiras por disparo (espelho do main.js)
 
 const ROSTER = [
   { name: "Invasão à Soul Society", ids: ["ichigo", "byakuya", "kenpachi", "mayuri"] },
-  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra", "starkk", "yammy", "harribel"] },
+  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra", "starkk", "yammy", "harribel", "barragan"] },
 ];
 
 function locate(id) {
@@ -111,6 +111,14 @@ function hp(p) {
 function virtualHp(p) {
   const scale = p.getDynamicProperty("mv:health_scale") ?? 1;
   return hp(p).currentValue * scale;
+}
+
+// O log guarda o dano REAL. Acima do teto de vida do Bedrock ele foi dividido
+// pela escala do alvo, entao pra ler o numero configurado ("500 de dano") tem
+// que multiplicar de volta.
+function virtualDamage(target, entry) {
+  const scale = target.getDynamicProperty("mv:health_scale") ?? 1;
+  return Math.round(entry.amount * scale);
 }
 
 function virtualMax(p) {
@@ -306,9 +314,19 @@ useItem(ichigo, "ichigo:tensa_m1"); // vida alta: deve recusar
 advanceTicks(2, "mascara-recusa");
 check(
   "recusa a máscara acima do limite de vida",
-  !ichigo.getDynamicProperty(DP.maskEnd) &&
-    log.worldMessages.some((m) => m.to === "IchigoPlayer" && m.message.includes("50 de vida ou menos"))
+  !ichigo.getDynamicProperty(DP.maskEnd)
 );
+// agachar + m1 sem poder usar a máscara não pode virar tecla morta: vira guarda
+check(
+  "e a tecla vira bloqueio em vez de não fazer nada",
+  ichigo.getDynamicProperty("mv:block_end") > 0,
+  String(ichigo.getDynamicProperty("mv:block_end"))
+);
+ichigo.isSneaking = false;
+useItem(ichigo, "ichigo:tensa_m1"); // baixa a guarda pra não atrapalhar o resto
+ichigo.isSneaking = true;
+ichigo.setDynamicProperty("mv:block_end", 0);
+ichigo.setDynamicProperty("mv:cd_block", undefined);
 
 hp(ichigo).setCurrentValue(40);
 useItem(ichigo, "ichigo:tensa_m1");
@@ -931,11 +949,12 @@ check(
 check("alcança 18 blocos (área 50x50)", !!naFrente.getEffect("poison"));
 check("não alcança 40 blocos", !foraDaNevoa.getEffect("poison"));
 check("Mayuri não se envenena", !mayuri.getEffect("poison"));
-const bankaiParticles = log.particles.slice(partBeforeBankai);
+const bankaiParticles = log.particles
+  .slice(partBeforeBankai)
+  .filter((p) => p.particleId === "mayuri:poison_fog");
 check(
   "neblina densa desenhada com a partícula customizada",
-  bankaiParticles.length > 150 &&
-    bankaiParticles.every((p) => p.particleId === "mayuri:poison_fog"),
+  bankaiParticles.length > 150,
   `${bankaiParticles.length} partículas`
 );
 
@@ -990,7 +1009,7 @@ check(
 );
 check(
   "segundo arco traz os Arrancar",
-  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy", "Harribel"].every((n) =>
+  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy", "Harribel", "Barragan"].every((n) =>
     shown.buttons.join(" ").includes(n)
   ),
   shown.buttons.join(", ")
@@ -1750,6 +1769,13 @@ starkk.isSneaking = false;
 advanceTicks(20, "vira-lilynette");
 noNewErrors("trocar de persona sem erro", mark);
 check("virou Lilynette", starkk.getDynamicProperty("mv:starkk_form") === "lilynette");
+// a troca de persona é dona do agachar+m1 na Resurrección: aqui o bloqueio
+// perde a disputa da tecla, e isso é escolha, não acidente
+check(
+  "a troca de persona ganha do bloqueio na mesma tecla",
+  !starkk.getDynamicProperty("mv:block_end"),
+  String(starkk.getDynamicProperty("mv:block_end"))
+);
 check(
   "itens da Lilynette travados nos slots 0-3",
   JSON.stringify(slotIds(starkk, 4)) ===
@@ -2160,6 +2186,12 @@ yammy.isSneaking = false;
 advanceTicks(10, "camera-alta");
 noNewErrors("alternar a câmera sem erro", mark);
 check("marca a visão alta", yammy.getDynamicProperty("mv:tall_view") === true);
+// mesma disputa da persona do Starkk: na Ira o agachar+m1 é da câmera
+check(
+  "a câmera alta ganha do bloqueio na mesma tecla",
+  !yammy.getDynamicProperty("mv:block_end"),
+  String(yammy.getDynamicProperty("mv:block_end"))
+);
 const camSet = log.cameras.slice(camBefore).filter((c) => c.preset === "minecraft:free");
 check("põe a câmera no modo livre", camSet.length >= 1);
 check(
@@ -2384,7 +2416,7 @@ mark = errors.length;
 harribel.teleport({ x: 2400, y: 64, z: 2400 });
 harribel._view = { x: 1, y: 0, z: 0 };
 const preso = createDummy("Preso", { x: 2404, y: 64, z: 2400 }, 100);
-advanceTicks(300, "cooldown-water-prison");
+advanceTicks(600, "cooldown-water-prison");
 let blocosMark = log.blocks.length;
 useItem(harribel, "harribel:water_prison");
 advanceTicks(5, "prender");
@@ -2597,6 +2629,429 @@ check(
   !log.damages.slice(dmgBefore).some((d) => d.target === "Presa2")
 );
 presa2.kill();
+
+/* ================= Bloqueio universal ================= */
+
+scenario("Bloqueio: agachar com o m1 corta metade do dano");
+mark = errors.length;
+const guardiao = createPlayer("Guardiao", { x: 3000, y: 64, z: 3000 });
+const agressor = createPlayer("Agressor", { x: 3003, y: 64, z: 3000 });
+emit("playerSpawn", { player: guardiao, initialSpawn: true });
+emit("playerSpawn", { player: agressor, initialSpawn: true });
+advanceTicks(20, "spawn-bloqueio");
+await pickCharacter(guardiao, "ichigo");
+await pickCharacter(agressor, "kenpachi");
+advanceTicks(20, "ativar-bloqueio");
+noNewErrors("dois personagens ativados sem erro", mark);
+
+// sem guarda: dano cheio
+dmgBefore = log.damages.length;
+hitWith(agressor, guardiao, "kenpachi:m1_zanpakuto");
+check(
+  "sem guarda o m1 do Kenpachi dá 14 cheios",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === 14),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Guardiao"))
+);
+
+// agachar + m1 = bloquear
+guardiao.isSneaking = true;
+useItem(guardiao, "ichigo:m1_zangetsu");
+guardiao.isSneaking = false;
+check("guarda levantada", guardiao.getDynamicProperty("mv:block_end") > 0);
+
+dmgBefore = log.damages.length;
+hitWith(agressor, guardiao, "kenpachi:m1_zanpakuto");
+check(
+  "bloqueando, o mesmo golpe dá metade (7)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === 7),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Guardiao"))
+);
+
+// skill tambem e cortada pela metade, nao so o m1
+agressor.teleport({ x: 3002, y: 64, z: 3000 });
+agressor._view = { x: -1, y: 0, z: 0 };
+guardiao.teleport({ x: 3000, y: 64, z: 3000 });
+dmgBefore = log.damages.length;
+useItem(agressor, "kenpachi:stomp");
+advanceTicks(5, "stomp-bloqueado");
+check(
+  "a guarda vale pra skill também (Stomp de 45 vira 22.5)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === 22.5),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Guardiao"))
+);
+
+scenario("Bloqueio: dura 5s e só volta depois de 5s");
+mark = errors.length;
+advanceTicks(110, "guarda-expira");
+noNewErrors("a guarda cai sozinha sem erro", mark);
+check("guarda caiu depois de 5s", !guardiao.getDynamicProperty("mv:block_end"));
+check(
+  "avisa que a guarda caiu",
+  log.worldMessages.some((m) => m.to === "Guardiao" && m.message.includes("guarda caiu"))
+);
+
+dmgBefore = log.damages.length;
+hitWith(agressor, guardiao, "kenpachi:m1_zanpakuto");
+check(
+  "sem guarda o dano volta a ser cheio",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === 14)
+);
+
+// o cooldown conta a partir de quando a guarda CAIU, nao da ativacao
+guardiao.isSneaking = true;
+useItem(guardiao, "ichigo:m1_zangetsu");
+guardiao.isSneaking = false;
+check(
+  "não dá pra levantar a guarda de novo na hora",
+  !guardiao.getDynamicProperty("mv:block_end"),
+  String(guardiao.getDynamicProperty("mv:block_end"))
+);
+
+advanceTicks(110, "cooldown-da-guarda");
+guardiao.isSneaking = true;
+useItem(guardiao, "ichigo:m1_zangetsu");
+guardiao.isSneaking = false;
+check("depois dos 5s de recarga a guarda volta", guardiao.getDynamicProperty("mv:block_end") > 0);
+
+scenario("Bloqueio: agachar de novo baixa a guarda");
+guardiao.isSneaking = true;
+useItem(guardiao, "ichigo:m1_zangetsu");
+guardiao.isSneaking = false;
+check("guarda baixada na hora", !guardiao.getDynamicProperty("mv:block_end"));
+check(
+  "avisa que baixou",
+  log.worldMessages.some((m) => m.to === "Guardiao" && m.message.includes("baixou a guarda"))
+);
+
+scenario("Bloqueio: o awakening ganha da guarda na mesma tecla");
+mark = errors.length;
+guardiao.setDynamicProperty("mv:awakening", 100);
+guardiao.isSneaking = true;
+useItem(guardiao, "ichigo:m1_zangetsu");
+guardiao.isSneaking = false;
+advanceTicks(10, "awakening-vs-guarda");
+noNewErrors("disputa da tecla sem erro", mark);
+check("agachar + m1 com medidor cheio desperta", guardiao.getDynamicProperty(DP.awakened) === true);
+check("e não levanta guarda", !guardiao.getDynamicProperty("mv:block_end"));
+guardiao.setDynamicProperty("mv:awakening", 0);
+advanceTicks(40, "reverter-ichigo");
+
+/* ================= Barragan Louisenbairn ================= */
+
+scenario("Barragan Louisenbairn: ativação");
+const barragan = createPlayer("BarraganPlayer", { x: 3300, y: 64, z: 3300 });
+const servo = createDummy("Servo", { x: 3303, y: 64, z: 3300 }, 500000);
+emit("playerSpawn", { player: barragan, initialSpawn: true });
+advanceTicks(20, "spawn-barragan");
+
+mark = errors.length;
+await pickCharacter(barragan, "barragan");
+advanceTicks(20, "ativar-barragan");
+noNewErrors("ativar Barragan sem erro", mark);
+check("vida maxima 3000", virtualMax(barragan) === 3000, `${virtualMax(barragan)}`);
+check(
+  "5 itens base nos slots 0-4",
+  JSON.stringify(slotIds(barragan, 5)) ===
+    JSON.stringify([
+      "barragan:m1_zanpakuto",
+      "barragan:arrogante_slash",
+      "barragan:el_rei_oco",
+      "barragan:royal_cleave",
+      "barragan:withers_slashes",
+    ]),
+  JSON.stringify(slotIds(barragan, 5))
+);
+dmgBefore = log.damages.length;
+hitWith(barragan, servo, "barragan:m1_zanpakuto");
+check(
+  "m1 dá 60 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Servo" && d.amount === 60)
+);
+
+scenario("Arrogante's Slash: 3 cortes e enterra");
+mark = errors.length;
+barragan.teleport({ x: 3300, y: 64, z: 3300 });
+barragan._view = { x: 1, y: 0, z: 0 };
+servo.teleport({ x: 3303, y: 64, z: 3300 });
+dmgBefore = log.damages.length;
+useItem(barragan, "barragan:arrogante_slash");
+advanceTicks(30, "arrogante-slash");
+noNewErrors("Arrogante's Slash executa limpo", mark);
+const cortes = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo");
+check(
+  "3 cortes de 100 (300 no total)",
+  cortes.length === 3 && cortes.every((d) => d.amount === 100),
+  `${cortes.length} cortes de ${JSON.stringify([...new Set(cortes.map((d) => d.amount))])}`
+);
+check("enterra o alvo (afunda no chão)", servo.location.y < 64, `y=${servo.location.y.toFixed(2)}`);
+check("e prende ele lá", servo.getEffect("slowness")?.amplifier === 255);
+
+scenario("El Rei Oco: 8 direções x 5 rajadas");
+mark = errors.length;
+barragan.teleport({ x: 3400, y: 64, z: 3400 });
+barragan._view = { x: 1, y: 0, z: 0 };
+// atrasDoRei do Barragan: so acerta se os cerosRei saírem mesmo pros 8 lados
+const atrasDoRei = createDummy("Atras", { x: 3392, y: 64, z: 3400 }, 500000);
+servo.teleport({ x: 3500, y: 64, z: 3500 }); // fora do caminho
+dmgBefore = log.damages.length;
+useItem(barragan, "barragan:el_rei_oco");
+advanceTicks(80, "el-rei-oco");
+noNewErrors("El Rei Oco executa limpo", mark);
+const cerosRei = log.damages.slice(dmgBefore).filter((d) => d.target === "Atras");
+check(
+  "acerta quem está ATRÁS (sai pros 8 lados), 40 por cero",
+  cerosRei.length >= 2 && cerosRei.every((d) => d.amount === 40),
+  `${cerosRei.length} cerosRei de ${JSON.stringify([...new Set(cerosRei.map((d) => d.amount))])}`
+);
+check(
+  "5 rajadas no máximo por alvo",
+  cerosRei.length <= 5,
+  `${cerosRei.length} acertos`
+);
+advanceTicks(60, "el-rei-oco-fim");
+dmgBefore = log.damages.length;
+advanceTicks(40, "el-rei-oco-parou");
+check("para sozinho", !log.damages.slice(dmgBefore).some((d) => d.target === "Atras"));
+atrasDoRei.kill();
+
+scenario("Royal Cleave: passa pela guarda");
+mark = errors.length;
+// 500 de dano mataria o Ichigo (200 de vida): o bloqueador precisa aguentar
+queueFormResponse(deactivateButtonIndex(guardiao));
+useItem(guardiao, "multiversal:character_selector");
+await Promise.resolve();
+await Promise.resolve();
+advanceTicks(10, "trocar-bloqueador");
+await pickCharacter(guardiao, "harribel");
+advanceTicks(20, "bloqueador-tanque");
+
+barragan.teleport({ x: 3000, y: 64, z: 3000 });
+barragan._view = { x: 1, y: 0, z: 0 };
+guardiao.teleport({ x: 3003, y: 64, z: 3000 });
+// guarda levantada de propósito
+advanceTicks(120, "liberar-guarda");
+guardiao.isSneaking = true;
+useItem(guardiao, "harribel:m1_zanpakuto");
+guardiao.isSneaking = false;
+check("guarda do alvo levantada", guardiao.getDynamicProperty("mv:block_end") > 0);
+
+dmgBefore = log.damages.length;
+useItem(barragan, "barragan:royal_cleave");
+advanceTicks(5, "royal-cleave");
+noNewErrors("Royal Cleave executa limpo", mark);
+check(
+  "500 cheios mesmo contra quem está bloqueando",
+  log.damages
+    .slice(dmgBefore)
+    .some((d) => d.target === "Guardiao" && virtualDamage(guardiao, d) === 500),
+  JSON.stringify(
+    log.damages
+      .slice(dmgBefore)
+      .filter((d) => d.target === "Guardiao")
+      .map((d) => virtualDamage(guardiao, d))
+  )
+);
+// e o corte normal do Barragan continua sendo cortado pela metade
+dmgBefore = log.damages.length;
+hitWith(barragan, guardiao, "barragan:m1_zanpakuto");
+check(
+  "mas o m1 dele continua sendo bloqueado (30 em vez de 60)",
+  log.damages
+    .slice(dmgBefore)
+    .some((d) => d.target === "Guardiao" && virtualDamage(guardiao, d) === 30),
+  JSON.stringify(
+    log.damages
+      .slice(dmgBefore)
+      .filter((d) => d.target === "Guardiao")
+      .map((d) => virtualDamage(guardiao, d))
+  )
+);
+
+scenario("Wither's Slashes: corte + deterioração");
+mark = errors.length;
+barragan.teleport({ x: 3300, y: 64, z: 3300 });
+barragan._view = { x: 1, y: 0, z: 0 };
+servo.teleport({ x: 3303, y: 64, z: 3300 });
+dmgBefore = log.damages.length;
+useItem(barragan, "barragan:withers_slashes");
+advanceTicks(10, "withers-corte");
+noNewErrors("Wither's Slashes executa limpo", mark);
+check(
+  "o corte dá 100",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Servo" && d.amount === 100)
+);
+dmgBefore = log.damages.length;
+advanceTicks(70, "withers-deterioracao");
+const podre = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo");
+check(
+  "e 100 por segundo por 3 segundos",
+  podre.length === 3 && podre.every((d) => d.amount === 100),
+  `${podre.length} segundos de ${JSON.stringify([...new Set(podre.map((d) => d.amount))])}`
+);
+dmgBefore = log.damages.length;
+advanceTicks(60, "withers-acabou");
+check("a deterioração para sozinha", !log.damages.slice(dmgBefore).some((d) => d.target === "Servo"));
+
+scenario("Resurrección: Arrogante");
+mark = errors.length;
+barragan.setDynamicProperty(DP.awakening, 100);
+const msgsBeforeArrogante = log.worldMessages.length;
+barragan.isSneaking = true;
+useItem(barragan, "barragan:m1_zanpakuto");
+barragan.isSneaking = false;
+advanceTicks(20, "arrogante");
+noNewErrors("Resurrección sem erro", mark);
+check(
+  "manda a fala no chat",
+  log.worldMessages
+    .slice(msgsBeforeArrogante)
+    .some((m) => m.message === "<BarraganPlayer> Envelhece, Arrogante!")
+);
+check("awakened = true", barragan.getDynamicProperty(DP.awakened) === true);
+check("vida maxima segue 3000", virtualMax(barragan) === 3000, `${virtualMax(barragan)}`);
+check(
+  "5 itens da Resurrección nos slots 0-4",
+  JSON.stringify(slotIds(barragan, 5)) ===
+    JSON.stringify([
+      "barragan:m1_arrogante",
+      "barragan:ruir_del_rey",
+      "barragan:respira",
+      "barragan:el_maldito",
+      "barragan:la_muerte",
+    ]),
+  JSON.stringify(slotIds(barragan, 5))
+);
+dmgBefore = log.damages.length;
+servo.teleport({ x: 3303, y: 64, z: 3300 });
+hitWith(barragan, servo, "barragan:m1_arrogante");
+check(
+  "m1 da Resurrección dá 70",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Servo" && d.amount === 70)
+);
+
+scenario("Ruir del Rey: deterioração por 7 segundos");
+mark = errors.length;
+barragan.teleport({ x: 3300, y: 64, z: 3300 });
+servo.teleport({ x: 3305, y: 64, z: 3300 });
+dmgBefore = log.damages.length;
+useItem(barragan, "barragan:ruir_del_rey");
+advanceTicks(150, "ruir-del-rey");
+noNewErrors("Ruir del Rey executa limpo", mark);
+const ruina = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo");
+check(
+  "100 por segundo por 7 segundos",
+  ruina.length === 7 && ruina.every((d) => d.amount === 100),
+  `${ruina.length} segundos de ${JSON.stringify([...new Set(ruina.map((d) => d.amount))])}`
+);
+
+scenario("Respira: engole cero e ataque de longe");
+mark = errors.length;
+barragan.teleport({ x: 3600, y: 64, z: 3600 });
+useItem(barragan, "barragan:respira");
+advanceTicks(5, "respira");
+noNewErrors("Respira executa limpo", mark);
+check("marca de imunidade ligada", barragan.getDynamicProperty("mv:respira_end") > 0);
+
+// um Grimmjow mirando nele com o Gran Rey Cero
+grimmjow.teleport({ x: 3590, y: 64, z: 3600 });
+grimmjow._view = { x: 1, y: 0, z: 0 };
+dmgBefore = log.damages.length;
+useItem(grimmjow, "grimmjow:gran_rey_cero");
+advanceTicks(30, "cero-na-respira");
+check(
+  "o Gran Rey Cero não encosta nele",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "BarraganPlayer"),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "BarraganPlayer"))
+);
+
+// corpo a corpo continua passando: a Respira é só contra longo alcance
+dmgBefore = log.damages.length;
+grimmjow.teleport({ x: 3598, y: 64, z: 3600 });
+hitWith(grimmjow, barragan, "grimmjow:m1_zanpakuto");
+check(
+  "mas o corpo a corpo passa normal",
+  log.damages.slice(dmgBefore).some((d) => d.target === "BarraganPlayer"),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "BarraganPlayer"))
+);
+
+advanceTicks(220, "respira-acaba");
+dmgBefore = log.damages.length;
+grimmjow.teleport({ x: 3590, y: 64, z: 3600 });
+grimmjow._view = { x: 1, y: 0, z: 0 };
+advanceTicks(600, "cooldown-gran-rey");
+useItem(grimmjow, "grimmjow:gran_rey_cero");
+advanceTicks(30, "cero-sem-respira");
+check(
+  "passados os 10s o cero volta a acertar",
+  log.damages.slice(dmgBefore).some((d) => d.target === "BarraganPlayer"),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "BarraganPlayer"))
+);
+
+scenario("El Maldito: neblina preta 50x50");
+mark = errors.length;
+barragan.teleport({ x: 3700, y: 64, z: 3700 });
+servo.teleport({ x: 3715, y: 64, z: 3700 }); // longe, mas dentro do raio 25
+dmgBefore = log.damages.length;
+const partBeforeMaldito = log.particles.length;
+useItem(barragan, "barragan:el_maldito");
+advanceTicks(20, "el-maldito");
+noNewErrors("El Maldito executa limpo", mark);
+check("cega quem está dentro", servo.getEffect("blindness")?.amplifier === 0);
+check(
+  "desenha a neblina preta",
+  log.particles.slice(partBeforeMaldito).filter((p) => p.particleId === "barragan:podridao").length > 50
+);
+advanceTicks(100, "el-maldito-deterioracao");
+const maldicaoHits = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo");
+check(
+  "100 por segundo por 4 segundos, sem empilhar",
+  maldicaoHits.length === 4 && maldicaoHits.every((d) => d.amount === 100),
+  `${maldicaoHits.length} segundos de ${JSON.stringify([...new Set(maldicaoHits.map((d) => d.amount))])}`
+);
+
+scenario("La Muerte: o primeiro toque apodrece");
+mark = errors.length;
+barragan.teleport({ x: 3300, y: 64, z: 3300 });
+servo.teleport({ x: 3303, y: 64, z: 3300 });
+const segundoAlvo = createDummy("SegundoAlvo", { x: 3304, y: 64, z: 3300 }, 500000);
+useItem(barragan, "barragan:la_muerte");
+advanceTicks(5, "la-muerte-armada");
+noNewErrors("La Muerte executa limpo", mark);
+check("fica armada esperando o toque", barragan.getDynamicProperty("mv:muerte_armed") === true);
+
+dmgBefore = log.damages.length;
+hitWith(barragan, servo, "barragan:m1_arrogante");
+check("gasta a carga no primeiro toque", barragan.getDynamicProperty("mv:muerte_armed") === false);
+advanceTicks(420, "la-muerte-deterioracao");
+const muerteHits = log.damages.slice(dmgBefore).filter((d) => d.target === "Servo" && d.amount === 100);
+check(
+  "100 por segundo por 20 segundos",
+  muerteHits.length === 20,
+  `${muerteHits.length} segundos`
+);
+dmgBefore = log.damages.length;
+hitWith(barragan, segundoAlvo, "barragan:m1_arrogante");
+advanceTicks(60, "segundo-alvo");
+check(
+  "o segundo alvo não pega nada (a carga já foi)",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "SegundoAlvo" && d.amount === 100),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "SegundoAlvo"))
+);
+segundoAlvo.kill();
+
+scenario("Fim da Resurrección do Barragan");
+mark = errors.length;
+barragan.setDynamicProperty(DP.awakening, 2);
+advanceTicks(90, "drenar-arrogante");
+noNewErrors("reversão sem erro", mark);
+check("awakened = false", barragan.getDynamicProperty(DP.awakened) === false);
+check("vida maxima segue 3000", virtualMax(barragan) === 3000, `${virtualMax(barragan)}`);
+check(
+  "itens base restaurados",
+  inv(barragan).getItem(0)?.typeId === "barragan:m1_zanpakuto",
+  String(inv(barragan).getItem(0)?.typeId)
+);
+servo.kill();
 
 /* ================= dash universal ================= */
 

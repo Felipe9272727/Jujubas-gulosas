@@ -2,22 +2,22 @@
   "format_version": "1.26.40",
   "minecraft:item": {
     "description": {
-      "identifier": "harribel:water_prison",
+      "identifier": "barragan:withers_slashes",
       "menu_category": {
         "category": "equipment"
       }
     },
     "components": {
-      "minecraft:icon": "harribel:water_prison",
+      "minecraft:icon": "barragan:withers_slashes",
       "minecraft:display_name": {
-        "value": "Water Prison"
+        "value": "Wither's Slashes"
       },
       "minecraft:max_stack_size": 1,
       "minecraft:hand_equipped": true,
       "minecraft:should_despawn": false,
       "minecraft:cooldown": {
-        "category": "harribel_water_prison",
-        "duration": 30
+        "category": "barragan_withers_slashes",
+        "duration": 25
       }
     }
   }

@@ -73,6 +73,7 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 | Coyote Starkk | 4000 | Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
 | Yammy Llargo | 1000 | Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
 | Tier Harribel | 2600 | Tiburón — "Reduce a cenizas, Tiburón" (3000) |
+| Barragan Louisenbairn | 3000 | Arrogante — "Envelhece, Arrogante!" (mesma vida) |
 
 ## Sistemas genéricos (reusar, não duplicar)
 
@@ -89,6 +90,11 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 | `entitiesInFrontBox` / `drawSweep` | Caixa direcional + o corte desenhado em cima dela |
 | `spawnPoisonCloud` | Neblina parada (Toxic Fog e Konjiki) |
 | `applyDot` | Dano por segundo, limpa sozinho se o alvo morre |
+| `applyDeterioration` | `applyDot` + a marca visual do envelhecimento (5 skills do Barragan) |
+| `BLOCK` / `isBlocking` | Guarda universal. `dealDamage` corta metade; `{breaksBlock:true}` passa direto |
+| `isRespiring` | Imunidade a longo alcance: consultada pelos 3 sistemas de projétil |
+| `summonHomingBeast` | Fera guiada que explode ao encostar (Lobos, Tubarões) |
+| `spawnPoisonCloud` | Neblina parada; aceita partícula, cegueira e deterioração próprias |
 | `reapplyFormEffects` | Devolve os efeitos permanentes da forma |
 | `awakening.onActivate` | Efeito de entrada: `"pressure"`, `"battlecry"` |
 | `superAttack.onTrigger` | Agachar + m1 com medidor cheio: `"byakuya"`, `"konjiki"` |
@@ -147,6 +153,15 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    travado na offhand, lido por `query.is_item_name_any`. A **hitbox não muda** —
    isso é inerente ao método.
 
+## Disputa da tecla agachar + m1
+
+A mesma tecla faz cinco coisas. A ordem é: **awakening → máscara → super ataque
+→ câmera alta / troca de persona → bloqueio**. As três primeiras só ficam com a
+tecla quando realmente disparam (medidor cheio, vida baixa); se não disparam, a
+tecla cai pro bloqueio em vez de morrer. As duas do meio (câmera da Ira do Yammy,
+persona do Starkk) sempre disparam, então **nessas duas formas despertas não dá
+pra bloquear** — está travado na simulação de propósito.
+
 ## Bugs conhecidos / limitações em aberto
 
 1. ~~Dano do m1 não escala com vida virtual.~~ **RESOLVIDO.** Os 13 itens de m1
@@ -190,6 +205,11 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Cero Oscuras | cd 35s |
 | Lanza del Relámpago | 900 de dano, raio 18, cd 60s |
 | Hell's Cut desespero (Kenpachi) | 3× base **e** o +50% por cima = 337,5 |
+| Bloqueio | cooldown conta do fim da guarda, não da ativação; faísca + tag na actionbar |
+| Ruir del Rey (Barragan) | área não especificada: raio 12 em volta dele |
+| El Maldito (Barragan) | li "4 segundos" como a duração da névoa **e** da deterioração |
+| La Muerte (Barragan) | cooldown 2 min (não especificado) |
+| Resurrección: Arrogante | vida não especificada: mantém os 3000 da base, sem cura de graça |
 | Cero Metralleta (Starkk) | 30 por bala (era 60 com 1 fileira; agora são 4 por disparo) |
 | Aqua's Dash (Harribel) | 80 de dano de contato, 24 blocos |
 | M1 do Dente de Tubarão (Harribel) | 90 de dano |

@@ -24,6 +24,7 @@ usar o seletor** passa pro próximo (dá a volta no último).
 | **Coyote Starkk** | 4000 | Resurrección: Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
 | **Yammy Llargo** | 1000 | Resurrección: Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
 | **Tier Harribel** | 2600 | Resurrección: Tiburón — "Reduce a cenizas, Tiburón" (3000 de vida) |
+| **Barragan Louisenbairn** | 3000 | Resurrección: Arrogante — "Envelhece, Arrogante!" (mesma vida) |
 
 ## Layout
 

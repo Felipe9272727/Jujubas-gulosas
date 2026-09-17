@@ -223,6 +223,36 @@
     },
     "harribel:maldita_agua": {
       "textures": "textures/items/harribel_maldita_agua"
+    },
+    "barragan:m1_zanpakuto": {
+      "textures": "textures/items/barragan_m1_zanpakuto"
+    },
+    "barragan:arrogante_slash": {
+      "textures": "textures/items/barragan_arrogante_slash"
+    },
+    "barragan:el_rei_oco": {
+      "textures": "textures/items/barragan_el_rei_oco"
+    },
+    "barragan:royal_cleave": {
+      "textures": "textures/items/barragan_royal_cleave"
+    },
+    "barragan:withers_slashes": {
+      "textures": "textures/items/barragan_withers_slashes"
+    },
+    "barragan:m1_arrogante": {
+      "textures": "textures/items/barragan_m1_arrogante"
+    },
+    "barragan:ruir_del_rey": {
+      "textures": "textures/items/barragan_ruir_del_rey"
+    },
+    "barragan:respira": {
+      "textures": "textures/items/barragan_respira"
+    },
+    "barragan:el_maldito": {
+      "textures": "textures/items/barragan_el_maldito"
+    },
+    "barragan:la_muerte": {
+      "textures": "textures/items/barragan_la_muerte"
     }
   }
 }

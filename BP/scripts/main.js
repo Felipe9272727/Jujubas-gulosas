@@ -26,6 +26,10 @@ const DP = {
   arc: "mv:arc", // indice do arco escolhido no seletor
   healthScale: "mv:health_scale", // vida virtual / vida real
   markedEnd: "mv:marked_end", // marca da Pesquisa do Ulquiorra
+  blockEnd: "mv:block_end", // bloqueio universal (agachar + m1)
+  blockCd: "mv:cd_block",
+  respiraEnd: "mv:respira_end", // imunidade a longo alcance do Barragan
+  muerteArmed: "mv:muerte_armed", // La Muerte esperando o primeiro toque
 };
 
 const BASE_SPEED_AMPLIFIER = 1; // speed 2 pra todo personagem
@@ -339,6 +343,35 @@ const CHARACTERS = {
       },
     },
   },
+  barragan: {
+    id: "barragan",
+    name: "Barragan Louisenbairn",
+    health: 3000,
+    items: {
+      0: "barragan:m1_zanpakuto",
+      1: "barragan:arrogante_slash",
+      2: "barragan:el_rei_oco",
+      3: "barragan:royal_cleave",
+      4: "barragan:withers_slashes",
+    },
+    awakening: {
+      name: "Resurrección: Arrogante",
+      triggerItem: "barragan:m1_zanpakuto",
+      // a vida nao foi especificada pra Resurreccion: fica a mesma da base,
+      // igual a Pressao do Kenpachi (e sem virar cura de graca)
+      onActivate: "battlecry",
+      chatLine: "Envelhece, Arrogante!",
+      cryParticle: "barragan:podridao",
+      cryPitch: 0.4,
+      items: {
+        0: "barragan:m1_arrogante",
+        1: "barragan:ruir_del_rey",
+        2: "barragan:respira",
+        3: "barragan:el_maldito",
+        4: "barragan:la_muerte",
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -370,7 +403,14 @@ const ARCS = [
   {
     id: "hueco_mundo",
     name: "Arrancar / Hueco Mundo",
-    characters: ["grimmjow", "ulquiorra", "starkk", "yammy", "harribel"],
+    characters: [
+      "grimmjow",
+      "ulquiorra",
+      "starkk",
+      "yammy",
+      "harribel",
+      "barragan",
+    ],
   },
 ];
 
@@ -460,12 +500,50 @@ function virtualHealth(entity) {
   return hp.currentValue * healthScaleOf(entity);
 }
 
+// Bloqueio universal: agachar + m1. Corta metade do dano de TUDO - so nao vale
+// contra golpe marcado como quebra-bloqueio (hoje so a Royal Cleave do Barragan).
+const BLOCK = {
+  durationTicks: 100, // 5s no maximo segurando a guarda
+  cooldownTicks: 100, // 5s, contados de quando o bloqueio ACABA
+  damageMultiplier: 0.5,
+};
+
+function isBlocking(entity) {
+  try {
+    return (
+      system.currentTick < readTickDeadline(entity, DP.blockEnd, BLOCK.durationTicks)
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+// faisca no golpe aparado: sem isso ninguem percebe que o bloqueio funcionou
+function showBlockSpark(target) {
+  try {
+    const loc = target.location;
+    for (let i = 0; i < 3; i++) {
+      target.dimension.spawnParticle("minecraft:crit_particle", {
+        x: loc.x + (Math.random() - 0.5) * 0.9,
+        y: loc.y + 1.1 + Math.random() * 0.5,
+        z: loc.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+  } catch (e) {}
+}
+
 // TODO dano do addon passa por aqui. Divide pela escala do ALVO pra que
 // "700 de dano" continue significando 700 da vida que ele ve na actionbar,
-// e aplica a marca da Pesquisa do Ulquiorra.
-function dealDamage(target, amount, source) {
+// aplica a marca da Pesquisa do Ulquiorra e o bloqueio do alvo.
+// options.breaksBlock = golpe que passa direto pela guarda.
+function dealDamage(target, amount, source, options) {
   const marked = isMarked(target) ? PESQUISA.damageMultiplier : 1;
-  target.applyDamage((amount * marked) / healthScaleOf(target), {
+
+  const guarded = !options?.breaksBlock && isBlocking(target);
+  if (guarded) showBlockSpark(target);
+
+  const blocked = guarded ? BLOCK.damageMultiplier : 1;
+  target.applyDamage((amount * marked * blocked) / healthScaleOf(target), {
     cause: EntityDamageCause.entityAttack,
     damagingEntity: source,
   });
@@ -522,11 +600,19 @@ const SKILL_COOLDOWN_TICKS = {
   "yammy:rugido_diablo": 600, // 30s - nao especificado
   "harribel:tiburon_slash": 160, // 8s
   "harribel:shark_issues": 180, // 9s
-  "harribel:water_prison": 300, // 15s
+  "harribel:water_prison": 600, // 30s
   "harribel:aquas_dash": 200, // 10s
   "harribel:tsunami": 200, // 10s
   "harribel:vortice": 500, // 25s
   "harribel:maldita_agua": 3600, // 180s
+  "barragan:arrogante_slash": 400, // 20s
+  "barragan:el_rei_oco": 400, // 20s
+  "barragan:royal_cleave": 400, // 20s
+  "barragan:withers_slashes": 500, // 25s
+  "barragan:ruir_del_rey": 500, // 25s
+  "barragan:respira": 400, // 20s
+  "barragan:el_maldito": 360, // 18s
+  "barragan:la_muerte": 2400, // 2 min - nao especificado
 };
 
 const SKILL_NAMES = {
@@ -585,6 +671,14 @@ const SKILL_NAMES = {
   "harribel:tsunami": "Tsunami",
   "harribel:vortice": "Vórtice de Agua",
   "harribel:maldita_agua": "Maldita Água",
+  "barragan:arrogante_slash": "Arrogante's Slash",
+  "barragan:el_rei_oco": "El Rei Oco",
+  "barragan:royal_cleave": "Royal Cleave",
+  "barragan:withers_slashes": "Wither's Slashes",
+  "barragan:ruir_del_rey": "Ruir del Rey",
+  "barragan:respira": "Respira",
+  "barragan:el_maldito": "El Maldito",
+  "barragan:la_muerte": "La Muerte",
 };
 
 // dano aumentado
@@ -663,6 +757,15 @@ const DAMAGE = {
   tsunami: 750,
   vorticePerSecond: 200, // por segundo, por 5s
   malditaAguaPerSecond: 20, // por segundo, ate alguem morrer
+  // Barragan Louisenbairn
+  barraganM1: 60,
+  arroganteSlash: 100, // por corte, sao 3 (300 no total)
+  elReiOco: 40, // por cero; 8 direcoes x 5 rajadas
+  royalCleave: 500, // unico golpe da addon que ignora bloqueio
+  withersSlashesCut: 100, // o corte; a deterioracao vem por cima
+  deterioration: 100, // por segundo, em toda deterioracao do Barragan
+  // Resurreccion: Arrogante
+  arroganteM1: 70,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -847,6 +950,43 @@ const VORTICE = {
 };
 const MALDITA_AGUA = { range: 30, tickInterval: 20 }; // 20 por segundo, sem prazo
 
+// Barragan Louisenbairn
+const ARROGANTE_SLASH = {
+  forward: 5,
+  width: 5,
+  verticalReach: 3,
+  cuts: 3,
+  gapTicks: 6,
+  buryDepth: 1.1, // quanto o alvo afunda no chao no ultimo corte
+  buryTicks: 40, // 2s preso la embaixo
+};
+const EL_REI_OCO = {
+  directions: 8,
+  volleys: 5,
+  gapTicks: 12,
+  radius: 1.1,
+  range: 22,
+  speed: 1.6,
+};
+const ROYAL_CLEAVE = { forward: 6, width: 4, verticalReach: 4 };
+const WITHERS_SLASHES = { forward: 5, width: 5, verticalReach: 3, seconds: 3 };
+// Resurreccion: Arrogante
+const RUIR_DEL_REY = { radius: 12, seconds: 7 }; // area nao especificada
+const RESPIRA = { durationTicks: 200 }; // 10s imune a longo alcance
+const EL_MALDITO = {
+  radius: 25, // mesmo tamanho da Konjiki do Mayuri (50x50)
+  height: 3.2,
+  durationTicks: 80, // 4s: "cega e causa deterioracao por 4 segundos"
+  tickInterval: 10,
+  refreshTicks: 30,
+  blindnessAmplifier: 0,
+  particlesPerTick: 60,
+  particle: "barragan:podridao",
+  deterioration: { perSecond: 100, seconds: 4 },
+  endMessage: "§7A neblina do El Maldito se dissipou.",
+};
+const LA_MUERTE = { seconds: 20 };
+
 const CERO_METRALLETA = {
   volleys: 15,
   volleyGapTicks: 20, // 15 disparos em 15s
@@ -927,6 +1067,10 @@ function clearSessionTimers(player) {
   player.setDynamicProperty(DP.dashCd, undefined);
   player.setDynamicProperty(DP.coatingEnd, 0);
   player.setDynamicProperty(DP.maskEnd, 0);
+  player.setDynamicProperty(DP.blockEnd, 0);
+  player.setDynamicProperty(DP.blockCd, undefined);
+  player.setDynamicProperty(DP.respiraEnd, 0);
+  player.setDynamicProperty(DP.muerteArmed, false);
 }
 
 function setCooldown(player, key, currentTick) {
@@ -1078,6 +1222,59 @@ function clearFormExtras(player, form) {
   disableTallView(player);
 }
 
+/* ---------------------------------------------------------
+   Bloqueio universal (agachar + m1) - todo personagem tem
+   --------------------------------------------------------- */
+
+// quem estava bloqueando no passe anterior, pra saber QUANDO o prazo acabou
+const blockingNow = new Set();
+
+function startBlock(player) {
+  const now = system.currentTick;
+
+  if (onCooldown(player, DP.blockCd, BLOCK.cooldownTicks, now)) {
+    const last = tickOf(player, DP.blockCd) ?? now;
+    const remaining = Math.ceil((BLOCK.cooldownTicks - (now - last)) / 20);
+    player.onScreenDisplay.setTitle("", {
+      subtitle: `§cGuarda recarregando... §7(${remaining}s)`,
+      fadeInDuration: 0,
+      fadeOutDuration: 5,
+      staySeconds: 10,
+    });
+    return;
+  }
+
+  player.setDynamicProperty(DP.blockEnd, now + BLOCK.durationTicks);
+  blockingNow.add(player.id);
+  try {
+    player.dimension.playSound("item.shield.block", player.location, {
+      volume: 1,
+      pitch: 0.9,
+    });
+  } catch (e) {}
+  player.sendMessage(
+    `§aBloqueando! §7Metade do dano por até ${BLOCK.durationTicks / 20}s.`
+  );
+}
+
+// O cooldown so comeca quando a guarda CAI - se contasse da ativacao, os 5s de
+// bloqueio e os 5s de recarga andariam juntos e daria pra bloquear sem intervalo.
+function endBlock(player, reason) {
+  player.setDynamicProperty(DP.blockEnd, 0);
+  player.setDynamicProperty(DP.blockCd, system.currentTick);
+  blockingNow.delete(player.id);
+  try {
+    player.sendMessage(
+      reason === "manual" ? "§7Você baixou a guarda." : "§7Sua guarda caiu."
+    );
+  } catch (e) {}
+}
+
+function toggleBlock(player) {
+  if (isBlocking(player)) endBlock(player, "manual");
+  else startBlock(player);
+}
+
 function isAwakened(player) {
   return !!player.getDynamicProperty(DP.awakened);
 }
@@ -1126,6 +1323,62 @@ function applyDot(entity, player, perSecond, totalSeconds) {
       system.clearRun(dotInterval);
     }
   }, 20);
+}
+
+/* ---------------------------------------------------------
+   Deterioração e Respira (Barragan)
+   --------------------------------------------------------- */
+
+// Cinco skills do Barragan causam "deterioracao": e o applyDot generico com a
+// marca visual do envelhecimento por cima, num lugar so.
+function applyDeterioration(target, player, perSecond, seconds) {
+  applyDot(target, player, perSecond, seconds);
+
+  let ticks = 0;
+  const interval = system.runInterval(() => {
+    ticks += 5;
+    try {
+      const loc = target.location;
+      for (let i = 0; i < 3; i++) {
+        target.dimension.spawnParticle("barragan:podridao", {
+          x: loc.x + (Math.random() - 0.5) * 0.9,
+          y: loc.y + 0.3 + Math.random() * 1.8,
+          z: loc.z + (Math.random() - 0.5) * 0.9,
+        });
+      }
+    } catch (e) {
+      system.clearRun(interval); // alvo morreu ou saiu do mundo
+      return;
+    }
+    if (ticks >= seconds * 20) system.clearRun(interval);
+  }, 5);
+}
+
+// A Respira come todo ataque de longo alcance: os tres sistemas genericos de
+// projetil (esfera de energia, onda crescente e fera guiada) consultam isso
+// antes de causar dano. Golpe corpo a corpo passa normal.
+function isRespiring(entity) {
+  try {
+    return (
+      system.currentTick < readTickDeadline(entity, DP.respiraEnd, RESPIRA.durationTicks)
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+function showRespiraGuard(entity) {
+  try {
+    const loc = entity.location;
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      entity.dimension.spawnParticle("barragan:podridao", {
+        x: loc.x + Math.cos(angle) * 1.2,
+        y: loc.y + 1.2,
+        z: loc.z + Math.sin(angle) * 1.2,
+      });
+    }
+  } catch (e) {}
 }
 
 /* ---------------------------------------------------------
@@ -1365,6 +1618,10 @@ function deactivateCharacter(player) {
   clearComboCounters(player);
   removeZonesOwnedBy(player.id);
   removeCursesBy(player.id);
+  player.setDynamicProperty(DP.blockEnd, 0);
+  player.setDynamicProperty(DP.respiraEnd, 0);
+  player.setDynamicProperty(DP.muerteArmed, false);
+  blockingNow.delete(player.id);
 
   system.runTimeout(() => {
     const hp = player.getComponent("minecraft:health");
@@ -1464,14 +1721,16 @@ function revertAwakening(player, reason) {
   );
 }
 
+// devolve se REALMENTE despertou: agachar + m1 tambem e a tecla do bloqueio,
+// entao quando o medidor nao esta cheio a tecla tem que sobrar pra guarda
 function tryTriggerAwakening(player) {
   const character = getActiveCharacter(player);
-  if (!character || !character.awakening) return;
-  if (isAwakened(player)) return;
-
-  if (getAwakening(player) < 100) return;
+  if (!character || !character.awakening) return false;
+  if (isAwakened(player)) return false;
+  if (getAwakening(player) < 100) return false;
 
   activateAwakening(player, character);
+  return true;
 }
 
 /* ---------------------------------------------------------
@@ -1679,8 +1938,8 @@ world.afterEvents.itemUse.subscribe((ev) => {
     player.isSneaking &&
     !isAwakened(player)
   ) {
-    tryTriggerAwakening(player);
-    return;
+    // se o medidor nao estava cheio a tecla sobra pro bloqueio, la embaixo
+    if (tryTriggerAwakening(player)) return;
   }
 
   // agachado + usar a zangetsu bankai (tensa) com <=50 de vida = Mascara Hollow
@@ -1693,12 +1952,9 @@ world.afterEvents.itemUse.subscribe((ev) => {
   ) {
     if (virtualHealth(player) <= character.awakening.hollowMask.healthThreshold) {
       activateHollowMask(player, character);
-    } else {
-      player.sendMessage(
-        `§7Você precisa estar com ${character.awakening.hollowMask.healthThreshold} de vida ou menos pra usar a Máscara Hollow.`
-      );
+      return;
     }
-    return;
+    // vida alta demais pra mascara: a tecla vira bloqueio em vez de nao fazer nada
   }
 
   // agachado + usar a senbonzakura base com awakening 100% = Kageyoshi ou Senkei
@@ -1709,8 +1965,7 @@ world.afterEvents.itemUse.subscribe((ev) => {
     getByakuyaWeaponState(player) === "base"
   ) {
     // pra quem nao tem arma alternativa o estado e sempre "base"
-    tryTriggerSuperAttack(player, character);
-    return;
+    if (tryTriggerSuperAttack(player, character)) return;
   }
 
   // agachado + usar a senbonzakura do senkei = desativa a area e puxa a espada final
@@ -1745,6 +2000,14 @@ world.afterEvents.itemUse.subscribe((ev) => {
       itemStack.typeId === character.awakening.altForm.lilynetteWeapon)
   ) {
     toggleStarkkForm(player);
+    return;
+  }
+
+  // agachar com o m1 = bloquear. Vale pra todo personagem, e vem DEPOIS das
+  // outras regras de agachar+m1: awakening, mascara, super ataque, camera alta
+  // e troca de persona ganham do bloqueio quando disputam a mesma tecla.
+  if (player.isSneaking && MELEE_WEAPONS[itemStack.typeId]) {
+    toggleBlock(player);
     return;
   }
 
@@ -1922,6 +2185,30 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "harribel:maldita_agua":
       castMalditaAgua(player);
+      break;
+    case "barragan:arrogante_slash":
+      castArroganteSlash(player);
+      break;
+    case "barragan:el_rei_oco":
+      castElReiOco(player);
+      break;
+    case "barragan:royal_cleave":
+      castRoyalCleave(player);
+      break;
+    case "barragan:withers_slashes":
+      castWithersSlashes(player);
+      break;
+    case "barragan:ruir_del_rey":
+      castRuirDelRey(player);
+      break;
+    case "barragan:respira":
+      castRespira(player);
+      break;
+    case "barragan:el_maldito":
+      castElMaldito(player);
+      break;
+    case "barragan:la_muerte":
+      castLaMuerte(player);
       break;
   }
 });
@@ -2181,6 +2468,10 @@ function fireCrescentWave(player, options) {
       if (entity.id === player.id || hitEntities.has(entity.id)) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       hitEntities.add(entity.id);
+      if (isRespiring(entity)) {
+        showRespiraGuard(entity); // a onda passa por ele sem encostar
+        continue;
+      }
       dealDamage(entity, damage * dmgMultiplier(player), player);
     }
 
@@ -2728,6 +3019,9 @@ function castPoisonSlash(player) {
 function spawnPoisonCloud(player, cfg) {
   const dim = player.dimension;
   const center = player.location;
+  // a deterioracao e por ENTIDADE, nao por passe: sem isso cada varredura
+  // empilharia um DoT novo em quem ficasse parado na neblina
+  const rotted = new Set();
 
   let elapsed = 0;
   const interval = system.runInterval(() => {
@@ -2736,7 +3030,7 @@ function spawnPoisonCloud(player, cfg) {
       // sqrt espalha por area; sem ele a neblina fica amontoada no centro
       const dist = cfg.radius * Math.sqrt(Math.random());
       try {
-        dim.spawnParticle("mayuri:poison_fog", {
+        dim.spawnParticle(cfg.particle ?? "mayuri:poison_fog", {
           x: center.x + Math.cos(angle) * dist,
           y: center.y + 0.2 + Math.random() * cfg.height,
           z: center.z + Math.sin(angle) * dist,
@@ -2751,14 +3045,33 @@ function spawnPoisonCloud(player, cfg) {
       if (entity.id === player.id) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       try {
-        entity.addEffect("poison", cfg.refreshTicks, {
-          amplifier: cfg.poisonAmplifier,
-          showParticles: true,
-        });
-        entity.addEffect("slowness", cfg.refreshTicks, {
-          amplifier: cfg.slownessAmplifier,
-          showParticles: false,
-        });
+        if (cfg.poisonAmplifier !== undefined) {
+          entity.addEffect("poison", cfg.refreshTicks, {
+            amplifier: cfg.poisonAmplifier,
+            showParticles: true,
+          });
+        }
+        if (cfg.slownessAmplifier !== undefined) {
+          entity.addEffect("slowness", cfg.refreshTicks, {
+            amplifier: cfg.slownessAmplifier,
+            showParticles: false,
+          });
+        }
+        if (cfg.blindnessAmplifier !== undefined) {
+          entity.addEffect("blindness", cfg.refreshTicks, {
+            amplifier: cfg.blindnessAmplifier,
+            showParticles: false,
+          });
+        }
+        if (cfg.deterioration && !rotted.has(entity.id)) {
+          rotted.add(entity.id);
+          applyDeterioration(
+            entity,
+            player,
+            cfg.deterioration.perSecond,
+            cfg.deterioration.seconds
+          );
+        }
       } catch (e) {}
     }
 
@@ -2803,11 +3116,12 @@ function activateKonjiki(player, cfg) {
 }
 
 function tryTriggerKonjiki(player, character) {
-  if (getAwakening(player) < 100) return;
-  if (skillBlockingZoneFor(player)) return;
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
 
   player.setDynamicProperty(DP.awakening, 0);
   activateKonjiki(player, character.superAttack.konjiki);
+  return true;
 }
 
 // Cada personagem com super ataque decide o que acontece ao agachar + usar a m1
@@ -2815,12 +3129,11 @@ function tryTriggerKonjiki(player, character) {
 function tryTriggerSuperAttack(player, character) {
   switch (character.superAttack.onTrigger) {
     case "byakuya":
-      tryTriggerByakuyaSuper(player, character);
-      break;
+      return tryTriggerByakuyaSuper(player, character);
     case "konjiki":
-      tryTriggerKonjiki(player, character);
-      break;
+      return tryTriggerKonjiki(player, character);
   }
+  return false;
 }
 
 /* ---------------------------------------------------------
@@ -2850,6 +3163,7 @@ function fireEnergySphere(player, options) {
   const origin = customOrigin ?? player.location;
 
   let travelled = radius;
+  let swallowed = false; // a Respira do Barragan comeu o projetil
   const hitEntities = new Set();
 
   const centerAt = (distance) => ({
@@ -2881,6 +3195,14 @@ function fireEnergySphere(player, options) {
       if (Math.sqrt(dx * dx + dy * dy + dz * dz) > radius + 0.6) continue;
 
       hitEntities.add(entity.id);
+
+      // a Respira nao aparia o cero: ela desmancha ele, sem dano nenhum
+      if (isRespiring(entity)) {
+        swallowed = true;
+        showRespiraGuard(entity);
+        return;
+      }
+
       dealDamage(entity, finalDamage, player);
     }
   };
@@ -2905,10 +3227,11 @@ function fireEnergySphere(player, options) {
     const subSteps = Math.max(1, Math.ceil(speed / Math.max(0.5, radius)));
     for (let s = 1; s <= subSteps; s++) {
       hitAround(centerAt(travelled + (speed * s) / subSteps));
+      if (swallowed) break;
     }
 
     travelled += speed;
-    if (travelled >= range) {
+    if (swallowed || travelled >= range) {
       system.clearRun(interval);
     }
   }, 1);
@@ -3785,14 +4108,22 @@ function summonHomingBeast(player, index, cfg) {
     }
 
     // explode ao encostar em alguem
-    const touched = dim
+    const nearby = dim
       .getEntities({ location: position, maxDistance: cfg.hitRadius })
-      .some(
+      .filter(
         (entity) =>
           entity.id !== player.id && entity.getComponent("minecraft:health")
       );
 
-    if (touched) {
+    // a Respira desmancha a fera antes dela chegar a explodir
+    const guarded = nearby.find((entity) => isRespiring(entity));
+    if (guarded) {
+      system.clearRun(interval);
+      showRespiraGuard(guarded);
+      return;
+    }
+
+    if (nearby.length > 0) {
       system.clearRun(interval);
       try {
         dim.playSound("random.explode", position, { volume: 1.2, pitch: 1.3 });
@@ -4766,6 +5097,257 @@ function castMalditaAgua(player) {
 }
 
 /* ---------------------------------------------------------
+   Skills do Barragan Louisenbairn
+   --------------------------------------------------------- */
+
+// enterra o alvo: afunda no chao e prende por 2s
+function buryTarget(player, victim) {
+  try {
+    const loc = victim.location;
+    victim.teleport(
+      { x: loc.x, y: loc.y - ARROGANTE_SLASH.buryDepth, z: loc.z },
+      { keepVelocity: false }
+    );
+    victim.addEffect("slowness", ARROGANTE_SLASH.buryTicks, {
+      amplifier: 255,
+      showParticles: false,
+    });
+    for (let i = 0; i < 10; i++) {
+      player.dimension.spawnParticle("barragan:podridao", {
+        x: loc.x + (Math.random() - 0.5) * 1.8,
+        y: loc.y + Math.random() * 0.7,
+        z: loc.z + (Math.random() - 0.5) * 1.8,
+      });
+    }
+    player.dimension.playSound("dig.gravel", loc, { volume: 1.2, pitch: 0.6 });
+  } catch (e) {
+    // alvo saiu do mundo entre o corte e o enterro
+  }
+}
+
+function castArroganteSlash(player) {
+  if (!tryUseSkill(player, "barragan:arrogante_slash")) return;
+
+  world.sendMessage(`§8${player.name} §7usou §5Arrogante's Slash§7!`);
+  try {
+    player.dimension.playSound("mob.wither.shoot", player.location, {
+      volume: 1.3,
+      pitch: 0.6,
+    });
+  } catch (e) {}
+
+  for (let cut = 0; cut < ARROGANTE_SLASH.cuts; cut++) {
+    system.runTimeout(() => {
+      let victims;
+      try {
+        // alterna deitado/em pe pra ler como tres cortes, nao um so repetido
+        drawSweep(player, ARROGANTE_SLASH, "barragan:podridao", cut % 2 === 0);
+        victims = entitiesInFrontBox(player, ARROGANTE_SLASH);
+      } catch (e) {
+        return; // player saiu do mundo entre os cortes
+      }
+
+      const finalDamage = DAMAGE.arroganteSlash * dmgMultiplier(player);
+      for (const victim of victims) dealDamage(victim, finalDamage, player);
+
+      // o ultimo corte e o que enterra quem sobrou
+      if (cut === ARROGANTE_SLASH.cuts - 1) {
+        for (const victim of victims) buryTarget(player, victim);
+      }
+    }, cut * ARROGANTE_SLASH.gapTicks);
+  }
+}
+
+function castElReiOco(player) {
+  if (!tryUseSkill(player, "barragan:el_rei_oco")) return;
+
+  world.sendMessage(`§8${player.name} §7usou §cEl Rei Oco§7!`);
+
+  // um anel de ceros saindo pros 8 lados de uma vez, repetido 5 vezes
+  const fireRing = () => {
+    try {
+      player.dimension.playSound("mob.wither.shoot", player.location, {
+        volume: 1.2,
+        pitch: 1.1,
+      });
+    } catch (e) {
+      return false; // player saiu do mundo no meio da rajada
+    }
+
+    for (let i = 0; i < EL_REI_OCO.directions; i++) {
+      const angle = (i / EL_REI_OCO.directions) * Math.PI * 2;
+      fireEnergySphere(player, {
+        radius: EL_REI_OCO.radius,
+        range: EL_REI_OCO.range,
+        speed: EL_REI_OCO.speed,
+        damage: DAMAGE.elReiOco,
+        particle: "barragan:cero_rojo",
+        shellParticles: 10,
+        direction: { x: Math.cos(angle), y: 0, z: Math.sin(angle) },
+      });
+    }
+    return true;
+  };
+
+  let volley = 1; // o primeiro anel sai na hora, logo abaixo
+  const interval = system.runInterval(() => {
+    if (volley >= EL_REI_OCO.volleys) {
+      system.clearRun(interval);
+      return;
+    }
+    volley++;
+    if (!fireRing()) system.clearRun(interval);
+  }, EL_REI_OCO.gapTicks);
+
+  fireRing();
+}
+
+function castRoyalCleave(player) {
+  if (!tryUseSkill(player, "barragan:royal_cleave")) return;
+
+  world.sendMessage(`§8${player.name}: §5§lROYAL CLEAVE! §r§7(passa pela guarda)`);
+  try {
+    player.dimension.playSound("mob.wither.death", player.location, {
+      volume: 1.4,
+      pitch: 0.7,
+    });
+  } catch (e) {}
+
+  drawSweep(player, ROYAL_CLEAVE, "barragan:podridao", true);
+
+  const finalDamage = DAMAGE.royalCleave * dmgMultiplier(player);
+  for (const victim of entitiesInFrontBox(player, ROYAL_CLEAVE)) {
+    // o unico golpe da addon que passa direto pelo bloqueio
+    dealDamage(victim, finalDamage, player, { breaksBlock: true });
+  }
+}
+
+function castWithersSlashes(player) {
+  if (!tryUseSkill(player, "barragan:withers_slashes")) return;
+
+  world.sendMessage(`§8${player.name} §7usou §2Wither's Slashes§7!`);
+  try {
+    player.dimension.playSound("mob.wither.ambient", player.location, {
+      volume: 1.3,
+      pitch: 0.8,
+    });
+  } catch (e) {}
+
+  drawSweep(player, WITHERS_SLASHES, "barragan:podridao", false);
+
+  const finalDamage = DAMAGE.withersSlashesCut * dmgMultiplier(player);
+  for (const victim of entitiesInFrontBox(player, WITHERS_SLASHES)) {
+    dealDamage(victim, finalDamage, player);
+    applyDeterioration(victim, player, DAMAGE.deterioration, WITHERS_SLASHES.seconds);
+  }
+}
+
+/* ---------------------------------------------------------
+   Resurrección: Arrogante
+   --------------------------------------------------------- */
+
+function castRuirDelRey(player) {
+  if (!tryUseSkill(player, "barragan:ruir_del_rey")) return;
+
+  const dim = player.dimension;
+  const center = player.location;
+
+  world.sendMessage(`§8§l${player.name}: RUIR DEL REY!`);
+  try {
+    dim.playSound("mob.wither.spawn", center, { volume: 1.6, pitch: 0.5 });
+  } catch (e) {}
+
+  // onda de velhice saindo do rei: pura deterioracao, sem golpe
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = RUIR_DEL_REY.radius * Math.sqrt(Math.random());
+    try {
+      dim.spawnParticle("barragan:podridao", {
+        x: center.x + Math.cos(angle) * dist,
+        y: center.y + 0.2 + Math.random() * 3,
+        z: center.z + Math.sin(angle) * dist,
+      });
+    } catch (e) {}
+  }
+
+  for (const victim of dim.getEntities({
+    location: center,
+    maxDistance: RUIR_DEL_REY.radius,
+  })) {
+    if (victim.id === player.id) continue;
+    if (!victim.getComponent("minecraft:health")) continue;
+    applyDeterioration(victim, player, DAMAGE.deterioration, RUIR_DEL_REY.seconds);
+  }
+}
+
+function castRespira(player) {
+  if (!tryUseSkill(player, "barragan:respira")) return;
+
+  player.setDynamicProperty(DP.respiraEnd, system.currentTick + RESPIRA.durationTicks);
+
+  world.sendMessage(
+    `§8${player.name} §7soltou a §8§lRespira§r§7: cero e ataque de longe não chegam nele por ${
+      RESPIRA.durationTicks / 20
+    }s.`
+  );
+  try {
+    player.dimension.playSound("mob.wither.ambient", player.location, {
+      volume: 1.5,
+      pitch: 0.4,
+    });
+  } catch (e) {}
+}
+
+function castElMaldito(player) {
+  if (!tryUseSkill(player, "barragan:el_maldito")) return;
+
+  world.sendMessage(`§8§l${player.name} soltou o El Maldito!`);
+  try {
+    player.dimension.playSound("mob.wither.spawn", player.location, {
+      volume: 1.8,
+      pitch: 0.4,
+    });
+  } catch (e) {}
+
+  // mesma neblina generica da Konjiki do Mayuri, com cegueira e deterioracao
+  // no lugar do veneno
+  spawnPoisonCloud(player, EL_MALDITO);
+}
+
+function castLaMuerte(player) {
+  if (!tryUseSkill(player, "barragan:la_muerte")) return;
+
+  player.setDynamicProperty(DP.muerteArmed, true);
+
+  world.sendMessage(
+    `§8§l${player.name}: La Muerte! §r§7O primeiro que ele encostar apodrece por ${LA_MUERTE.seconds}s.`
+  );
+  try {
+    player.dimension.playSound("mob.wither.death", player.location, {
+      volume: 1.4,
+      pitch: 0.4,
+    });
+  } catch (e) {}
+}
+
+// disparado no m1: gasta a carga no PRIMEIRO alvo tocado
+function tryLaMuerteTouch(player, victim) {
+  if (!player.getDynamicProperty(DP.muerteArmed)) return;
+  try {
+    // o m1 pode ter matado o alvo neste mesmo tick: ai ele ja e invalido
+    if (!victim.getComponent("minecraft:health")) return;
+  } catch (e) {
+    return;
+  }
+
+  player.setDynamicProperty(DP.muerteArmed, false);
+  applyDeterioration(victim, player, DAMAGE.deterioration, LA_MUERTE.seconds);
+  world.sendMessage(
+    `§8${nameOf(victim)} §7foi tocado por §5La Muerte§7 e começou a apodrecer.`
+  );
+}
+
+/* ---------------------------------------------------------
    Camera alta da forma gigante
    --------------------------------------------------------- */
 
@@ -5005,9 +5587,9 @@ function activateSenkei(player, character) {
 }
 
 function tryTriggerByakuyaSuper(player, character) {
-  if (getAwakening(player) < 100) return;
-  if (getByakuyaWeaponState(player) !== "base") return;
-  if (skillBlockingZoneFor(player)) return;
+  if (getAwakening(player) < 100) return false;
+  if (getByakuyaWeaponState(player) !== "base") return false;
+  if (skillBlockingZoneFor(player)) return false;
 
   const charged = senkeiChargeReady.has(player.id);
   player.setDynamicProperty(DP.awakening, 0);
@@ -5018,6 +5600,7 @@ function tryTriggerByakuyaSuper(player, character) {
   } else {
     activateKageyoshi(player, character);
   }
+  return true;
 }
 
 // crouch + usar a senbonzakura do senkei = desativa a area e puxa a espada final
@@ -5139,6 +5722,16 @@ const MELEE_WEAPONS = {
     particle: "harribel:agua",
     dot: null,
   },
+  "barragan:m1_zanpakuto": {
+    baseDamage: DAMAGE.barraganM1,
+    particle: "barragan:podridao",
+    dot: null,
+  },
+  "barragan:m1_arrogante": {
+    baseDamage: DAMAGE.arroganteM1,
+    particle: "barragan:podridao",
+    dot: null,
+  },
   "starkk:m1_zanpakuto": {
     baseDamage: DAMAGE.starkkM1,
     particle: "minecraft:crit_particle",
@@ -5232,6 +5825,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       if (weapon.dot) {
         applyDot(hitEntity, damagingEntity, weapon.dot.perSecond, weapon.dot.seconds);
       }
+      tryLaMuerteTouch(damagingEntity, hitEntity);
       if (weapon.combo) {
         applyMeleeCombo(damagingEntity, hitEntity, held.typeId, weapon.combo);
       }
@@ -5387,6 +5981,34 @@ system.runInterval(() => {
 }, 4);
 
 /* ---------------------------------------------------------
+   Guarda: desenha o escudo e derruba o bloqueio no fim do prazo
+   (e no fim do prazo que o cooldown comeca a contar)
+   --------------------------------------------------------- */
+
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    if (!isBlocking(player)) {
+      if (blockingNow.has(player.id)) endBlock(player, "expired");
+      continue;
+    }
+    blockingNow.add(player.id);
+
+    try {
+      const loc = player.location;
+      const dir = forwardDirection(player);
+      for (let i = 0; i < 4; i++) {
+        const angle = (i / 4) * Math.PI * 2 + system.currentTick / 5;
+        player.dimension.spawnParticle("minecraft:crit_particle", {
+          x: loc.x + dir.x * 0.9 + Math.cos(angle) * 0.55,
+          y: loc.y + 1.1 + Math.sin(angle) * 0.55,
+          z: loc.z + dir.z * 0.9 + Math.cos(angle) * 0.55,
+        });
+      }
+    } catch (e) {}
+  }
+}, 4);
+
+/* ---------------------------------------------------------
    Actionbar (saude + awakening) - sempre visivel
    --------------------------------------------------------- */
 
@@ -5411,8 +6033,10 @@ system.runInterval(() => {
         ? " §d✦carregado"
         : "";
 
+    const blockTag = isBlocking(player) ? " §a🛡 GUARDA" : "";
+
     player.onScreenDisplay.setActionBar(
-      `§c❤ ${current}/${max}   §b⚡ Awakening: ${awakening}%${awakenedTag}${senkeiTag}`
+      `§c❤ ${current}/${max}   §b⚡ Awakening: ${awakening}%${awakenedTag}${senkeiTag}${blockTag}`
     );
   }
 }, 5);
@@ -5565,6 +6189,7 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   removeZonesOwnedBy(playerId);
   removeCursesBy(playerId);
   warnedOffhand.delete(playerId);
+  blockingNow.delete(playerId);
   senkeiChargeTicks.delete(playerId);
   senkeiChargeReady.delete(playerId);
   wasSneakJumping.delete(playerId);
