@@ -2,15 +2,15 @@
   "format_version": "1.26.40",
   "minecraft:item": {
     "description": {
-      "identifier": "ichigo:tensa_m1",
+      "identifier": "starkk:m1_cuchillos",
       "menu_category": {
         "category": "equipment"
       }
     },
     "components": {
-      "minecraft:icon": "ichigo:tensa_m1",
+      "minecraft:icon": "starkk:m1_cuchillos",
       "minecraft:display_name": {
-        "value": "Tensa Zangetsu (Bankai)"
+        "value": "Cuchillos de Los Lobos"
       },
       "minecraft:max_stack_size": 1,
       "minecraft:hand_equipped": true,

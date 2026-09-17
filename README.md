@@ -21,6 +21,7 @@ usar o seletor** passa pro próximo (dá a volta no último).
 |---|---|---|
 | **Grimmjow Jaegerjaquez** | 800 | Resurrección: La Pantera — "Mutile, Pantera" (1200 de vida, speed 5, regen 4) |
 | **Ulquiorra Cifer** | 1600 | Resurrección: Murciélago — "Confine, Murciélago" (2000 de vida) |
+| **Coyote Starkk** | 4000 | Resurrección: Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
 
 ## Layout
 
@@ -81,10 +82,10 @@ Acima de 1044 a vida passa a ser **virtual**: o pool real fica no teto e
 O stub da simulação recusa `amplifier > 255`, então passar do teto quebra o
 build em vez de virar bug silencioso no jogo.
 
-Uma ressalva: o dano base do m1 vem do `minecraft:damage` do item, que é
-vanilla e **não** passa pela escala. Contra um personagem escalado o m1 pesa
-proporcionalmente mais (no máximo ~1,9× no Murciélago). As skills, que são
-todas scriptadas, escalam certo.
+O dano do m1 também passa pela escala: os itens de m1 têm
+`minecraft:damage: 0` e o valor inteiro sai do script, via
+`MELEE_WEAPONS[].baseDamage` → `dealDamage()`. (Sobra 1 de dano vanilla por
+golpe, que é o soco base e não dá pra zerar — desprezível.)
 
 ### Versão dos packs (multiplayer)
 
@@ -120,7 +121,7 @@ O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
 personagens, ativa awakening/máscara/Kageyoshi/Senkei/Pressão, mata alvos no
 meio de um DoT, simula reload do mundo e desconexão, e roda 2000 ticks livres
 no fim. São
-314 checks — qualquer exceção em qualquer callback é capturada e reportada.
+365 checks — qualquer exceção em qualquer callback é capturada e reportada.
 
 Foi assim que apareceram os bugs de cooldown pós-reload, a máscara que nunca
 era removida e o buraco na contenção do Senkei.
@@ -136,6 +137,8 @@ era removida e o buraco na contenção do Senkei.
 | `MELEE_WEAPONS[].combo` | Efeito a cada N acertos da arma (`everyHits`, `effect`, `amplifier`, `durationTicks`) |
 | `spawnPoisonCloud(player, cfg)` | Neblina venenosa parada onde foi solta — Toxic Fog e Konjiki Ashisogi Jizō são a mesma, com raio e intensidade diferentes |
 | `superAttack.onTrigger` | Agachar + m1 com o medidor em 100%. Cada personagem escolhe seu efeito (`"byakuya"` → Kageyoshi/Senkei, `"konjiki"` → Bankai do Mayuri) |
+| `awakening.altForm` | Troca de persona dentro da forma desperta: agachar + usar a arma atual alterna entre dois conjuntos de itens (Starkk ↔ Lilynette) |
+| `nearestTarget` / `directionToward` | Alvo mais próximo com vida (não só player) e vetor fixo até ele, pra mirar tiro sem depender da mira |
 | `awakening.onActivate` | Efeito de entrada da forma desperta (`"pressure"` → Kenpachi, `"resurreccion"` → Grimmjow) |
 | `fireEnergySphere(player, opts)` | Esfera de energia que viaja pela direção da visão e some no primeiro alvo ou no fim do alcance (Gran Rey Cero) |
 | `reapplyFormEffects(player)` | Devolve os efeitos permanentes da forma atual. Buff temporário **sobrescreve** o permanente em vez de somar, então todo buff que mexe em speed/regen precisa chamar isso ao acabar |
@@ -169,10 +172,10 @@ guardar um novo prazo em tick absoluto, use esses helpers.
    **E registrar o id em `ARCS`**, no arco dele — quem fica fora de todo arco
    não aparece no seletor. A simulação falha se alguém sumir do elenco.
    Vida acima de **1044** entra no esquema de vida virtual descrito acima —
-   funciona sozinho, mas leia a ressalva do m1.
+   funciona sozinho — o dano do m1 também escala.
 2. **Criar os itens** em `BP/items/<nome>.json` — copie um existente; o ícone é
-   uma string `"namespace:item"`, e a arma de m1 leva `minecraft:damage` igual
-   ao dano desejado **menos 1** (o jogo soma 1 de soco).
+   uma string `"namespace:item"`. A arma de m1 leva **`minecraft:damage: 0`**:
+   o dano dela sai inteiro do script, por `MELEE_WEAPONS[].baseDamage`.
 3. **Desenhar as texturas** em `tools/textures.py`: um grid de 16 linhas × 16
    caracteres mais uma paleta `char → (R, G, B, A)`, `.` = transparente.
    Rode `python3 tools/gen_textures.py`.

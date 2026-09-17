@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "starkk:sideway_cuts",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "starkk:sideway_cuts",
+      "minecraft:display_name": {
+        "value": "Sideway Cuts"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "starkk_sideway_cuts",
+        "duration": 18
+      }
+    }
+  }
+}

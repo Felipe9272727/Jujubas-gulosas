@@ -20,6 +20,7 @@ const DP = {
   coatingEnd: "mv:coating_end",
   maskEnd: "mv:mask_end",
   byakuyaWeapon: "mv:byakuya_weapon", // "base" | "senkei" | "finisher"
+  starkkForm: "mv:starkk_form", // "starkk" | "lilynette"
   arc: "mv:arc", // indice do arco escolhido no seletor
   healthScale: "mv:health_scale", // vida virtual / vida real
   markedEnd: "mv:marked_end", // marca da Pesquisa do Ulquiorra
@@ -222,12 +223,61 @@ const CHARACTERS = {
       },
     },
   },
+  starkk: {
+    id: "starkk",
+    name: "Coyote Starkk",
+    health: 4000,
+    items: {
+      0: "starkk:m1_zanpakuto",
+      1: "starkk:slash_barrage",
+      2: "starkk:sideway_cuts",
+      3: "starkk:crescent_canines",
+      4: "starkk:kamarada",
+    },
+    // a Resurrección nao muda o teto de vida - so troca a forma de lutar.
+    // agachado + usar a arma atual alterna entre Starkk (corpo a corpo,
+    // reaproveita as 4 skills base) e a Lilynette (a distancia)
+    awakening: {
+      name: "Resurrección: Los Lobos",
+      triggerItem: "starkk:m1_zanpakuto",
+      health: 4000,
+      onActivate: "battlecry",
+      chatLine: "Kick About, Los Lobos",
+      cryParticle: "starkk:reiatsu",
+      items: {
+        0: "starkk:m1_cuchillos",
+        1: "starkk:slash_barrage",
+        2: "starkk:sideway_cuts",
+        3: "starkk:crescent_canines",
+        4: "starkk:kamarada",
+      },
+      altForm: {
+        starkkWeapon: "starkk:m1_cuchillos",
+        lilynetteWeapon: "starkk:lilynette_shot",
+        items: {
+          0: "starkk:lilynette_shot",
+          1: "starkk:rifle",
+          2: "starkk:escopeta",
+          3: "starkk:cero_metralleta",
+        },
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
 const BYAKUYA_ALT_WEAPONS = [
   "byakuya:m1_senbonzakura_senkei",
   "byakuya:m1_senbonzakura_finisher",
+];
+
+// itens da persona Lilynette do Starkk (so existem no registro "items" quando
+// a persona esta ativa, entao precisam de registro proprio pro ITEM_OWNER)
+const STARKK_ALT_WEAPONS = [
+  "starkk:lilynette_shot",
+  "starkk:rifle",
+  "starkk:escopeta",
+  "starkk:cero_metralleta",
 ];
 
 // O seletor mostra um arco por vez. Agachar + usar o seletor passa pro proximo.
@@ -241,7 +291,7 @@ const ARCS = [
   {
     id: "hueco_mundo",
     name: "Arrancar / Hueco Mundo",
-    characters: ["grimmjow", "ulquiorra"],
+    characters: ["grimmjow", "ulquiorra", "starkk"],
   },
 ];
 
@@ -260,6 +310,9 @@ for (const key in CHARACTERS) {
 }
 for (const weaponId of BYAKUYA_ALT_WEAPONS) {
   ITEM_OWNER[weaponId] = "byakuya";
+}
+for (const weaponId of STARKK_ALT_WEAPONS) {
+  ITEM_OWNER[weaponId] = "starkk";
 }
 
 // O Bedrock guarda o amplificador de efeito num byte, entao o teto e 255. Com
@@ -365,6 +418,14 @@ const SKILL_COOLDOWN_TICKS = {
   "ulquiorra:enigma": 800, // 40s - nao especificado
   "ulquiorra:cero_oscuras": 700, // 35s - nao especificado
   "ulquiorra:lanza": 1200, // 60s - nao especificado
+  "starkk:slash_barrage": 460, // 23s
+  "starkk:sideway_cuts": 360, // 18s
+  "starkk:crescent_canines": 700, // 35s
+  "starkk:kamarada": 1000, // 50s
+  "starkk:lilynette_shot": 40, // 2s
+  "starkk:rifle": 400, // 20s
+  "starkk:escopeta": 360, // 18s
+  "starkk:cero_metralleta": 800, // 40s
 };
 
 const SKILL_NAMES = {
@@ -401,6 +462,14 @@ const SKILL_NAMES = {
   "ulquiorra:enigma": "Enigma",
   "ulquiorra:cero_oscuras": "Cero Oscuras",
   "ulquiorra:lanza": "Lanza del Relámpago",
+  "starkk:slash_barrage": "Slash's Barrage",
+  "starkk:sideway_cuts": "Sideway Cuts",
+  "starkk:crescent_canines": "Crescent Canines",
+  "starkk:kamarada": "Kamarada",
+  "starkk:lilynette_shot": "Disparo da Lilynette",
+  "starkk:rifle": "Rifle",
+  "starkk:escopeta": "Escopeta",
+  "starkk:cero_metralleta": "Cero Metralleta",
 };
 
 // dano aumentado
@@ -448,6 +517,18 @@ const DAMAGE = {
   garrasMurcielago: 60,
   ceroOscuras: 1400, // 4x o Gran Rey Cero
   lanza: 900,
+  // Coyote Starkk
+  starkkM1: 80,
+  slashBarrage: 100, // por corte, sao 5
+  sidewayCuts: 200, // por lado, sao 2
+  crescentCaninesHit: 150, // por canino na trajetoria
+  crescentCaninesExplosion: 300, // por canino ao explodir
+  kamarada: 200, // por lobo
+  // Resurreccion: Los Lobos
+  cuchillosM1: 100,
+  lilynetteShot: 120, // tambem usado pelo Rifle, por tiro
+  escopeta: 240, // dobro do disparo comum
+  ceroMetralletaTick: 10, // por "pulso" do chuveiro - nao especificado, ajustavel
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -527,6 +608,45 @@ const TOXIC_FOG = {
   slownessAmplifier: 2, // slowness 3
   particlesPerTick: 14,
   endMessage: "§7A Toxic Fog se dissipou.",
+};
+
+// Coyote Starkk
+const SLASH_BARRAGE = {
+  advances: 5,
+  distancePerAdvance: 3,
+  stepsPerAdvance: 3,
+  gapTicks: 4,
+};
+const SIDEWAY_CUTS = { searchRadius: 20, distance: 1.8, gapTicks: 5 };
+const CRESCENT_CANINES = {
+  angleDeg: 18, // abertura do V a partir da direcao que o player olha
+  growTicks: 80, // 4s crescendo
+  startRadius: 0.8,
+  endRadius: 3.5,
+  speed: 1.1,
+  explosionRadius: 5,
+};
+const KAMARADA = {
+  count: 5,
+  searchRadius: 30,
+  speed: 1.3,
+  maxTicks: 100, // tempo de vida maximo caso nao acerte nada
+  hitRadius: 2,
+  turnRate: 0.35, // quao forte cada lobo corrige rumo ao alvo por tick
+};
+// Resurreccion: Los Lobos (persona Lilynette)
+const LILYNETTE_SHOT = {
+  radius: 2, // "do tamanho do gran rey cero"
+  range: 56, // dobro do alcance do gran rey cero (28)
+  speed: 1.2,
+};
+const RIFLE = { shots: 3, gapTicks: 4, radius: 0.9, range: 26, speed: 1.6, searchRadius: 30 };
+const ESCOPETA = { radius: 1.3, range: 12, speed: 2 };
+const CERO_METRALLETA = {
+  durationTicks: 300, // 15s
+  tickInterval: 2, // "o mais rapido possivel" sem virar spam de eventos
+  forward: 22,
+  width: 3,
 };
 
 
@@ -836,9 +956,37 @@ function getByakuyaWeaponState(player) {
   return player.getDynamicProperty(DP.byakuyaWeapon) ?? "base";
 }
 
+function getStarkkForm(player) {
+  return player.getDynamicProperty(DP.starkkForm) ?? "starkk";
+}
+
+// agachado + usar a arma atual do Starkk desperto troca de persona - o item de
+// verdade so troca no proximo passo do loop de travamento (getActiveItemsForPlayer)
+function toggleStarkkForm(player) {
+  const next = getStarkkForm(player) === "lilynette" ? "starkk" : "lilynette";
+  player.setDynamicProperty(DP.starkkForm, next);
+
+  try {
+    player.dimension.playSound("mob.endermen.portal", player.location, {
+      volume: 1,
+      pitch: next === "lilynette" ? 1.6 : 0.9,
+    });
+  } catch (e) {}
+
+  if (next === "lilynette") {
+    world.sendMessage(`§9${player.name} chamou a Lilynette pra frente!`);
+    player.sendMessage("§9Você agora está controlando a Lilynette.");
+  } else {
+    player.sendMessage("§6Você voltou a ser Coyote Starkk.");
+  }
+}
+
 // decide quais itens devem estar travados nos slots do player nesse momento
 function getActiveItemsForPlayer(player, character) {
   if (character.awakening && isAwakened(player)) {
+    if (character.awakening.altForm && getStarkkForm(player) === "lilynette") {
+      return character.awakening.altForm.items;
+    }
     return character.awakening.items ?? character.items;
   }
   if (character.superAttack) {
@@ -860,6 +1008,7 @@ function activateCharacter(player, characterId) {
   player.setDynamicProperty(DP.character, characterId);
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
+  player.setDynamicProperty(DP.starkkForm, "starkk");
   clearComboCounters(player);
 
   applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
@@ -912,6 +1061,7 @@ function deactivateCharacter(player) {
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.awakening, 0);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
+  player.setDynamicProperty(DP.starkkForm, "starkk");
   clearComboCounters(player);
   removeZonesOwnedBy(player.id);
 
@@ -981,6 +1131,7 @@ function revertAwakening(player, reason) {
   const previousHealth = hpBefore ? hpBefore.currentValue : character.health;
 
   player.setDynamicProperty(DP.awakened, false);
+  player.setDynamicProperty(DP.starkkForm, "starkk");
   applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
 
   const inv = getInv(player);
@@ -1261,6 +1412,19 @@ world.afterEvents.itemUse.subscribe((ev) => {
     return;
   }
 
+  // agachado + usar a arma m1 atual (Cuchillos ou disparo da Lilynette) com a
+  // Resurrección ativa alterna entre as duas personas
+  if (
+    character.awakening?.altForm &&
+    isAwakened(player) &&
+    player.isSneaking &&
+    (itemStack.typeId === character.awakening.altForm.starkkWeapon ||
+      itemStack.typeId === character.awakening.altForm.lilynetteWeapon)
+  ) {
+    toggleStarkkForm(player);
+    return;
+  }
+
   // enquanto preso num senkei, ninguem pode usar skill - so a m1
   if (itemStack.typeId in SKILL_COOLDOWN_TICKS) {
     const blocking = skillBlockingZoneFor(player);
@@ -1369,6 +1533,30 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "ulquiorra:lanza":
       castLanza(player);
+      break;
+    case "starkk:slash_barrage":
+      castSlashBarrage(player);
+      break;
+    case "starkk:sideway_cuts":
+      castSidewayCuts(player);
+      break;
+    case "starkk:crescent_canines":
+      castCrescentCanines(player);
+      break;
+    case "starkk:kamarada":
+      castKamarada(player);
+      break;
+    case "starkk:lilynette_shot":
+      castLilynetteShot(player);
+      break;
+    case "starkk:rifle":
+      castRifle(player);
+      break;
+    case "starkk:escopeta":
+      castEscopeta(player);
+      break;
+    case "starkk:cero_metralleta":
+      castCeroMetralleta(player);
       break;
   }
 });
@@ -1968,6 +2156,37 @@ function nearestPlayer(player, maxDistance, origin = player.location) {
   return best;
 }
 
+// igual ao nearestPlayer, mas pega qualquer entidade com vida (nao so player)
+function nearestTarget(player, maxDistance, origin = player.location) {
+  let best;
+  let bestDistance = Infinity;
+
+  for (const entity of player.dimension.getEntities({ location: origin, maxDistance })) {
+    if (entity.id === player.id) continue;
+    if (!entity.getComponent("minecraft:health")) continue;
+    const dx = entity.location.x - origin.x;
+    const dy = entity.location.y - origin.y;
+    const dz = entity.location.z - origin.z;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = entity;
+    }
+  }
+
+  return best;
+}
+
+// vetor normalizado de "from" ate "to", usado pra mirar tiros num alvo fixo
+// em vez de na direcao que o player esta olhando
+function directionToward(from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y + 1 - (from.y + 1.4);
+  const dz = to.z - from.z;
+  const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+  return { x: dx / len, y: dy / len, z: dz / len };
+}
+
 function castKenpachiHunt(player) {
   // procura o alvo ANTES de gastar o cooldown: sem ninguem por perto a skill
   // nao e consumida
@@ -2245,10 +2464,11 @@ function fireEnergySphere(player, options) {
     damage,
     particle = "grimmjow:cero",
     shellParticles = 22,
+    direction,
   } = options;
 
   const dim = player.dimension;
-  const view = player.getViewDirection();
+  const view = direction ?? player.getViewDirection();
   const length =
     Math.sqrt(view.x * view.x + view.y * view.y + view.z * view.z) || 1;
   const step = { x: view.x / length, y: view.y / length, z: view.z / length };
@@ -2926,6 +3146,441 @@ function castLanza(player) {
 }
 
 /* ---------------------------------------------------------
+   Skills do Coyote Starkk
+   --------------------------------------------------------- */
+
+function castSlashBarrage(player) {
+  if (!tryUseSkill(player, "starkk:slash_barrage")) return;
+
+  world.sendMessage(`§6${player.name} §7usou §eSlash's Barrage§7!`);
+
+  // mesma mecanica do Flash Slash do Kenpachi: cada avanco remira pra onde o
+  // player esta olhando na hora e tem sua propria lista de alvos ja atingidos
+  let advance = 0;
+  const strike = () => {
+    advance++;
+    try {
+      player.dimension.playSound("mob.wither.shoot", player.location, {
+        volume: 1,
+        pitch: 1.3 + advance * 0.12,
+      });
+    } catch (e) {
+      return; // player saiu do mundo no meio da sequencia
+    }
+
+    performDashStrike(player, {
+      distance: SLASH_BARRAGE.distancePerAdvance,
+      steps: SLASH_BARRAGE.stepsPerAdvance,
+      damage: DAMAGE.slashBarrage,
+      burst: null,
+      onFinish: () => {
+        if (advance < SLASH_BARRAGE.advances) {
+          system.runTimeout(strike, SLASH_BARRAGE.gapTicks);
+        }
+      },
+    });
+  };
+
+  strike();
+}
+
+function castSidewayCuts(player) {
+  // procura antes de gastar o cooldown
+  const target = nearestPlayer(player, SIDEWAY_CUTS.searchRadius);
+  if (!target) {
+    player.sendMessage("§7Nenhum player por perto pro Sideway Cuts.");
+    return;
+  }
+  if (!tryUseSkill(player, "starkk:sideway_cuts")) return;
+
+  world.sendMessage(`§6${player.name} §7usou §eSideway Cuts§7!`);
+
+  const from = player.location;
+  const to = target.location;
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const length = Math.sqrt(dx * dx + dz * dz) || 1;
+  // perpendicular a linha atacante-alvo: da os dois lados do alvo
+  const perp = { x: -dz / length, z: dx / length };
+
+  const strikeSide = (side) => {
+    let spot;
+    try {
+      const anchor = target.location;
+      spot = {
+        x: anchor.x + perp.x * SIDEWAY_CUTS.distance * side,
+        y: anchor.y,
+        z: anchor.z + perp.z * SIDEWAY_CUTS.distance * side,
+      };
+      player.teleport(spot, { keepVelocity: false, facingLocation: anchor });
+      player.dimension.playSound("mob.wither.shoot", spot, {
+        volume: 1.2,
+        pitch: side > 0 ? 1.2 : 0.9,
+      });
+    } catch (e) {
+      return; // alvo ou player sumiu entre um lado e o outro
+    }
+
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      try {
+        player.dimension.spawnParticle("minecraft:crit_particle", {
+          x: spot.x + perp.x * (t - 0.5) * 3 * -side,
+          y: spot.y + 0.4 + t * 1.6,
+          z: spot.z + perp.z * (t - 0.5) * 3 * -side,
+        });
+      } catch (e) {}
+    }
+
+    damageNearbyEntities(player, spot, SIDEWAY_CUTS.distance + 1.4, DAMAGE.sidewayCuts);
+  };
+
+  strikeSide(1);
+  system.runTimeout(() => strikeSide(-1), SIDEWAY_CUTS.gapTicks);
+}
+
+// um "canino": cresce de raio enquanto avanca e explode no fim do crescimento
+function launchCrescentCanine(player, angleRad) {
+  const dim = player.dimension;
+  const dir = forwardDirection(player);
+  // gira a direcao da visao no plano XZ pra abrir o V
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const step = {
+    x: dir.x * cos - dir.z * sin,
+    z: dir.x * sin + dir.z * cos,
+  };
+  const origin = player.location;
+  const hitEntities = new Set();
+
+  let ticks = 0;
+  const interval = system.runInterval(() => {
+    ticks++;
+
+    const grow = Math.min(1, ticks / CRESCENT_CANINES.growTicks);
+    const radius =
+      CRESCENT_CANINES.startRadius +
+      (CRESCENT_CANINES.endRadius - CRESCENT_CANINES.startRadius) * grow;
+    const travelled = CRESCENT_CANINES.speed * ticks;
+    const center = {
+      x: origin.x + step.x * travelled,
+      y: origin.y + 1.2,
+      z: origin.z + step.z * travelled,
+    };
+
+    // o canino desenhado como um arco vertical que vai abrindo
+    const perp = { x: -step.z, z: step.x };
+    for (let i = 0; i <= 10; i++) {
+      const t = i / 10;
+      const spread = (t - 0.5) * 2 * radius;
+      try {
+        dim.spawnParticle("grimmjow:cero", {
+          x: center.x + perp.x * spread,
+          y: center.y + Math.cos(t * Math.PI) * radius * 0.4,
+          z: center.z + perp.z * spread,
+        });
+      } catch (e) {}
+    }
+
+    const finalDamage = DAMAGE.crescentCaninesHit * dmgMultiplier(player);
+    for (const entity of dim.getEntities({
+      location: center,
+      maxDistance: radius + 2,
+    })) {
+      if (entity.id === player.id || hitEntities.has(entity.id)) continue;
+      if (!entity.getComponent("minecraft:health")) continue;
+
+      const loc = entity.location;
+      const ex = loc.x - center.x;
+      const ey = loc.y + 1 - center.y; // meio do corpo, nao os pes
+      const ez = loc.z - center.z;
+      if (Math.sqrt(ex * ex + ey * ey + ez * ez) > radius + 0.6) continue;
+
+      hitEntities.add(entity.id);
+      dealDamage(entity, finalDamage, player);
+    }
+
+    if (ticks < CRESCENT_CANINES.growTicks) return;
+
+    system.clearRun(interval);
+
+    // estouro no fim do crescimento
+    try {
+      dim.playSound("random.explode", center, { volume: 1.5, pitch: 0.8 });
+    } catch (e) {}
+    for (let ring = 1; ring <= 3; ring++) {
+      const ringRadius = (CRESCENT_CANINES.explosionRadius * ring) / 3;
+      for (let i = 0; i < 14; i++) {
+        const angle = (i / 14) * Math.PI * 2;
+        try {
+          dim.spawnParticle("minecraft:large_explosion", {
+            x: center.x + Math.cos(angle) * ringRadius,
+            y: center.y + (ring - 2) * 0.6,
+            z: center.z + Math.sin(angle) * ringRadius,
+          });
+        } catch (e) {}
+      }
+    }
+    damageNearbyEntities(
+      player,
+      center,
+      CRESCENT_CANINES.explosionRadius,
+      DAMAGE.crescentCaninesExplosion
+    );
+  }, 1);
+}
+
+function castCrescentCanines(player) {
+  if (!tryUseSkill(player, "starkk:crescent_canines")) return;
+
+  world.sendMessage(`§6${player.name} §7usou §eCrescent Canines§7!`);
+  player.dimension.playSound("mob.wither.shoot", player.location, {
+    volume: 1.4,
+    pitch: 0.7,
+  });
+
+  // os dois caninos do V, um pra cada lado da direcao da visao
+  const angle = (CRESCENT_CANINES.angleDeg * Math.PI) / 180;
+  launchCrescentCanine(player, angle);
+  launchCrescentCanine(player, -angle);
+}
+
+// um lobo guiado: persegue o alvo mais proximo com correcao gradual de rumo
+function summonKamaradaWolf(player, index) {
+  const dim = player.dimension;
+  const dir = forwardDirection(player);
+  const perp = { x: -dir.z, z: dir.x };
+  const origin = player.location;
+
+  // saem em leque pra nao virar uma bola so
+  const spread = (index - (KAMARADA.count - 1) / 2) * 0.6;
+  let position = {
+    x: origin.x + dir.x * 1.5 + perp.x * spread,
+    y: origin.y + 1,
+    z: origin.z + dir.z * 1.5 + perp.z * spread,
+  };
+  let heading = { x: dir.x, y: 0, z: dir.z };
+
+  let ticks = 0;
+  const interval = system.runInterval(() => {
+    ticks++;
+
+    // mira em qualquer entidade com vida, nao so player
+    const target = nearestTarget(player, KAMARADA.searchRadius, position);
+    if (target) {
+      try {
+        const loc = target.location;
+        const wx = loc.x - position.x;
+        const wy = loc.y + 1 - position.y;
+        const wz = loc.z - position.z;
+        const want = Math.sqrt(wx * wx + wy * wy + wz * wz) || 1;
+
+        // correcao gradual: o lobo curva rumo ao alvo em vez de virar de uma vez
+        heading = {
+          x: heading.x + (wx / want - heading.x) * KAMARADA.turnRate,
+          y: heading.y + (wy / want - heading.y) * KAMARADA.turnRate,
+          z: heading.z + (wz / want - heading.z) * KAMARADA.turnRate,
+        };
+        const norm =
+          Math.sqrt(
+            heading.x * heading.x + heading.y * heading.y + heading.z * heading.z
+          ) || 1;
+        heading = { x: heading.x / norm, y: heading.y / norm, z: heading.z / norm };
+      } catch (e) {
+        // alvo sumiu: segue reto
+      }
+    }
+
+    position = {
+      x: position.x + heading.x * KAMARADA.speed,
+      y: position.y + heading.y * KAMARADA.speed,
+      z: position.z + heading.z * KAMARADA.speed,
+    };
+
+    for (let i = 0; i < 4; i++) {
+      try {
+        dim.spawnParticle("grimmjow:cero", {
+          x: position.x + (Math.random() - 0.5) * 0.7,
+          y: position.y + (Math.random() - 0.5) * 0.7,
+          z: position.z + (Math.random() - 0.5) * 0.7,
+        });
+      } catch (e) {}
+    }
+
+    // explode ao encostar em alguem
+    const touched = dim
+      .getEntities({ location: position, maxDistance: KAMARADA.hitRadius })
+      .some(
+        (entity) =>
+          entity.id !== player.id && entity.getComponent("minecraft:health")
+      );
+
+    if (touched) {
+      system.clearRun(interval);
+      try {
+        dim.playSound("random.explode", position, { volume: 1.2, pitch: 1.3 });
+        for (let i = 0; i < 8; i++) {
+          dim.spawnParticle("minecraft:large_explosion", {
+            x: position.x + (Math.random() - 0.5) * 2,
+            y: position.y + (Math.random() - 0.5) * 2,
+            z: position.z + (Math.random() - 0.5) * 2,
+          });
+        }
+      } catch (e) {}
+      damageNearbyEntities(player, position, KAMARADA.hitRadius, DAMAGE.kamarada);
+      return;
+    }
+
+    // sem acertar ninguem o lobo se dissipa, sem dano
+    if (ticks >= KAMARADA.maxTicks) {
+      system.clearRun(interval);
+    }
+  }, 1);
+}
+
+function castKamarada(player) {
+  if (!tryUseSkill(player, "starkk:kamarada")) return;
+
+  world.sendMessage(`§6${player.name} §7soltou os §eLobos§7!`);
+  player.dimension.playSound("mob.wolf.growl", player.location, {
+    volume: 1.5,
+    pitch: 0.7,
+  });
+
+  for (let i = 0; i < KAMARADA.count; i++) {
+    summonKamaradaWolf(player, i);
+  }
+}
+
+/* ---------------------------------------------------------
+   Resurrección: Los Lobos (persona Lilynette)
+   --------------------------------------------------------- */
+
+function castLilynetteShot(player) {
+  // m1 da Lilynette: sem mensagem no chat, o cooldown de 2s ja spamaria
+  if (!tryUseSkill(player, "starkk:lilynette_shot")) return;
+
+  player.dimension.playSound("mob.wither.shoot", player.location, {
+    volume: 0.9,
+    pitch: 1.6,
+  });
+
+  fireEnergySphere(player, {
+    radius: LILYNETTE_SHOT.radius,
+    range: LILYNETTE_SHOT.range,
+    speed: LILYNETTE_SHOT.speed,
+    damage: DAMAGE.lilynetteShot,
+    particle: "grimmjow:cero",
+  });
+}
+
+function castRifle(player) {
+  if (!tryUseSkill(player, "starkk:rifle")) return;
+
+  world.sendMessage(`§9${player.name} §7usou §bRifle§7!`);
+
+  // tres tiros mirados: cada um remira no alvo mais proximo na hora do disparo
+  for (let shot = 0; shot < RIFLE.shots; shot++) {
+    system.runTimeout(() => {
+      let direction;
+      try {
+        const target = nearestTarget(player, RIFLE.searchRadius);
+        if (target) direction = directionToward(player.location, target.location);
+
+        player.dimension.playSound("mob.wither.shoot", player.location, {
+          volume: 1,
+          pitch: 1.9,
+        });
+      } catch (e) {
+        return; // player saiu do mundo no meio da rajada
+      }
+
+      // sem alvo por perto o tiro sai na mira do player
+      fireEnergySphere(player, {
+        radius: RIFLE.radius,
+        range: RIFLE.range,
+        speed: RIFLE.speed,
+        damage: DAMAGE.lilynetteShot,
+        particle: "grimmjow:cero",
+        shellParticles: 10,
+        direction,
+      });
+    }, shot * RIFLE.gapTicks + 1);
+  }
+}
+
+function castEscopeta(player) {
+  if (!tryUseSkill(player, "starkk:escopeta")) return;
+
+  world.sendMessage(`§9${player.name} §7usou §bEscopeta§7!`);
+  player.dimension.playSound("mob.wither.shoot", player.location, {
+    volume: 1.5,
+    pitch: 0.8,
+  });
+
+  // curto alcance, dobro do dano do disparo comum
+  fireEnergySphere(player, {
+    radius: ESCOPETA.radius,
+    range: ESCOPETA.range,
+    speed: ESCOPETA.speed,
+    damage: DAMAGE.escopeta,
+    particle: "grimmjow:cero",
+    shellParticles: 26,
+  });
+}
+
+function castCeroMetralleta(player) {
+  if (!tryUseSkill(player, "starkk:cero_metralleta")) return;
+  const dim = player.dimension;
+
+  world.sendMessage(`§9§l${player.name}: CERO METRALLETA!`);
+  dim.playSound("mob.wither.death", player.location, { volume: 1.6, pitch: 1.4 });
+
+  // Chuveiro continuo: em vez de centenas de projeteis (que viraria spam de
+  // intervals), e dano por pulso numa caixa frontal que acompanha a mira.
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    let origin;
+    let dir;
+    try {
+      origin = player.location;
+      dir = forwardDirection(player);
+      dim.playSound("mob.wither.shoot", origin, { volume: 0.5, pitch: 2 });
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    const perp = { x: -dir.z, z: dir.x };
+    const half = CERO_METRALLETA.width / 2;
+    for (let i = 0; i < 6; i++) {
+      const along = 1 + Math.random() * (CERO_METRALLETA.forward - 1);
+      const lateral = (Math.random() - 0.5) * 2 * half;
+      try {
+        dim.spawnParticle("grimmjow:cero", {
+          x: origin.x + dir.x * along + perp.x * lateral,
+          y: origin.y + 1.1 + (Math.random() - 0.5) * 0.8,
+          z: origin.z + dir.z * along + perp.z * lateral,
+        });
+      } catch (e) {}
+    }
+
+    const finalDamage = DAMAGE.ceroMetralletaTick * dmgMultiplier(player);
+    for (const entity of entitiesInFrontBox(player, CERO_METRALLETA)) {
+      dealDamage(entity, finalDamage, player);
+    }
+
+    elapsed += CERO_METRALLETA.tickInterval;
+    if (elapsed >= CERO_METRALLETA.durationTicks) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7O Cero Metralleta parou.");
+      } catch (e) {}
+    }
+  }, CERO_METRALLETA.tickInterval);
+}
+
+/* ---------------------------------------------------------
    Awakening do Kenpachi: Pressao espiritual (tapa-olho removido)
    --------------------------------------------------------- */
 
@@ -3251,6 +3906,16 @@ const MELEE_WEAPONS = {
       message: "§5Ashisogi Jizō cortou os tendões!",
     },
   },
+  "starkk:m1_zanpakuto": {
+    baseDamage: DAMAGE.starkkM1,
+    particle: "minecraft:crit_particle",
+    dot: null,
+  },
+  "starkk:m1_cuchillos": {
+    baseDamage: DAMAGE.cuchillosM1,
+    particle: "grimmjow:cero",
+    dot: null,
+  },
 };
 
 function comboKeyFor(weaponId) {
@@ -3322,15 +3987,14 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
     }
 
     if (hitEntity.getComponent("minecraft:health")) {
-      // o dano base da arma vem do minecraft:damage do item, entao aqui so entra
-      // o extra dos buffs ativos (Sakura's Coating, Pressao do Kenpachi, ...)
-      const bonus = Math.round(weapon.baseDamage * (dmgMultiplier(damagingEntity) - 1));
-      if (bonus > 0) {
-        try {
-          dealDamage(hitEntity, bonus, damagingEntity);
-        } catch (e) {
-          // ignora
-        }
+      // TODO o dano do m1 agora vem daqui - o item tem minecraft:damage = 0,
+      // entao passa certinho pela escala de vida virtual do alvo (dealDamage)
+      // em vez de sair direto da engine como dano real fixo
+      const totalDamage = weapon.baseDamage * dmgMultiplier(damagingEntity);
+      try {
+        dealDamage(hitEntity, totalDamage, damagingEntity);
+      } catch (e) {
+        // ignora
       }
       if (weapon.dot) {
         applyDot(hitEntity, damagingEntity, weapon.dot.perSecond, weapon.dot.seconds);

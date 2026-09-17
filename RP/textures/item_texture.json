@@ -136,6 +136,36 @@
     },
     "ulquiorra:lanza": {
       "textures": "textures/items/ulquiorra_lanza"
+    },
+    "starkk:m1_zanpakuto": {
+      "textures": "textures/items/starkk_m1_zanpakuto"
+    },
+    "starkk:m1_cuchillos": {
+      "textures": "textures/items/starkk_m1_cuchillos"
+    },
+    "starkk:slash_barrage": {
+      "textures": "textures/items/starkk_slash_barrage"
+    },
+    "starkk:sideway_cuts": {
+      "textures": "textures/items/starkk_sideway_cuts"
+    },
+    "starkk:crescent_canines": {
+      "textures": "textures/items/starkk_crescent_canines"
+    },
+    "starkk:kamarada": {
+      "textures": "textures/items/starkk_kamarada"
+    },
+    "starkk:lilynette_shot": {
+      "textures": "textures/items/starkk_lilynette_shot"
+    },
+    "starkk:rifle": {
+      "textures": "textures/items/starkk_rifle"
+    },
+    "starkk:escopeta": {
+      "textures": "textures/items/starkk_escopeta"
+    },
+    "starkk:cero_metralleta": {
+      "textures": "textures/items/starkk_cero_metralleta"
     }
   }
 }

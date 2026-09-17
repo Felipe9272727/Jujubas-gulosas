@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "starkk:slash_barrage",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "starkk:slash_barrage",
+      "minecraft:display_name": {
+        "value": "Slash's Barrage"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "starkk_slash_barrage",
+        "duration": 23
+      }
+    }
+  }
+}

@@ -242,7 +242,9 @@ referenced = set(re.findall(r'"([a-z_]+:[a-z0-9_]+)"', main_js))
 # (grimmjow:cero, mayuri:toxic_fog), entao adivinhar por prefixo confunde
 # particula com item.
 particle_refs = set(re.findall(r'spawnParticle\(\s*"([^"]+)"', main_js))
-particle_refs |= set(re.findall(r'(?:particle|burst|particleId)\s*:\s*"([^"]+)"', main_js))
+particle_refs |= set(
+    re.findall(r'(?:particle|burst|particleId|cryParticle)\s*:\s*"([^"]+)"', main_js)
+)
 
 for particle in sorted(particle_refs):
     if particle.startswith("minecraft:"):

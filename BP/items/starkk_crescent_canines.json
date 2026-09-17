@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "starkk:crescent_canines",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "starkk:crescent_canines",
+      "minecraft:display_name": {
+        "value": "Crescent Canines"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "starkk_crescent_canines",
+        "duration": 35
+      }
+    }
+  }
+}

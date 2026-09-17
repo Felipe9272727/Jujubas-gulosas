@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 316 checks na simulação, zero exceções. Packs na versão 1.5.1.
+- **Estado**: 365 checks na simulação, zero exceções. Packs na versão 1.6.0.
 
 ## Como trabalhar aqui
 
@@ -38,7 +38,7 @@ tools/
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~1740 linhas, 316 checks
+  run.mjs               ~2000 linhas, 365 checks
 ```
 
 ### A simulação
@@ -70,6 +70,7 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 |---|---|---|
 | Grimmjow Jaegerjaquez | 800 | La Pantera — "Mutile, Pantera" (1200, speed 5, regen 4) |
 | Ulquiorra Cifer | 1600 | Murciélago — "Confine, Murciélago" (2000) |
+| Coyote Starkk | 4000 | Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
 
 ## Sistemas genéricos (reusar, não duplicar)
 
@@ -114,11 +115,10 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
 
 ## Bugs conhecidos / limitações em aberto
 
-1. **Dano do m1 não escala com vida virtual.** O dano base do m1 vem do
-   `minecraft:damage` do item, que é vanilla e não passa pelo `dealDamage`.
-   Contra personagem escalado (La Pantera, Ulquiorra) o m1 pesa até ~1,9× mais.
-   *Correção*: zerar `minecraft:damage` nos itens de m1 e aplicar o dano todo
-   pelo script no `entityHitEntity`. Também elimina a sincronia manual do "-1".
+1. ~~Dano do m1 não escala com vida virtual.~~ **RESOLVIDO.** Os 13 itens de m1
+   têm `minecraft:damage: 0` e o dano sai inteiro do script. Sobra 1 de dano
+   vanilla por golpe (o soco base, que não dá pra zerar) — desprezível, e o
+   simulador não modela dano vanilla, então esse 1 não aparece nos checks.
 2. **Awakening de todo mundo dura 100s** (drena 1%/s). Isso é o sistema
    genérico, nunca foi pedido personagem por personagem.
 3. **Medidor de awakening enche sem parar** para quem não tem forma desperta —
@@ -162,7 +162,7 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 ## Receita: adicionar personagem novo
 
 1. Registrar em `CHARACTERS` **e** em `ARCS` (senão não aparece no menu).
-2. Criar os itens em `BP/items/*.json` (m1 leva `minecraft:damage` = dano − 1).
+2. Criar os itens em `BP/items/*.json` (m1 leva `minecraft:damage: 0`).
 3. Desenhar as texturas em `tools/textures.py` (grid 16×16 + paleta) e rodar
    `gen_textures.py`.
 4. Registrar em `RP/textures/item_texture.json`.

@@ -16,7 +16,7 @@
       "minecraft:hand_equipped": true,
       "minecraft:glint": true,
       "minecraft:should_despawn": false,
-      "minecraft:damage": 11,
+      "minecraft:damage": 0,
       "minecraft:durability": {
         "max_durability": 5000,
         "damage_chance": {

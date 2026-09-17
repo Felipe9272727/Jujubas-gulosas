@@ -53,7 +53,7 @@ function noNewErrors(label, mark) {
 // indice do botao e relativo ao arco, nao ao CHARACTERS inteiro
 const ROSTER = [
   { name: "Invasão à Soul Society", ids: ["ichigo", "byakuya", "kenpachi", "mayuri"] },
-  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra"] },
+  { name: "Arrancar / Hueco Mundo", ids: ["grimmjow", "ulquiorra", "starkk"] },
 ];
 
 function locate(id) {
@@ -234,6 +234,11 @@ for (let i = 0; i < 10; i++) hitWith(ichigo, dummy, "ichigo:m1_zangetsu");
 advanceTicks(5, "m1");
 noNewErrors("m1 sem erro", mark);
 check("m1 acumula awakening (+1 por hit)", ichigo.getDynamicProperty(DP.awakening) === 10, String(ichigo.getDynamicProperty(DP.awakening)));
+check(
+  "m1 aplica o dano base inteiro pelo script (8), não parcial pelo item",
+  log.damages.slice(-10).every((d) => d.target === "Dummy" && d.amount === 8),
+  JSON.stringify(log.damages.slice(-10).map((d) => d.amount))
+);
 
 /* ================= Awakening / Bankai ================= */
 
@@ -696,8 +701,8 @@ check(
 dmgBefore = log.damages.length;
 hitWith(kenpachi, prey, "kenpachi:m1_zanpakuto");
 check(
-  "m1 com +50%: bônus de 7 por cima do dano do item",
-  log.damages.slice(dmgBefore).some((d) => d.amount === 7),
+  "m1 com +50%: 14 vira 21, dano inteiro pelo script",
+  log.damages.slice(dmgBefore).some((d) => d.amount === 21),
   JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.amount))
 );
 noNewErrors("dano buffado sem erro", mark);
@@ -973,7 +978,11 @@ check(
   shown.buttons.length === ROSTER[1].ids.length,
   `${shown.buttons.length} botões`
 );
-check("segundo arco traz os Arrancar", shown.buttons.join(" ").includes("Grimmjow") && shown.buttons.join(" ").includes("Ulquiorra"), shown.buttons.join(", "));
+check(
+  "segundo arco traz os Arrancar",
+  ["Grimmjow", "Ulquiorra", "Starkk"].every((n) => shown.buttons.join(" ").includes(n)),
+  shown.buttons.join(", ")
+);
 
 explorador.isSneaking = true;
 useItem(explorador, "multiversal:character_selector");
@@ -1538,6 +1547,335 @@ check(
   inv(ulquiorra).getItem(0)?.typeId === "ulquiorra:m1_zanpakuto",
   String(inv(ulquiorra).getItem(0)?.typeId)
 );
+
+/* ================= Coyote Starkk ================= */
+
+scenario("Coyote Starkk: ativação");
+const starkk = createPlayer("StarkkPlayer", { x: -600, y: 64, z: -600 });
+emit("playerSpawn", { player: starkk, initialSpawn: true });
+advanceTicks(20, "spawn-starkk");
+
+mark = errors.length;
+await pickCharacter(starkk, "starkk");
+advanceTicks(20, "ativar-starkk");
+noNewErrors("ativar Starkk sem erro", mark);
+check("vida maxima 4000", virtualMax(starkk) === 4000, `${virtualMax(starkk)}`);
+check(
+  "pool real no teto do Bedrock",
+  hp(starkk).effectiveMax === 1044,
+  `${hp(starkk).effectiveMax}`
+);
+check(
+  "5 itens base nos slots 0-4",
+  JSON.stringify(slotIds(starkk, 5)) ===
+    JSON.stringify([
+      "starkk:m1_zanpakuto",
+      "starkk:slash_barrage",
+      "starkk:sideway_cuts",
+      "starkk:crescent_canines",
+      "starkk:kamarada",
+    ]),
+  JSON.stringify(slotIds(starkk, 5))
+);
+
+scenario("Slash's Barrage: 5 cortes");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+starkk._view = { x: 1, y: 0, z: 0 };
+const barragem = [];
+for (let i = 0; i < 5; i++) {
+  barragem.push(createDummy(`Barra${i}`, { x: -598.5 + i * 3, y: 64, z: -600 }, 500000));
+}
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:slash_barrage");
+advanceTicks(80, "slash-barrage");
+noNewErrors("Slash's Barrage executa limpo", mark);
+const barragemHits = log.damages.slice(dmgBefore).filter((d) => d.amount === 100);
+check(
+  "os 5 avanços acertam, 100 cada",
+  barragem.every((d) => barragemHits.filter((h) => h.target === d.name).length === 1),
+  JSON.stringify(barragemHits.map((d) => d.target))
+);
+check(
+  "percorre os 15 blocos",
+  starkk.location.x >= -600 + 14.9,
+  `andou ${(starkk.location.x + 600).toFixed(1)}`
+);
+for (const d of barragem) d.kill();
+
+scenario("Sideway Cuts: os dois lados do alvo");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+const alvoLado = createPlayer("AlvoLado", { x: -594, y: 64, z: -600 }, 500000);
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:sideway_cuts");
+advanceTicks(20, "sideway-cuts");
+noNewErrors("Sideway Cuts executa limpo", mark);
+const ladoHits = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoLado");
+check(
+  "dois cortes de 200 no alvo",
+  ladoHits.length === 2 && ladoHits.every((d) => d.amount === 200),
+  JSON.stringify(ladoHits.map((d) => d.amount))
+);
+const ladoDist = Math.hypot(
+  starkk.location.x - alvoLado.location.x,
+  starkk.location.z - alvoLado.location.z
+);
+check("termina colado no alvo", ladoDist <= 2.5, `dist=${ladoDist.toFixed(2)}`);
+
+starkk.setDynamicProperty("mv:cd_starkk_sideway_cuts", undefined);
+alvoLado.teleport({ x: 3000, y: 64, z: 3000 });
+starkk.teleport({ x: -600, y: 64, z: -600 });
+useItem(starkk, "starkk:sideway_cuts");
+advanceTicks(10, "sideway-sem-alvo");
+check(
+  "sem player por perto não gasta cooldown",
+  starkk.getDynamicProperty("mv:cd_starkk_sideway_cuts") === undefined &&
+    starkk.location.x === -600
+);
+
+scenario("Crescent Canines: trajetória + explosão");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+starkk._view = { x: 1, y: 0, z: 0 };
+
+// o canino do lado +18° cresce por 80 ticks andando 1.1/tick
+const caninoAng = (18 * Math.PI) / 180;
+const caninoTravel = 1.1 * 80;
+const noCaminho = createDummy(
+  "NoCaminho",
+  { x: -600 + Math.cos(caninoAng) * 8, y: 64, z: -600 + Math.sin(caninoAng) * 8 },
+  500000
+);
+const noEstouro = createDummy(
+  "NoEstouro",
+  {
+    x: -600 + Math.cos(caninoAng) * caninoTravel,
+    y: 64,
+    z: -600 + Math.sin(caninoAng) * caninoTravel,
+  },
+  500000
+);
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:crescent_canines");
+advanceTicks(100, "crescent-canines");
+noNewErrors("Crescent Canines executa limpo", mark);
+hits = log.damages.slice(dmgBefore);
+check(
+  "150 em quem está na trajetória",
+  hits.some((d) => d.target === "NoCaminho" && d.amount === 150)
+);
+check(
+  "300 no estouro do fim",
+  hits.some((d) => d.target === "NoEstouro" && d.amount === 300)
+);
+noCaminho.kill();
+noEstouro.kill();
+
+scenario("Kamarada: 5 lobos guiados");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+starkk._view = { x: 1, y: 0, z: 0 };
+const presaLobo = createDummy("PresaLobo", { x: -592, y: 64, z: -600 }, 500000);
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:kamarada");
+advanceTicks(60, "kamarada");
+noNewErrors("Kamarada executa limpo", mark);
+const loboHits = log.damages.slice(dmgBefore).filter((d) => d.target === "PresaLobo");
+check(
+  "os lobos alcançam o alvo e explodem (200 cada)",
+  loboHits.length >= 1 && loboHits.every((d) => d.amount === 200),
+  `${loboHits.length} explosões: ${JSON.stringify(loboHits.map((d) => d.amount))}`
+);
+presaLobo.kill();
+
+mark = errors.length;
+starkk.setDynamicProperty("mv:cd_starkk_kamarada", undefined);
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:kamarada");
+advanceTicks(140, "kamarada-sem-alvo");
+noNewErrors("lobos sem alvo se dissipam sem lançar", mark);
+check("sem ninguém por perto, os lobos somem sem dano", log.damages.length === dmgBefore);
+
+scenario("Resurrección: Los Lobos");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+starkk.setDynamicProperty(DP.awakening, 100);
+const msgsBeforeLobos = log.worldMessages.length;
+starkk.isSneaking = true;
+useItem(starkk, "starkk:m1_zanpakuto");
+starkk.isSneaking = false;
+advanceTicks(20, "los-lobos");
+noNewErrors("Resurrección sem erro", mark);
+check(
+  'grita "Kick About, Los Lobos" no chat',
+  log.worldMessages
+    .slice(msgsBeforeLobos)
+    .some((m) => m.message === "<StarkkPlayer> Kick About, Los Lobos")
+);
+check("awakened = true", starkk.getDynamicProperty(DP.awakened) === true);
+check("vida continua 4000 (a Resurrección não aumenta)", virtualMax(starkk) === 4000, `${virtualMax(starkk)}`);
+check(
+  "m1 vira os Cuchillos, as 4 skills continuam",
+  JSON.stringify(slotIds(starkk, 5)) ===
+    JSON.stringify([
+      "starkk:m1_cuchillos",
+      "starkk:slash_barrage",
+      "starkk:sideway_cuts",
+      "starkk:crescent_canines",
+      "starkk:kamarada",
+    ]),
+  JSON.stringify(slotIds(starkk, 5))
+);
+
+scenario("Troca de persona: Starkk ↔ Lilynette");
+mark = errors.length;
+check("começa como Starkk", starkk.getDynamicProperty("mv:starkk_form") === "starkk");
+
+starkk.isSneaking = true;
+useItem(starkk, "starkk:m1_cuchillos");
+starkk.isSneaking = false;
+advanceTicks(20, "vira-lilynette");
+noNewErrors("trocar de persona sem erro", mark);
+check("virou Lilynette", starkk.getDynamicProperty("mv:starkk_form") === "lilynette");
+check(
+  "itens da Lilynette travados nos slots 0-3",
+  JSON.stringify(slotIds(starkk, 4)) ===
+    JSON.stringify([
+      "starkk:lilynette_shot",
+      "starkk:rifle",
+      "starkk:escopeta",
+      "starkk:cero_metralleta",
+    ]),
+  JSON.stringify(slotIds(starkk, 4))
+);
+
+starkk.isSneaking = true;
+useItem(starkk, "starkk:lilynette_shot");
+starkk.isSneaking = false;
+advanceTicks(20, "volta-starkk");
+check("volta pro Starkk", starkk.getDynamicProperty("mv:starkk_form") === "starkk");
+check("e os Cuchillos voltam", inv(starkk).getItem(0)?.typeId === "starkk:m1_cuchillos");
+
+// volta pra Lilynette pra testar as skills dela
+starkk.isSneaking = true;
+useItem(starkk, "starkk:m1_cuchillos");
+starkk.isSneaking = false;
+advanceTicks(20, "lilynette-de-novo");
+
+scenario("Disparo da Lilynette");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+starkk._view = { x: 1, y: 0, z: 0 };
+const alvoTiro = createDummy("AlvoTiro", { x: -585, y: 64, z: -600 }, 500000);
+dmgBefore = log.damages.length;
+const msgsBeforeShot = log.worldMessages.length;
+useItem(starkk, "starkk:lilynette_shot");
+advanceTicks(60, "lilynette-shot");
+noNewErrors("Disparo executa limpo", mark);
+check(
+  "120 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoTiro" && d.amount === 120)
+);
+check(
+  "não manda mensagem no chat (senão spamaria)",
+  !log.worldMessages.slice(msgsBeforeShot).some((m) => m.to === "*" && m.message.includes("Disparo"))
+);
+
+scenario("Rifle: mira no alvo, não na visão do player");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+starkk._view = { x: 0, y: 0, z: 1 }; // olhando pro +z, de costas pro alvo
+alvoTiro.teleport({ x: -588, y: 64, z: -600 }); // alvo no +x
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:rifle");
+advanceTicks(60, "rifle");
+noNewErrors("Rifle executa limpo", mark);
+const rifleHits = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro");
+check(
+  "3 tiros de 120 acertam mesmo com o player olhando pro outro lado",
+  rifleHits.length === 3 && rifleHits.every((d) => d.amount === 120),
+  JSON.stringify(rifleHits.map((d) => d.amount))
+);
+
+scenario("Escopeta: curto alcance, dobro do dano");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+starkk._view = { x: 1, y: 0, z: 0 };
+alvoTiro.teleport({ x: -592, y: 64, z: -600 }); // 8 blocos: dentro do alcance 12
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:escopeta");
+advanceTicks(30, "escopeta");
+noNewErrors("Escopeta executa limpo", mark);
+check(
+  "240 de dano (dobro do disparo)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoTiro" && d.amount === 240)
+);
+
+starkk.setDynamicProperty("mv:cd_starkk_escopeta", undefined);
+alvoTiro.teleport({ x: -580, y: 64, z: -600 }); // 20 blocos: fora do alcance
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:escopeta");
+advanceTicks(30, "escopeta-longe");
+check(
+  "não alcança 20 blocos",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "AlvoTiro")
+);
+
+scenario("Cero Metralleta: chuveiro por 15s");
+mark = errors.length;
+starkk.teleport({ x: -600, y: 64, z: -600 });
+starkk._view = { x: 1, y: 0, z: 0 };
+alvoTiro.teleport({ x: -590, y: 64, z: -600 }); // 10 à frente, dentro da caixa
+const foraDaCaixa = createDummy("ForaDaCaixa", { x: -590, y: 64, z: -594 }, 500000); // 6 de lado
+dmgBefore = log.damages.length;
+useItem(starkk, "starkk:cero_metralleta");
+advanceTicks(20, "metralleta-inicio");
+noNewErrors("Cero Metralleta executa limpo", mark);
+const metralletaHits = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro");
+check(
+  "pulsos de 10 de dano em quem está na frente",
+  metralletaHits.length >= 5 && metralletaHits.every((d) => d.amount === 10),
+  `${metralletaHits.length} pulsos`
+);
+check(
+  "quem está fora da caixa frontal não leva",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "ForaDaCaixa")
+);
+
+mark = errors.length;
+advanceTicks(300, "metralleta-fim");
+noNewErrors("Cero Metralleta roda os 15s sem erro", mark);
+check(
+  "para sozinha no fim",
+  log.worldMessages.some((m) => m.to === "StarkkPlayer" && m.message.includes("Cero Metralleta parou"))
+);
+dmgBefore = log.damages.length;
+advanceTicks(40, "metralleta-parou");
+check("e não dispara mais depois", !log.damages.slice(dmgBefore).some((d) => d.target === "AlvoTiro"));
+foraDaCaixa.kill();
+
+scenario("Fim da Resurrección do Starkk");
+mark = errors.length;
+starkk.setDynamicProperty(DP.awakening, 2);
+advanceTicks(90, "drenar-los-lobos");
+noNewErrors("reversão sem erro", mark);
+check("awakened = false", starkk.getDynamicProperty(DP.awakened) === false);
+check("persona volta pro Starkk", starkk.getDynamicProperty("mv:starkk_form") === "starkk");
+check("vida continua 4000", virtualMax(starkk) === 4000, `${virtualMax(starkk)}`);
+check(
+  "itens base restaurados",
+  JSON.stringify(slotIds(starkk, 5)) ===
+    JSON.stringify([
+      "starkk:m1_zanpakuto",
+      "starkk:slash_barrage",
+      "starkk:sideway_cuts",
+      "starkk:crescent_canines",
+      "starkk:kamarada",
+    ]),
+  JSON.stringify(slotIds(starkk, 5))
+);
+alvoTiro.kill();
 
 /* ================= dash universal ================= */
 
