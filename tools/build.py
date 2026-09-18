@@ -33,6 +33,7 @@ STEPS = [
     ("validacao estatica", [sys.executable, "tools/validate.py"]),
     ("sintaxe do main.js", ["node", "--check", "BP/scripts/main.js"]),
     ("texturas x grids", [sys.executable, "tools/gen_textures.py", "--check"]),
+    ("geometria x modelo", [sys.executable, "tools/gen_model.py", "--check"]),
     ("simulacao no Node", ["node", "--import", "./sim/register.mjs", "sim/run.mjs"]),
 ]
 

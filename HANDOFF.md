@@ -203,8 +203,9 @@ existe é um attachable amarrado a um item de peitoral:
 |---|---|
 | `BP/items/vizard_hollow_chest.json` | o item, com `minecraft:wearable` no peito |
 | `RP/attachables/hollow_ichigo.json` | liga o item à geometria e à textura |
-| `RP/models/entity/hollow_ichigo.geo.json` | humanoide de caixas, `inflate` 0.3 por cima do player |
-| `RP/textures/entity/hollow_ichigo.png` | skin 64×64 (gerada por retângulos em `textures.py`) |
+| `RP/models/entity/hollow_ichigo.geo.json` | **gerado** por `tools/gen_model.py` — nunca editar à mão |
+| `RP/textures/entity/hollow_ichigo.png` | **gerada** da mesma fonte (128×128) |
+| `tools/hollow_model.py` | a fonte: 34 caixas, os ossos e o empacotador de UV |
 | `RP/render_controllers/hollow_ichigo.json` | o render controller do attachable |
 
 Os **nomes dos ossos** da geometria (`body`, `head`, `leftArm`, `rightArm`,
@@ -214,14 +215,47 @@ attachable não acompanha a animação dele e fica flutuando parado.
 O peitoral é reposto pelo loop de travar itens a cada 10 ticks, igual ao marcador
 da offhand do Yammy: tirar a peça não desfaz a forma.
 
-**Blender não serve aqui.** As ferramentas 3D desta sessão produzem GLB, e o
-Bedrock não carrega mesh — geometria de addon é caixa com UV de textura de pixel.
-Por isso o modelo é autorado direto no formato nativo.
+### Por que o modelo é código e não um .geo.json
+
+Com 34 caixas, posicionar UV à mão é onde o modelo quebra **em silêncio**: face
+esticada, UV de um cubo em cima do outro, nada disso dá erro no jogo. Em
+`tools/hollow_model.py` as caixas são descritas uma vez e o mesmo dado gera a
+geometria **e** a textura, com o UV empacotado por código (shelf packing num
+atlas 128×128). Adicionar uma caixa não exige recalcular nada.
+
+O `build.py` roda `gen_model.py --check`, então geometria editada à mão sem
+passar pelo modelo reprova o build.
+
+### Blender: serve como OLHO, não como exportador
+
+As ferramentas 3D produzem GLB e o Bedrock não carrega mesh — geometria de addon
+é caixa com UV de pixel, então não existe "exportar do Blender pro Bedrock". Mas
+o Blender serve pra **ver**: as mesmas caixas de `hollow_model.py` são montadas
+em `bpy` e renderizadas de vários ângulos.
+
+Isso já pagou na primeira rodada: o render mostrou os chifres e os espinhos de
+cabelo **nascendo nos pés**. No Bedrock o `origin` do cubo é em espaço de
+MODELO, não relativo ao osso — o pivô do osso só define o centro de rotação. Eu
+tinha escrito os chifres em `y=0`. Sem o render isso ia pro jogo.
 
 ## Animações
 
-`RP/animations/vizard.animation.json` define `animation.vizard.cast`, `.slash` e
-`.roar`, tocadas por `player.playAnimation()`. O `validate.py` confere que toda
+`RP/animations/vizard.animation.json` define cinco animações e cada ataque tem
+a sua:
+
+| Animação | Quem usa |
+|---|---|
+| `cast` | Getsuga Barrage, Super Nuke, Bullet Hell |
+| `slash` | m1 (Bankai e Vasto Lorde), Dash 'n Slash |
+| `slam` | Descent Tenshō, White's Showdown |
+| `skyward` | Everything But the Rain |
+| `roar` | Grito del Diablo, ascensão pro Vasto Lorde |
+
+**A armadilha:** `playAnimation` SEM `controller` é sobrescrito na hora pelos
+animation controllers do próprio player — a animação dispara e some no mesmo
+tick, sem erro nenhum. Cada uma aqui tem o controller dela (e por isso duas
+podem se sobrepor). O stub da simulação **recusa** `playAnimation` sem
+controller, pra esse silêncio não voltar. O `validate.py` confere que toda
 animação citada no script existe no RP.
 
 **Limite conhecido:** isso anima o modelo em **terceira pessoa**. O braço em

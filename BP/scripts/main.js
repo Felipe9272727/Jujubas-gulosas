@@ -431,7 +431,6 @@ const CHARACTERS = {
       healPerInterval: { amount: 30, ticks: 100 }, // 30 a cada 5s
       waveScale: 1.6, // getsugas maiores
       armorPiece: "vizard:hollow_chest", // peitoral que troca a skin
-      castAnimation: "animation.vizard.cast",
       onActivate: "battlecry",
       chatLine: "Não me subestime.",
       cryParticle: "vizard:cero",
@@ -447,7 +446,6 @@ const CHARACTERS = {
         waveScale: 2.2,
         dashTeleports: true, // o dash vira teleporte no alvo
         armorPiece: "vizard:hollow_chest",
-        castAnimation: "animation.vizard.cast",
         titleForAll: "AHHHHHHH",
         titleSound: "mob.enderdragon.growl",
         items: {
@@ -6338,12 +6336,28 @@ function tryGabrielRebirth(player) {
    Ichigo (pós-treino Vizard)
    --------------------------------------------------------- */
 
-// toca a animacao de conjurar da forma atual, se ela tiver uma
-function playCastAnimation(player) {
-  const animation = activeFormOf(player)?.castAnimation;
-  if (!animation) return;
+/* Um playAnimation SEM controller e engolido na hora pelos animation controllers
+   do proprio player: a animacao dispara e some no mesmo tick, entao parece que
+   o codigo funciona e no jogo nao aparece nada. Cada animacao aqui tem o
+   controller dela, o que tambem deixa duas se sobreporem (um corte durante um
+   grito, por exemplo) em vez de uma cancelar a outra. */
+const VIZARD_ANIMATIONS = {
+  cast: { id: "animation.vizard.cast", controller: "vizard_cast", length: 0.65 },
+  slash: { id: "animation.vizard.slash", controller: "vizard_slash", length: 0.45 },
+  slam: { id: "animation.vizard.slam", controller: "vizard_slam", length: 0.6 },
+  skyward: { id: "animation.vizard.skyward", controller: "vizard_skyward", length: 0.9 },
+  roar: { id: "animation.vizard.roar", controller: "vizard_roar", length: 1.2 },
+};
+
+function playVizardAnimation(player, key) {
+  const anim = VIZARD_ANIMATIONS[key];
+  if (!anim) return;
   try {
-    player.playAnimation(animation);
+    player.playAnimation(anim.id, {
+      controller: anim.controller,
+      blendOutTime: 0.15,
+      stopExpression: `query.anim_time > ${anim.length}`,
+    });
   } catch (e) {
     // animacao ausente no RP nao pode derrubar a skill
   }
@@ -6382,7 +6396,7 @@ function castDashNSlash(player) {
 
       drawSweep(player, DASH_N_SLASH, "minecraft:crit_particle", restarting);
       if (restarting) {
-        playCastAnimation(player);
+        playVizardAnimation(player, "slash");
         player.dimension.playSound("mob.enderdragon.flap", from, {
           volume: 0.7,
           pitch: 2,
@@ -6418,7 +6432,7 @@ function castVizardBarrage(player) {
       } catch (e) {
         return; // player saiu do mundo no meio da rajada
       }
-      playCastAnimation(player);
+      playVizardAnimation(player, "cast");
       fireCrescentWave(player, {
         radius: VIZARD_BARRAGE.radius,
         thickness: VIZARD_BARRAGE.thickness,
@@ -6436,7 +6450,7 @@ function castDescentTensho(player) {
   if (!tryUseSkill(player, "vizard:descent_tensho")) return;
 
   world.sendMessage(`§f${player.name}: §b§lDESCENT TENSHŌ!`);
-  playCastAnimation(player);
+  playVizardAnimation(player, "slam");
 
   const dim = player.dimension;
   const dir = forwardDirection(player);
@@ -6499,7 +6513,7 @@ function castSuperNuke(player) {
       pitch: 0.25,
     });
   } catch (e) {}
-  playCastAnimation(player);
+  playVizardAnimation(player, "cast");
 
   fireCrescentWave(player, {
     radius: SUPER_NUKE.radius,
@@ -6526,7 +6540,7 @@ function castWhitesShowdown(player) {
   if (!tryUseSkill(player, "vizard:whites_showdown")) return;
 
   world.sendMessage(`§f§l${player.name}: WHITE'S SHOWDOWN!`);
-  playCastAnimation(player);
+  playVizardAnimation(player, "slam");
 
   let impact;
   try {
@@ -6591,20 +6605,16 @@ function castBulletHell(player) {
 
   world.sendMessage(`§f§l${player.name}: BULLET HELL!`);
 
-  let elapsed = 0;
-  const interval = system.runInterval(() => {
-    elapsed += BULLET_HELL.gapTicks;
-
+  const fireCero = () => {
     try {
       player.dimension.playSound("mob.wither.shoot", player.location, {
         volume: 1.2,
         pitch: 0.8,
       });
     } catch (e) {
-      system.clearRun(interval); // player saiu do mundo no meio da chuva
-      return;
+      return false; // player saiu do mundo no meio da chuva
     }
-    playCastAnimation(player);
+    playVizardAnimation(player, "cast");
 
     // cada cero estoura numa area bem grande quando acaba o alcance ou acerta
     fireEnergySphere(player, {
@@ -6616,7 +6626,16 @@ function castBulletHell(player) {
       shellParticles: 18,
       blast: { radius: BULLET_HELL.blastRadius, damage: DAMAGE.bulletHell },
     });
+    return true;
+  };
 
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed += BULLET_HELL.gapTicks;
+    if (!fireCero()) {
+      system.clearRun(interval);
+      return;
+    }
     if (elapsed >= BULLET_HELL.durationTicks) {
       system.clearRun(interval);
       try {
@@ -6624,6 +6643,9 @@ function castBulletHell(player) {
       } catch (e) {}
     }
   }, BULLET_HELL.gapTicks);
+
+  // o primeiro cero sai na hora: sem isso a skill tem 12 ticks de silencio
+  fireCero();
 }
 
 // um pingo da chuva de ceros: cai do ceu e estoura em quem estiver embaixo
@@ -6696,7 +6718,7 @@ function castEverythingButTheRain(player) {
 
   const dim = player.dimension;
   world.sendMessage(`§f§l${player.name}: EVERYTHING BUT THE RAIN!`);
-  playCastAnimation(player);
+  playVizardAnimation(player, "skyward");
 
   let center;
   try {
@@ -6735,9 +6757,7 @@ function castGritoDelDiablo(player) {
       GRITO_DIABLO.radius
     } blocos, ${GRITO_DIABLO.durationTicks / 20}s)`
   );
-  try {
-    player.playAnimation("animation.vizard.roar");
-  } catch (e) {}
+  playVizardAnimation(player, "roar");
 
   let ticks = 0;
   const interval = system.runInterval(() => {
@@ -6815,9 +6835,7 @@ function ascendToTrueForm(player, character, form) {
     }
   }
 
-  try {
-    player.playAnimation("animation.vizard.roar");
-  } catch (e) {}
+  playVizardAnimation(player, "roar");
 
   try {
     if (trueForm.titleSound) {
@@ -7238,7 +7256,7 @@ const MELEE_WEAPONS = {
     baseDamage: DAMAGE.vizardM1,
     particle: "minecraft:crit_particle",
     dot: null,
-    animation: "animation.vizard.slash",
+    animation: "slash",
   },
   "vizard:m1_vasto": {
     baseDamage: DAMAGE.vastoM1,
@@ -7246,7 +7264,7 @@ const MELEE_WEAPONS = {
     dot: null,
     // "hits explosivos": cada golpe estoura em volta do alvo
     blast: { radius: 3, damage: DAMAGE.vastoM1Blast },
-    animation: "animation.vizard.slash",
+    animation: "slash",
   },
   "starkk:m1_zanpakuto": {
     baseDamage: DAMAGE.starkkM1,
@@ -7315,13 +7333,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       addAwakening(damagingEntity, 1);
     }
 
-    if (weapon.animation) {
-      try {
-        damagingEntity.playAnimation(weapon.animation);
-      } catch (e) {
-        // animacao ausente no RP nao pode derrubar o golpe
-      }
-    }
+    if (weapon.animation) playVizardAnimation(damagingEntity, weapon.animation);
 
     const dim = damagingEntity.dimension;
     const dir = forwardDirection(damagingEntity);

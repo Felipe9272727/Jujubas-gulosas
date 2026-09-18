@@ -3066,112 +3066,14 @@ TEXTURES = {
 }
 
 # ---------------------------------------------------------------------------
-# Skin do Ichigo hollowficado (64x64), usada pelo attachable do peitoral.
+# Textura do attachable do Ichigo hollowficado.
 #
-# Nao da pra descrever isso com grid de caracteres: seriam 64 linhas de 64
-# chars. Aqui a textura e montada por regioes, uma por face de cubo, seguindo o
-# layout classico de skin do Minecraft. As coordenadas de cada face vem do
-# proprio formato de UV do Bedrock: pra um cubo [w,h,d] em uv [u,v],
-#   topo    (u+d,     v)     w x d
-#   baixo   (u+d+w,   v)     w x d
-#   direita (u,       v+d)   d x h
-#   frente  (u+d,     v+d)   w x h
-#   esquerda(u+d+w,   v+d)   d x h
-#   costas  (u+d+w+d, v+d)   w x h
+# Ela NAO e escrita aqui: vem de tools/hollow_model.py, o mesmo arquivo que gera
+# a geometria. Textura e modelo precisam concordar sobre onde esta o UV de cada
+# caixa, entao os dois saem da mesma fonte - manter duas listas separadas seria
+# garantir que uma hora elas divergem.
 # ---------------------------------------------------------------------------
 
-HOLLOW_PALETTE = {
-    "o": (226, 120, 36, 255),    # laranja do cabelo
-    "O": (176, 86, 22, 255),     # laranja na sombra
-    "b": (238, 236, 226, 255),   # osso da mascara
-    "B": (206, 202, 188, 255),   # osso na sombra
-    "r": (176, 26, 26, 255),     # listra vermelha
-    "k": (26, 26, 30, 255),      # preto do shihakusho
-    "K": (16, 16, 20, 255),      # preto na sombra
-    "w": (232, 232, 236, 255),   # faixa branca
-    "e": (10, 10, 12, 255),      # buraco do olho
-    "y": (222, 190, 40, 255),    # iris dourada
-}
+from hollow_model import TEXTURE_SPEC as _HOLLOW_TEXTURE  # noqa: E402
 
-
-def _box_faces(u, v, w, h, d):
-    """devolve as seis faces de um cubo no layout de UV do Bedrock"""
-    return {
-        "top": (u + d, v, w, d),
-        "bottom": (u + d + w, v, w, d),
-        "right": (u, v + d, d, h),
-        "front": (u + d, v + d, w, h),
-        "left": (u + d + w, v + d, d, h),
-        "back": (u + d + w + d, v + d, w, h),
-    }
-
-
-def _hollow_ichigo_rects():
-    rects = []
-    head = _box_faces(0, 0, 8, 8, 8)
-    body = _box_faces(16, 16, 8, 12, 4)
-    arm = _box_faces(40, 16, 4, 12, 4)
-    leg = _box_faces(0, 16, 4, 12, 4)
-
-    # --- cabeca: cabelo laranja em tudo, menos a frente que e a mascara ---
-    for face in ("top", "right", "left", "back"):
-        x, y, w, h = head[face]
-        rects.append([x, y, w, h, "o"])
-        rects.append([x, y + h - 2, w, 2, "O"])  # sombra na base do cabelo
-    x, y, w, h = head["bottom"]
-    rects.append([x, y, w, h, "k"])
-
-    # --- a mascara, na face da frente da cabeca ---
-    fx, fy, fw, fh = head["front"]
-    rects.append([fx, fy, fw, fh, "b"])
-    rects.append([fx, fy + fh - 1, fw, 1, "B"])          # queixo na sombra
-    rects.append([fx + 1, fy, 1, fh, "r"])               # listra vertical
-    rects.append([fx + 6, fy, 1, fh, "r"])
-    rects.append([fx + 2, fy + 1, 4, 1, "r"])            # listra na testa
-    rects.append([fx + 2, fy + 3, 2, 2, "e"])            # olhos
-    rects.append([fx + 4, fy + 3, 2, 2, "e"])
-    rects.append([fx + 2, fy + 4, 1, 1, "y"])
-    rects.append([fx + 5, fy + 4, 1, 1, "y"])
-    for tooth in range(0, fw, 2):                        # dentada
-        rects.append([fx + tooth, fy + 6, 1, 2, "e"])
-
-    # --- corpo: shihakusho preto com a faixa branca cruzada ---
-    for face, spec in body.items():
-        x, y, w, h = spec
-        rects.append([x, y, w, h, "k" if face != "bottom" else "K"])
-    bx, by, bw, bh = body["front"]
-    rects.append([bx + 1, by + 1, 6, 1, "b"])            # colarinho de osso
-    rects.append([bx, by + 7, bw, 2, "w"])               # faixa na cintura
-    rects.append([bx + 2, by + 2, 1, 5, "K"])            # dobra do kimono
-    kx, ky, kw, kh = body["back"]
-    rects.append([kx, ky + 7, kw, 2, "w"])
-
-    # --- bracos: manga preta, mao de osso (o mesmo UV serve pros dois) ---
-    for face, spec in arm.items():
-        x, y, w, h = spec
-        rects.append([x, y, w, h, "k"])
-    for face in ("right", "front", "left", "back"):
-        x, y, w, h = arm[face]
-        rects.append([x, y + h - 3, w, 3, "b"])          # punho/mao
-    x, y, w, h = arm["bottom"]
-    rects.append([x, y, w, h, "b"])
-
-    # --- pernas: hakama preto ---
-    for face, spec in leg.items():
-        x, y, w, h = spec
-        rects.append([x, y, w, h, "k"])
-    x, y, w, h = leg["front"]
-    rects.append([x, y + h - 2, w, 2, "K"])              # sandalia
-
-    # --- chifres: cubo proprio numa area livre da skin (56,16) ---
-    rects.append([56, 16, 8, 6, "b"])
-    rects.append([56, 19, 8, 1, "B"])
-
-    return rects
-
-
-TEXTURES["entity/hollow_ichigo"] = {
-    "size": (64, 64),
-    "palette": HOLLOW_PALETTE,
-    "rects": _hollow_ichigo_rects(),
-}
+TEXTURES["entity/hollow_ichigo"] = _HOLLOW_TEXTURE

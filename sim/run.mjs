@@ -3458,11 +3458,16 @@ check(
   "m1 dá 40 de dano",
   log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 40)
 );
+const animDoM1 = log.animations
+  .slice(animBefore)
+  .find((a) => a.target === "VizardPlayer" && a.animationName === "animation.vizard.slash");
+check("e toca a animação de corte", !!animDoM1);
+// sem controller a animação é engolida pelos animation controllers do player:
+// ela dispara e some no mesmo tick, sem erro nenhum
 check(
-  "e toca a animação de corte",
-  log.animations.slice(animBefore).some(
-    (a) => a.target === "VizardPlayer" && a.animationName === "animation.vizard.slash"
-  )
+  "com controller próprio (senão o player engole a animação)",
+  !!animDoM1?.options?.controller,
+  JSON.stringify(animDoM1?.options)
 );
 
 scenario("Dash 'n Slash: 20 por tick avançando");
@@ -3746,6 +3751,35 @@ dmgBefore = log.damages.length;
 advanceTicks(60, "grito-acabou");
 check("para sozinho", !log.damages.slice(dmgBefore).some((d) => d.target === "BemLonge"));
 bemLongeViz.kill();
+
+scenario("Cada ataque tem a animação dele");
+mark = errors.length;
+vizard.teleport({ x: 5450, y: 64, z: 5450 });
+vizard._view = { x: 1, y: 0, z: 0 };
+// o alvo do White's Showdown precisa ser um PLAYER vivo
+const platoAnim = createPlayer("PlatoAnim", { x: 5456, y: 64, z: 5450 });
+emit("playerSpawn", { player: platoAnim, initialSpawn: true });
+advanceTicks(10, "spawn-plato-anim");
+const esperado = [
+  ["vizard:whites_showdown", "animation.vizard.slam"],
+  ["vizard:bullet_hell", "animation.vizard.cast"],
+  ["vizard:everything_but_the_rain", "animation.vizard.skyward"],
+  ["vizard:grito_del_diablo", "animation.vizard.roar"],
+];
+for (const [skill, animacao] of esperado) {
+  // zera o cooldown na mão: o teste é da animação, não da recarga
+  vizard.setDynamicProperty("mv:cd_" + skill.replace(":", "_"), undefined);
+  const antes = log.animations.length;
+  useItem(vizard, skill);
+  advanceTicks(3, `anim-${skill}`);
+  check(
+    `${skill} toca ${animacao}`,
+    log.animations.slice(antes).some((a) => a.animationName === animacao),
+    JSON.stringify(log.animations.slice(antes).map((a) => a.animationName))
+  );
+}
+noNewErrors("as animações por ataque executam limpo", mark);
+advanceTicks(280, "limpar-skills-da-animacao");
 
 scenario("Vasto Lorde: o dash vira teleporte no alvo");
 mark = errors.length;

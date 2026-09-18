@@ -490,6 +490,16 @@ export class Entity {
     if (typeof animationName !== "string" || !animationName.startsWith("animation.")) {
       throw new Error(`playAnimation com nome invalido: ${animationName}`);
     }
+    // No jogo, animacao tocada SEM controller e sobrescrita na hora pelos
+    // animation controllers do proprio player: ela dispara e some no mesmo
+    // tick. Isso nao da erro nenhum - simplesmente nao aparece. O stub recusa
+    // pra esse silencio nao voltar.
+    if (!options || typeof options.controller !== "string" || !options.controller) {
+      throw new Error(
+        `playAnimation sem controller: ${animationName} seria engolida pelos ` +
+          `animation controllers do player`
+      );
+    }
     log.animations.push({ target: this.name, animationName, options });
     return true;
   }
