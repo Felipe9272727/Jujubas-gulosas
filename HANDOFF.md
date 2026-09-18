@@ -213,7 +213,20 @@ Os **nomes dos ossos** da geometria (`body`, `head`, `leftArm`, `rightArm`,
 attachable não acompanha a animação dele e fica flutuando parado.
 
 O peitoral é reposto pelo loop de travar itens a cada 10 ticks, igual ao marcador
-da offhand do Yammy: tirar a peça não desfaz a forma.
+da offhand do Yammy: tirar a peça não desfaz a forma. E `equipArmorPiece` **lê a
+slot de volta** em vez de confiar no `setEquipment` — slot de equipamento recusa
+item em silêncio, exatamente como a offhand fez. O stub da simulação recusa
+qualquer item sem `minecraft:wearable` apontando pra slot certa.
+
+### Existem DOIS Ichigos
+
+| Menu | Personagem | Tem armadura/animação? |
+|---|---|---|
+| Arco 1, botão 0 | Ichigo Kurosaki (Shikai), 200 | não |
+| Arco 2, botão 7 | Ichigo (pós-treino Vizard), 1500 | **sim** |
+
+O awakening avisa no chat qual forma entrou (`despertou: Tensa Zangetsu` vs
+`despertou: Hollowficação`) — é por aí que se sabe qual dos dois está ativo.
 
 ### Por que o modelo é código e não um .geo.json
 
@@ -260,7 +273,10 @@ animação citada no script existe no RP.
 
 **Limite conhecido:** isso anima o modelo em **terceira pessoa**. O braço em
 primeira pessoa é renderizado separado pelo Bedrock e não segue `playAnimation`,
-então quem está lançando não vê a própria mão — quem está olhando vê.
+então quem lança não vê a própria mão — quem está olhando vê (e o próprio
+jogador vê em F5). Por isso `playVizardAnimation` também solta um clarão de
+partícula na altura da mão (`flashCastingHand`): é o único retorno visual do
+ataque que aparece em primeira pessoa.
 
 ## Bugs conhecidos / limitações em aberto
 

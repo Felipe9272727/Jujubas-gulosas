@@ -168,19 +168,33 @@ class Container {
 // BP/items de verdade pra reproduzir isso - foi exatamente esse silencio que
 // deixou a forma gigante do Yammy sem nunca escalar.
 const offHandAllowed = new Set();
+const wearableSlot = new Map();
 try {
   const itemsDir = new URL("../../BP/items/", import.meta.url);
   for (const file of fs.readdirSync(itemsDir)) {
     if (!file.endsWith(".json")) continue;
     const data = JSON.parse(fs.readFileSync(new URL(file, itemsDir), "utf-8"));
     const item = data["minecraft:item"];
-    const allow = item?.components?.["minecraft:allow_off_hand"];
+    const components = item?.components ?? {};
+
+    const allow = components["minecraft:allow_off_hand"];
     const value = typeof allow === "object" ? allow?.value : allow;
     if (value) offHandAllowed.add(item.description.identifier);
+
+    const wearable = components["minecraft:wearable"];
+    if (wearable?.slot) wearableSlot.set(item.description.identifier, wearable.slot);
   }
 } catch (e) {
-  throw new Error(`stub nao conseguiu ler BP/items pra saber o que entra na offhand: ${e.message}`);
+  throw new Error(`stub nao conseguiu ler BP/items pra saber o que veste: ${e.message}`);
 }
+
+// slot de equipamento -> slot que o minecraft:wearable precisa declarar
+const ARMOR_SLOTS = {
+  Head: "slot.armor.head",
+  Chest: "slot.armor.chest",
+  Legs: "slot.armor.legs",
+  Feet: "slot.armor.feet",
+};
 
 class EquippableComponent {
   constructor(entity) {
@@ -203,6 +217,18 @@ class EquippableComponent {
     if (slot === EquipmentSlot.Offhand && item && !offHandAllowed.has(item.typeId)) {
       log.rejectedEquipment.push({ target: this.entity.name, slot, typeId: item.typeId });
       return false; // igual ao jogo: nao entra e nao avisa
+    }
+
+    // Slot de armadura so aceita item com minecraft:wearable apontando pra ela.
+    // Mesma recusa muda da offhand: sem isso, um peitoral sem o componente
+    // "funciona" na simulacao e nao veste nada no jogo.
+    const needed = ARMOR_SLOTS[slot];
+    if (needed && item) {
+      const vanilla = item.typeId.startsWith("minecraft:");
+      if (!vanilla && wearableSlot.get(item.typeId) !== needed) {
+        log.rejectedEquipment.push({ target: this.entity.name, slot, typeId: item.typeId });
+        return false;
+      }
     }
     if (item === undefined) this.map.delete(slot);
     else this.map.set(slot, item);

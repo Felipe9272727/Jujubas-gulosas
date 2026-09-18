@@ -1494,14 +1494,36 @@ function setOffhandMarker(player, itemId) {
 // Peitoral da forma: e ele que troca a skin do player no cliente (o RP tem um
 // attachable com a geometria e a textura do Ichigo hollowficado amarrados nesse
 // item). Sem ele a forma acontece so nos numeros.
+// avisado uma vez por player, rearmado assim que a peca entra
+const warnedArmor = new Set();
+
 function equipArmorPiece(player, itemId) {
   try {
     const equip = player.getComponent("minecraft:equippable");
-    if (!equip) return;
+    if (!equip) return false;
+
     const current = equip.getEquipment(EquipmentSlot.Chest);
-    if (current?.typeId === itemId) return;
+    if (current?.typeId === itemId) return true;
+
     equip.setEquipment(EquipmentSlot.Chest, new ItemStack(itemId, 1));
-  } catch (e) {}
+
+    // LE DE VOLTA. O Bedrock recusa slot de equipamento em silencio quando o
+    // item nao serve pra ela (foi exatamente isso com o marcador da offhand do
+    // Yammy): setEquipment devolve false e nao lanca nada.
+    const landed = equip.getEquipment(EquipmentSlot.Chest)?.typeId === itemId;
+    if (landed) {
+      warnedArmor.delete(player.id);
+    } else if (!warnedArmor.has(player.id)) {
+      warnedArmor.add(player.id);
+      player.sendMessage(
+        `§cO peitoral da forma não entrou no peito (§7${itemId}§c). ` +
+          `§7Sem ele a skin não troca — o item precisa de minecraft:wearable.`
+      );
+    }
+    return landed;
+  } catch (e) {
+    return false;
+  }
 }
 
 function clearArmorPiece(player, itemId) {
@@ -1989,7 +2011,9 @@ function activateAwakening(player, character) {
   // o marcador da offhand e o que faz o modelo ficar gigante no cliente
   if (form.offhandMarker) setOffhandMarker(player, form.offhandMarker);
   // e o peitoral e o que troca a skin
-  if (form.armorPiece) equipArmorPiece(player, form.armorPiece);
+  if (form.armorPiece && equipArmorPiece(player, form.armorPiece)) {
+    player.sendMessage("§8§lA hollowficação tomou seu corpo. §r§7(máscara, chifres e shihakusho)");
+  }
 
   switch (form.onActivate) {
     case "pressure":
@@ -6349,9 +6373,31 @@ const VIZARD_ANIMATIONS = {
   roar: { id: "animation.vizard.roar", controller: "vizard_roar", length: 1.2 },
 };
 
+/* A animacao acima e do MODELO: quem esta de fora ve. O braco em primeira pessoa
+   o Bedrock renderiza separado e nao segue playAnimation, entao quem lanca nao
+   veria nada. Esse clarao sai na altura da mao, na frente da camera - e o que da
+   retorno visual pra quem esta jogando. */
+function flashCastingHand(player) {
+  try {
+    const loc = player.location;
+    const dir = forwardDirection(player);
+    const perp = { x: -dir.z, z: dir.x };
+    for (let i = 0; i < 10; i++) {
+      const reach = 0.9 + Math.random() * 1.1;
+      player.dimension.spawnParticle("vizard:cero", {
+        x: loc.x + dir.x * reach + perp.x * (0.45 + Math.random() * 0.3),
+        y: loc.y + 1.25 + (Math.random() - 0.5) * 0.5,
+        z: loc.z + dir.z * reach + perp.z * (0.45 + Math.random() * 0.3),
+      });
+    }
+  } catch (e) {}
+}
+
 function playVizardAnimation(player, key) {
   const anim = VIZARD_ANIMATIONS[key];
   if (!anim) return;
+
+  flashCastingHand(player);
   try {
     player.playAnimation(anim.id, {
       controller: anim.controller,
@@ -7837,6 +7883,7 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   removeZonesOwnedBy(playerId);
   removeCursesBy(playerId);
   warnedOffhand.delete(playerId);
+  warnedArmor.delete(playerId);
   blockingNow.delete(playerId);
   removeMutilationsBy(playerId);
   gabrielHosts.delete(playerId);

@@ -16,18 +16,10 @@
       "minecraft:should_despawn": false,
       "minecraft:glint": true,
       "minecraft:wearable": {
-        "slot": "slot.armor.chest",
-        "protection": 0
+        "slot": "slot.armor.chest"
       },
       "minecraft:armor": {
         "protection": 0
-      },
-      "minecraft:durability": {
-        "max_durability": 5000,
-        "damage_chance": {
-          "min": 0,
-          "max": 0
-        }
       }
     }
   }
