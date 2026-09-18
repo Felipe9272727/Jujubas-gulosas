@@ -1,144 +1,177 @@
 """
-Modelo do Ichigo hollowficado (attachable do peitoral).
+Modelos dos attachables do Ichigo Vizard: a Hollowficacao e o Vasto Lorde.
 
-POR QUE ISSO E UM ARQUIVO DE CODIGO E NAO UM .geo.json ESCRITO A MAO:
-a geometria do Bedrock e um monte de caixa com UV manual. Com ~30 caixas,
-posicionar UV na mao e onde o modelo quebra silenciosamente (face esticada,
-UV sobreposta, textura de um cubo em cima do outro). Aqui as caixas sao
-descritas uma vez, e o mesmo dado gera:
+POR QUE ISSO E CODIGO E NAO UM .geo.json ESCRITO A MAO
+------------------------------------------------------
+Com ~35 caixas por variante, posicionar UV na mao e onde o modelo quebra em
+silencio. Aqui as caixas sao descritas uma vez e o mesmo dado gera a geometria
+E a textura, com o UV empacotado por codigo.
 
-  - RP/models/entity/hollow_ichigo.geo.json  (a geometria)
-  - RP/textures/entity/hollow_ichigo.png     (a textura, via textures.py)
-
-O UV e empacotado automaticamente, entao adicionar uma caixa nao exige
-recalcular nada na mao.
+REGRA DURA: TAMANHO DE CAIXA E INTEIRO
+--------------------------------------
+O Bedrock mapeia o UV pelo tamanho REAL da caixa. Uma caixa de largura 8.4
+ocupa 8.4 pixels de UV, e como a textura so tem pixel inteiro, todo detalhe
+pintado nela sai deslocado - foi exatamente isso que borrou a mascara na
+primeira versao. O `origin` pode ser fracionario a vontade (ele so move a peca,
+nao mexe no UV); o `size`, nao. Tem um assert no fim do arquivo.
 
 Convencoes do Bedrock: 1 bloco = 16 unidades, -Z e a FRENTE, o player tem a
-cabeca em y 24..32, o corpo em 12..24 e as pernas em 0..12. Os nomes dos ossos
-TEM que bater com o rig do player, senao o attachable nao acompanha a animacao.
+cabeca em y 24..32, o corpo em 12..24 e as pernas em 0..12.
 """
 from __future__ import annotations
 
+import math
+
 TEXTURE_SIZE = 128
 
-# paleta: cada cubo escolhe uma cor base e as faces ganham sombreamento proprio
 PALETTE = {
-    "bone":       (238, 236, 226, 255),
-    "bone_dark":  (198, 194, 180, 255),
-    "bone_deep":  (162, 158, 146, 255),
-    "black":      (28, 28, 34, 255),
-    "black_dark": (18, 18, 24, 255),
-    "black_deep": (11, 11, 15, 255),
-    "red":        (176, 26, 26, 255),
-    "red_dark":   (132, 18, 18, 255),
-    "red_deep":   (96, 12, 12, 255),
-    "orange":     (228, 122, 36, 255),
-    "orange_dark":(186, 92, 24, 255),
-    "orange_deep":(140, 66, 16, 255),
-    "white":      (236, 236, 240, 255),
-    "white_dark": (196, 196, 202, 255),
-    "white_deep": (158, 158, 166, 255),
+    "bone":        (238, 236, 226, 255),
+    "bone_dark":   (198, 194, 180, 255),
+    "bone_deep":   (160, 156, 144, 255),
+    "black":       (28, 28, 34, 255),
+    "black_dark":  (18, 18, 24, 255),
+    "black_deep":  (11, 11, 15, 255),
+    "red":         (176, 26, 26, 255),
+    "red_dark":    (132, 18, 18, 255),
+    "red_deep":    (94, 12, 12, 255),
+    "orange":      (228, 122, 36, 255),
+    "orange_dark": (186, 92, 24, 255),
+    "orange_deep": (140, 66, 16, 255),
+    "white":       (236, 236, 240, 255),
+    "white_dark":  (196, 196, 202, 255),
+    "white_deep":  (156, 156, 164, 255),
+    "eye":         (10, 10, 12, 255),
+    "iris":        (222, 190, 40, 255),
 }
 
-# cada cubo: (osso, origin[x,y,z], size[w,h,d], cor, inflate)
-# A profundidade vem daqui: placas que se projetam pra frente, ombreiras que
-# saem pros lados, chifres, espinhos de cabelo com rotacao propria e a saia do
-# shihakusho abrindo. Um humanoide de 6 caixas fica chapado; isso tem 31.
-CUBES = [
-    # ---------------- cabeca (x -4..4, y 24..32, z -4..4; -Z e a cara) --------
-    ("head",  [-4, 24, -4],       [8, 8, 8],      "bone",       0.35),  # cranio
-    ("head",  [-4.2, 25, -5.6],   [8.4, 6, 1.7],  "bone",       0.0),   # mascara
-    ("head",  [-3, 23.6, -5.6],   [6, 1.8, 1.7],  "bone_dark",  0.0),   # mandibula
-    ("head",  [-4.5, 30.8, -4.5], [9, 1.8, 9],    "orange",     0.0),   # topo do cabelo
-    ("head",  [-4.5, 26, 3.6],    [9, 5.4, 1.6],  "orange_dark",0.0),   # nuca
-    # ---------------- chifres (nascem no alto da testa) ----------------------
-    ("hornR", [-3.6, 29.6, -2.6], [1.8, 6, 1.8],  "bone",       0.0),
-    ("hornR", [-3.4, 34.8, -2.4], [1.4, 3, 1.4],  "bone_dark",  0.0),
-    ("hornL", [1.8, 29.6, -2.6],  [1.8, 6, 1.8],  "bone",       0.0),
-    ("hornL", [2.0, 34.8, -2.4],  [1.4, 3, 1.4],  "bone_dark",  0.0),
-    # ---------------- espinhos de cabelo (topo e nuca) -----------------------
-    ("spikeA", [-1.4, 29.8, 1.6], [2.8, 7, 2.6],  "orange",     0.0),
-    ("spikeB", [-4.2, 29.6, 1.4], [2.4, 6, 2.2],  "orange_dark",0.0),
-    ("spikeC", [1.8, 29.6, 1.4],  [2.4, 6, 2.2],  "orange_dark",0.0),
-    ("spikeD", [-1.0, 30.2, -3.6],[2.0, 5, 2.0],  "orange",     0.0),
-    # ---------------- torso (x -4..4, y 12..24, z -2..2) --------------------
-    ("body",  [-4, 12, -2],       [8, 12, 4],     "black",      0.3),
-    ("body",  [-4.2, 16.6, -3.3], [8.4, 6.4, 1.5],"black_dark", 0.0),   # peitoral
-    ("body",  [-2.4, 18.2, -4.1], [4.8, 3.4, 1.1],"bone",       0.0),   # placa de osso
-    ("body",  [-4.4, 14.4, -2.5], [8.8, 2, 5.2],  "white",      0.0),   # faixa
-    ("body",  [-4.4, 20.6, 1.7],  [8.8, 3.4, 1.5],"black_dark", 0.0),   # gola
-    # ---------------- ombreiras (encostadas no braco e no torso) ------------
-    ("body",  [-7.4, 21, -3],     [4, 3, 6],      "bone",       0.0),
-    ("body",  [3.4, 21, -3],      [4, 3, 6],      "bone",       0.0),
-    # ---------------- saia do shihakusho ------------------------------------
-    ("waist", [-4.8, 7, -2.8],    [9.6, 6, 5.6],  "black_dark", 0.0),
-    ("waist", [-5.6, 3.4, -3.4],  [11.2, 4.2, 6.8],"black_deep",0.0),
-    # ---------------- bracos -------------------------------------------------
-    ("rightArm", [-8, 12, -2],    [4, 12, 4],     "black",      0.3),
-    ("rightArm", [-8.7, 18.4, -2.7],[5.4, 4.4, 5.4],"black_dark",0.0),  # manga
-    ("rightArm", [-8.5, 12.2, -2.5],[5, 3.2, 5],  "bone",       0.0),   # punho
-    ("rightArm", [-8.3, 10.8, -2.3],[4.6, 1.6, 4.6],"bone_dark",0.0),   # mao
-    ("leftArm",  [4, 12, -2],     [4, 12, 4],     "black",      0.3),
-    ("leftArm",  [3.3, 18.4, -2.7],[5.4, 4.4, 5.4],"black_dark",0.0),
-    ("leftArm",  [3.5, 12.2, -2.5],[5, 3.2, 5],   "bone",       0.0),
-    ("leftArm",  [3.7, 10.8, -2.3],[4.6, 1.6, 4.6],"bone_dark", 0.0),
-    # ---------------- pernas -------------------------------------------------
-    ("rightLeg", [-3.9, 0, -2],   [4, 12, 4],     "black",      0.3),
-    ("rightLeg", [-4.1, 0, -2.2], [4.4, 3, 4.4],  "black_deep", 0.0),   # sandalia
-    ("leftLeg",  [-0.1, 0, -2],   [4, 12, 4],     "black",      0.3),
-    ("leftLeg",  [-0.3, 0, -2.2], [4.4, 3, 4.4],  "black_deep", 0.0),
-]
+# ---------------------------------------------------------------------------
+# corpo comum as duas formas: (osso, origin, size, cor, inflate)
+# ---------------------------------------------------------------------------
+def _base_cubes(robe, robe_dark, accent, accent_dark):
+    return [
+        # cabeca
+        ("head",  [-4, 24, -4],      [8, 8, 8],  "bone",      0.35),   # cranio
+        ("head",  [-4.5, 25, -5.5],  [9, 6, 2],  "bone",      0.0),    # MASCARA
+        ("head",  [-3, 23.5, -5.5],  [6, 2, 2],  "bone_dark", 0.0),    # mandibula
+        # torso
+        ("body",  [-4, 12, -2],      [8, 12, 4], robe,        0.3),
+        ("body",  [-4.5, 16.5, -3.5],[9, 6, 2],  robe_dark,   0.0),    # peitoral
+        ("body",  [-2.5, 18, -4.5],  [5, 3, 1],  accent,      0.0),    # placa
+        ("body",  [-4.5, 14.5, -2.5],[9, 2, 5],  "white",     0.0),    # faixa
+        ("body",  [-4.5, 20.5, 1.5], [9, 3, 2],  robe_dark,   0.0),    # gola
+        # ombreiras
+        ("body",  [-7.5, 21, -3],    [4, 3, 6],  accent,      0.0),
+        ("body",  [3.5, 21, -3],     [4, 3, 6],  accent,      0.0),
+        # saia
+        ("waist", [-5, 7, -3],       [10, 6, 6], robe_dark,   0.0),
+        ("waist", [-5.5, 3, -3.5],   [11, 4, 7], "black_deep",0.0),
+        # bracos
+        ("rightArm", [-8, 12, -2],     [4, 12, 4], robe,      0.3),
+        ("rightArm", [-8.5, 18.5, -2.5],[5, 4, 5], robe_dark, 0.0),    # manga
+        ("rightArm", [-8.5, 12, -2.5], [5, 3, 5],  accent,    0.0),    # punho
+        ("rightArm", [-8.5, 10.5, -2.5],[5, 2, 5], accent_dark,0.0),   # mao
+        ("leftArm",  [4, 12, -2],      [4, 12, 4], robe,      0.3),
+        ("leftArm",  [3.5, 18.5, -2.5],[5, 4, 5],  robe_dark, 0.0),
+        ("leftArm",  [3.5, 12, -2.5],  [5, 3, 5],  accent,    0.0),
+        ("leftArm",  [3.5, 10.5, -2.5],[5, 2, 5],  accent_dark,0.0),
+        # pernas
+        ("rightLeg", [-3.9, 0, -2],    [4, 12, 4], robe,      0.3),
+        ("rightLeg", [-4.4, 0, -2.5],  [5, 2, 5],  "black_deep",0.0),  # sandalia
+        ("leftLeg",  [-0.1, 0, -2],    [4, 12, 4], robe,      0.3),
+        ("leftLeg",  [-0.6, 0, -2.5],  [5, 2, 5],  "black_deep",0.0),
+    ]
 
-# ossos: nome -> (pai, pivot, rotacao)
-# Os seis primeiros sao o rig do player. Os de baixo sao meus, pra dar angulo
-# aos chifres e aos espinhos - e a rotacao que tira o modelo do plano.
-# Ossos: nome -> (pai, pivot, rotacao).
-#
-# Os sete primeiros ESPELHAM o rig do player (geometry.humanoid.custom), pai por
-# pai. Attachable casa osso por NOME com o rig do pai: osso que nao existe la, ou
-# pendurado no pai errado, nao acompanha a animacao. O rig do player e:
-#     root -> waist -> body -> head / leftArm / rightArm
-#     root -> leftLeg / rightLeg        <- as pernas saem da RAIZ, nao da cintura
-# Eu tinha esquecido o `root` e pendurado as pernas no `waist`.
-BONES = {
-    "root":     (None,     [0, 0, 0],         None),
-    "waist":    ("root",   [0, 12, 0],        None),
-    "body":     ("waist",  [0, 24, 0],        None),
-    "head":     ("body",   [0, 24, 0],        None),
-    "rightArm": ("body",   [-5, 22, 0],       None),
-    "leftArm":  ("body",   [5, 22, 0],        None),
-    "rightLeg": ("root",   [-1.9, 12, 0],     None),
-    "leftLeg":  ("root",   [1.9, 12, 0],      None),
-    # ossos meus, pendurados na cabeca: inclinam chifre e espinho sem arrancar
-    # a peca do lugar
-    "hornR":    ("head",   [-2.7, 30, -1.7],  [-12, 0, -16]),
-    "hornL":    ("head",   [2.7, 30, -1.7],   [-12, 0, 16]),
-    "spikeA":   ("head",   [0, 30.2, 2.6],    [36, 0, 0]),
-    "spikeB":   ("head",   [-3, 30, 2.4],     [30, -18, -14]),
-    "spikeC":   ("head",   [3, 30, 2.4],      [30, 18, 14]),
-    "spikeD":   ("head",   [0, 30.4, -2.8],   [-28, 0, 0]),
+
+# ---------------------------------------------------------------------------
+# variantes
+# ---------------------------------------------------------------------------
+VARIANTS = {
+    # Hollowficacao: cabelo laranja, shihakusho preto, osso nos detalhes
+    "hollow": {
+        "identifier": "geometry.hollow_ichigo",
+        "cubes": _base_cubes("black", "black_dark", "bone", "bone_dark") + [
+            ("head",  [-4.5, 30.5, -4.5], [9, 2, 9],  "orange",      0.0),  # topo
+            ("head",  [-4.5, 26, 3.5],    [9, 5, 2],  "orange_dark", 0.0),  # nuca
+            ("hornR", [-3.5, 29.5, -2.5], [2, 6, 2],  "bone",        0.0),
+            ("hornR", [-3, 34.5, -2],     [1, 3, 1],  "bone_dark",   0.0),
+            ("hornL", [1.5, 29.5, -2.5],  [2, 6, 2],  "bone",        0.0),
+            ("hornL", [2, 34.5, -2],      [1, 3, 1],  "bone_dark",   0.0),
+            ("spikeA", [-1.5, 29.5, 1.5], [3, 7, 3],  "orange",      0.0),
+            ("spikeB", [-4, 29.5, 1.5],   [2, 6, 2],  "orange_dark", 0.0),
+            ("spikeC", [2, 29.5, 1.5],    [2, 6, 2],  "orange_dark", 0.0),
+            ("spikeD", [-1, 30, -3.5],    [2, 5, 2],  "orange",      0.0),
+        ],
+        "horn_tilt": ([-12, 0, -16], [-12, 0, 16]),
+    },
+    # Vasto Lorde: osso por cima de tudo, chifres o dobro, juba e espinhos
+    "vasto": {
+        "identifier": "geometry.vasto_lorde",
+        "cubes": _base_cubes("black_deep", "black", "bone", "bone_dark") + [
+            ("head",  [-4.5, 30.5, -4.5], [9, 2, 9],  "bone",       0.0),  # crista
+            ("head",  [-5, 25, 3.5],      [10, 7, 3], "white_dark", 0.0),  # juba
+            ("head",  [-5, 23, 4.5],      [10, 4, 2], "white_deep", 0.0),
+            # chifres longos, com uma terceira ponta
+            ("hornR", [-4, 29, -2.5],     [3, 10, 3], "bone",       0.0),
+            ("hornR", [-3.5, 38, -2],     [2, 5, 2],  "bone_dark",  0.0),
+            ("hornL", [1, 29, -2.5],      [3, 10, 3], "bone",       0.0),
+            ("hornL", [1.5, 38, -2],      [2, 5, 2],  "bone_dark",  0.0),
+            ("spikeA", [-2, 29.5, 1],     [4, 9, 4],  "bone",       0.0),
+            ("spikeB", [-5, 29.5, 1],     [3, 8, 3],  "bone_dark",  0.0),
+            ("spikeC", [2, 29.5, 1],      [3, 8, 3],  "bone_dark",  0.0),
+            ("spikeD", [-1.5, 30, -4],    [3, 6, 3],  "bone",       0.0),
+            # espinhos saindo dos ombros e do peito
+            ("body",  [-8, 23.5, -1],     [3, 5, 3],  "bone",       0.0),
+            ("body",  [5, 23.5, -1],      [3, 5, 3],  "bone",       0.0),
+            ("body",  [-4.5, 12.5, -4],   [9, 4, 1],  "bone_dark",  0.0),  # costelas
+        ],
+        "horn_tilt": ([-20, 0, -24], [-20, 0, 24]),
+    },
 }
 
-# cada face de um cubo ganha um tom: topo mais claro, base mais escura
+
+def bones_for(variant: str):
+    """
+    Espelha o rig do player (geometry.humanoid.custom) osso por osso.
+
+        root -> waist -> body -> head / leftArm / rightArm
+        root -> leftLeg / rightLeg      <- as pernas saem da RAIZ
+
+    Attachable casa osso por NOME com o rig do pai: osso faltando, ou no pai
+    errado, nao acompanha a animacao - e isso nao da erro nenhum no jogo.
+    """
+    right_tilt, left_tilt = VARIANTS[variant]["horn_tilt"]
+    return {
+        "root":     (None,     [0, 0, 0],        None),
+        "waist":    ("root",   [0, 12, 0],       None),
+        "body":     ("waist",  [0, 24, 0],       None),
+        "head":     ("body",   [0, 24, 0],       None),
+        "rightArm": ("body",   [-5, 22, 0],      None),
+        "leftArm":  ("body",   [5, 22, 0],       None),
+        "rightLeg": ("root",   [-1.9, 12, 0],    None),
+        "leftLeg":  ("root",   [1.9, 12, 0],     None),
+        # ossos proprios: o pivot fica na BASE da peca, entao a rotacao inclina
+        # em vez de arrancar do lugar
+        "hornR":    ("head",   [-2.5, 30, -1.5], right_tilt),
+        "hornL":    ("head",   [2.5, 30, -1.5],  left_tilt),
+        "spikeA":   ("head",   [0, 30, 2.5],     [36, 0, 0]),
+        "spikeB":   ("head",   [-3, 30, 2.5],    [30, -18, -14]),
+        "spikeC":   ("head",   [3, 30, 2.5],     [30, 18, 14]),
+        "spikeD":   ("head",   [0, 30, -3],      [-28, 0, 0]),
+    }
+
+
 FACE_SHADE = {
-    "top": "",
-    "bottom": "_deep",
-    "north": "",
-    "south": "_dark",
-    "east": "_dark",
-    "west": "_dark",
+    "top": "", "bottom": "_deep", "north": "",
+    "south": "_dark", "east": "_dark", "west": "_dark",
 }
 
 
 def _shade(color: str, face: str) -> str:
-    """cor da face; cai na cor base quando o tom nao existe na paleta"""
     suffix = FACE_SHADE[face]
     if not suffix:
         return color
-    # "bone_dark" + "_dark" nao existe: usa o tom mais fundo que existir
-    candidate = color + suffix
-    if candidate in PALETTE:
-        return candidate
+    if color + suffix in PALETTE:
+        return color + suffix
     base = color.rsplit("_", 1)[0]
     for option in (base + "_deep", base + "_dark", base, color):
         if option in PALETTE:
@@ -146,115 +179,127 @@ def _shade(color: str, face: str) -> str:
     return color
 
 
-def _footprint(size):
-    """espaco que o UV de um cubo ocupa: 2*(w+d) por (h+d)"""
-    w, h, d = size
-    import math
-    return math.ceil(2 * (w + d)), math.ceil(h + d)
+def _faces(u, v, w, h, d):
+    """as seis faces de um cubo no layout de UV do Bedrock"""
+    return {
+        "top":    (u + d, v, w, d),
+        "bottom": (u + d + w, v, w, d),
+        "east":   (u, v + d, d, h),
+        "north":  (u + d, v + d, w, h),
+        "west":   (u + d + w, v + d, d, h),
+        "south":  (u + d + w + d, v + d, w, h),
+    }
 
 
-def pack_uvs():
-    """
-    Empacota o UV de cada cubo no atlas por linhas (shelf packing).
-
-    E o ponto do arquivo: com 31 cubos, posicionar UV na mao e o que quebra o
-    modelo em silencio. Aqui adicionar um cubo nao exige recalcular nada.
-    """
+def pack_uvs(variant: str):
+    """empacota o UV de cada caixa por linhas (shelf packing)"""
+    cubes = VARIANTS[variant]["cubes"]
     placements = []
-    cursor_x, cursor_y, row_height = 0, 0, 0
-
-    for index, (bone, origin, size, color, inflate) in enumerate(CUBES):
-        fw, fh = _footprint(size)
-        if cursor_x + fw > TEXTURE_SIZE:
-            cursor_x = 0
-            cursor_y += row_height
-            row_height = 0
-        if cursor_y + fh > TEXTURE_SIZE:
-            raise ValueError(
-                f"o atlas de {TEXTURE_SIZE}x{TEXTURE_SIZE} encheu no cubo {index}"
-            )
-        placements.append((cursor_x, cursor_y))
-        cursor_x += fw
-        row_height = max(row_height, fh)
-
+    x, y, row = 0, 0, 0
+    for index, (_, _, size, _, _) in enumerate(cubes):
+        w, h, d = size
+        fw, fh = 2 * (w + d), h + d
+        if x + fw > TEXTURE_SIZE:
+            x, y, row = 0, y + row, 0
+        if y + fh > TEXTURE_SIZE:
+            raise ValueError(f"o atlas encheu na caixa {index} da variante {variant}")
+        placements.append((x, y))
+        x += fw
+        row = max(row, fh)
     return placements
 
 
 def build_geometry() -> dict:
-    placements = pack_uvs()
-    by_bone: dict[str, list] = {name: [] for name in BONES}
+    """as duas variantes moram no mesmo .geo.json"""
+    geometries = []
+    for variant, spec in VARIANTS.items():
+        bones_spec = bones_for(variant)
+        by_bone = {name: [] for name in bones_spec}
 
-    for (bone, origin, size, color, inflate), (u, v) in zip(CUBES, placements):
-        cube = {"origin": origin, "size": size, "uv": [u, v]}
-        if inflate:
-            cube["inflate"] = inflate
-        by_bone[bone].append(cube)
+        for (bone, origin, size, color, inflate), (u, v) in zip(
+            spec["cubes"], pack_uvs(variant)
+        ):
+            cube = {"origin": origin, "size": size, "uv": [u, v]}
+            if inflate:
+                cube["inflate"] = inflate
+            by_bone[bone].append(cube)
 
-    bones = []
-    for name, (parent, pivot, rotation) in BONES.items():
-        bone = {"name": name, "pivot": pivot}
-        if parent:
-            bone["parent"] = parent
-        if rotation:
-            bone["rotation"] = rotation
-        if by_bone[name]:
-            bone["cubes"] = by_bone[name]
-        bones.append(bone)
+        bones = []
+        for name, (parent, pivot, rotation) in bones_spec.items():
+            bone = {"name": name, "pivot": pivot}
+            if parent:
+                bone["parent"] = parent
+            if rotation:
+                bone["rotation"] = rotation
+            if by_bone[name]:
+                bone["cubes"] = by_bone[name]
+            bones.append(bone)
 
-    return {
-        "format_version": "1.12.0",
-        "minecraft:geometry": [
-            {
-                "description": {
-                    "identifier": "geometry.hollow_ichigo",
-                    "texture_width": TEXTURE_SIZE,
-                    "texture_height": TEXTURE_SIZE,
-                    "visible_bounds_width": 3,
-                    "visible_bounds_height": 4,
-                    "visible_bounds_offset": [0, 1.5, 0],
-                },
-                "bones": bones,
-            }
-        ],
-    }
+        geometries.append({
+            "description": {
+                "identifier": spec["identifier"],
+                "texture_width": TEXTURE_SIZE,
+                "texture_height": TEXTURE_SIZE,
+                "visible_bounds_width": 3,
+                "visible_bounds_height": 4,
+                "visible_bounds_offset": [0, 1.5, 0],
+            },
+            "bones": bones,
+        })
+
+    return {"format_version": "1.12.0", "minecraft:geometry": geometries}
 
 
-def build_texture_rects():
-    """pinta cada face de cada cubo na posicao que o packer deu"""
-    import math
+def _paint_mask(rects, u, v, w, h, d):
+    """
+    A cara da mascara, na face da frente da placa (9x6).
 
-    placements = pack_uvs()
+    So funciona porque a caixa tem tamanho INTEIRO: com 8.4 de largura o
+    Bedrock leria o UV em fracao de pixel e tudo isso sairia deslocado.
+    """
+    mx, my = u + d, v + d
+    rects.append([mx + 1, my, 1, h, "red"])          # listras verticais
+    rects.append([mx + w - 2, my, 1, h, "red"])
+    rects.append([mx + 2, my + 2, 2, 2, "eye"])      # orbitas
+    rects.append([mx + w - 4, my + 2, 2, 2, "eye"])
+    rects.append([mx + 2, my + 3, 1, 1, "iris"])     # brilho dentro do olho
+    rects.append([mx + w - 3, my + 3, 1, 1, "iris"])
+    for tooth in range(2, w - 2, 2):                 # dentada
+        rects.append([mx + tooth, my + h - 1, 1, 1, "eye"])
+
+
+def build_texture_rects(variant: str):
+    placements = pack_uvs(variant)
+    cubes = VARIANTS[variant]["cubes"]
     rects = []
 
-    for (bone, origin, size, color, inflate), (u, v) in zip(CUBES, placements):
-        w, h, d = (math.ceil(v) for v in size)
-        faces = {
-            "top":    (u + d, v, w, d),
-            "bottom": (u + d + w, v, w, d),
-            "east":   (u, v + d, d, h),
-            "north":  (u + d, v + d, w, h),
-            "west":   (u + d + w, v + d, d, h),
-            "south":  (u + d + w + d, v + d, w, h),
-        }
-        for face, (x, y, fw, fh) in faces.items():
+    for (bone, origin, size, color, inflate), (u, v) in zip(cubes, placements):
+        w, h, d = size
+        for face, (x, y, fw, fh) in _faces(u, v, w, h, d).items():
             rects.append([x, y, fw, fh, _shade(color, face)])
 
-    # detalhes pintados por cima: a cara da mascara
-    mask = placements[1]
-    mx, my = mask[0] + 2, mask[1] + 2  # face north da placa da mascara
-    rects.append([mx + 1, my, 1, 6, "red"])
-    rects.append([mx + 6, my, 1, 6, "red"])
-    rects.append([mx + 2, my + 1, 4, 1, "red"])
-    rects.append([mx + 2, my + 2, 2, 2, "black_deep"])
-    rects.append([mx + 4, my + 2, 2, 2, "black_deep"])
-    for tooth in range(0, 8, 2):
-        rects.append([mx + tooth, my + 5, 1, 1, "black_deep"])
-
+    # a caixa 1 e sempre a placa da mascara
+    (u, v), (_, _, size, _, _) = placements[1], cubes[1]
+    _paint_mask(rects, u, v, *size)
     return rects
 
 
-TEXTURE_SPEC = {
-    "size": (TEXTURE_SIZE, TEXTURE_SIZE),
-    "palette": PALETTE,
-    "rects": build_texture_rects(),
+# o assert que impede a regressao que borrou a mascara
+for _variant, _spec in VARIANTS.items():
+    for _bone, _origin, _size, _color, _inflate in _spec["cubes"]:
+        for _value in _size:
+            if float(_value) != int(_value):
+                raise ValueError(
+                    f"{_variant}/{_bone}: tamanho de caixa tem que ser INTEIRO "
+                    f"(size={_size}). Tamanho fracionario faz o UV cair em fracao "
+                    f"de pixel e desloca tudo que for pintado na caixa."
+                )
+
+TEXTURE_SPECS = {
+    variant: {
+        "size": (TEXTURE_SIZE, TEXTURE_SIZE),
+        "palette": PALETTE,
+        "rects": build_texture_rects(variant),
+    }
+    for variant in VARIANTS
 }

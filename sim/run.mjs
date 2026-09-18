@@ -3567,6 +3567,27 @@ check(
   String(vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId)
 );
 
+scenario("Peitoral: não dá pra tirar, duplicar nem usar sem personagem");
+mark = errors.length;
+const equipV = () => vizard.getComponent("minecraft:equippable");
+const invV = () => inv(vizard);
+
+// tirar a peça e guardar na mochila: o loop devolve pro peito E some com a cópia
+equipV().setEquipment("Chest", undefined);
+invV().setItem(20, new ItemStack("vizard:hollow_chest", 1));
+advanceTicks(15, "tentar-tirar-peitoral");
+noNewErrors("a varredura roda limpo", mark);
+check(
+  "a peça volta pro peito sozinha",
+  equipV().getEquipment("Chest")?.typeId === "vizard:hollow_chest",
+  String(equipV().getEquipment("Chest")?.typeId)
+);
+check(
+  "e a cópia na mochila some (nada de duplicar)",
+  !invV().slots.some((i) => i?.typeId === "vizard:hollow_chest"),
+  JSON.stringify(invV().slots.filter(Boolean).map((i) => i.typeId))
+);
+
 scenario("Hollowficação: getsuga maior e cura de 30 a cada 5s");
 mark = errors.length;
 vizard.teleport({ x: 5400, y: 64, z: 5400 });
@@ -3622,6 +3643,19 @@ check(
 check(
   "com o rugido do ender dragon",
   log.sounds.some((s) => s.soundId === "mob.enderdragon.growl")
+);
+check(
+  "troca o peitoral pelo do Vasto Lorde",
+  vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId ===
+    "vizard:vasto_chest",
+  String(vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId)
+);
+const auraBefore = log.particles.length;
+advanceTicks(20, "aura-do-vasto");
+check(
+  "e solta aura constante em volta",
+  log.particles.slice(auraBefore).filter((p) => p.particleId === "vizard:cero").length > 30,
+  `${log.particles.slice(auraBefore).filter((p) => p.particleId === "vizard:cero").length} partículas`
 );
 check(
   "4 skills novas + m1 do Vasto Lorde",
@@ -3822,9 +3856,28 @@ noNewErrors("reversão sem erro", mark);
 check("awakened = false", vizard.getDynamicProperty(DP.awakened) === false);
 check("segunda fase limpa", !vizard.getDynamicProperty("mv:true_form"));
 check("vida maxima volta pra 1500", virtualMax(vizard) === 1500, `${virtualMax(vizard)}`);
+advanceTicks(15, "varredura-pos-reversao");
 check(
   "o peitoral sai (a skin volta ao normal)",
   !vizard.getComponent("minecraft:equippable").getEquipment("Chest"),
+  String(vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId)
+);
+check(
+  "e não sobra nenhuma cópia na mochila",
+  !inv(vizard).slots.some(
+    (i) => i?.typeId === "vizard:hollow_chest" || i?.typeId === "vizard:vasto_chest"
+  )
+);
+// e volta ao despertar de novo
+vizard.setDynamicProperty(DP.awakening, 100);
+vizard.isSneaking = true;
+useItem(vizard, "vizard:m1_bankai");
+vizard.isSneaking = false;
+advanceTicks(20, "re-hollowficar-peitoral");
+check(
+  "e volta ao despertar de novo",
+  vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId ===
+    "vizard:hollow_chest",
   String(vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId)
 );
 check(

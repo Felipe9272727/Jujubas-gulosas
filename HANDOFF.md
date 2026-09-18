@@ -205,7 +205,7 @@ existe é um attachable amarrado a um item de peitoral:
 | `RP/attachables/hollow_ichigo.json` | liga o item à geometria e à textura |
 | `RP/models/entity/hollow_ichigo.geo.json` | **gerado** por `tools/gen_model.py` — nunca editar à mão |
 | `RP/textures/entity/hollow_ichigo.png` | **gerada** da mesma fonte (128×128) |
-| `tools/hollow_model.py` | a fonte: 34 caixas, os ossos e o empacotador de UV |
+| `tools/hollow_model.py` | a fonte: duas variantes (Hollowficação 34 caixas, Vasto Lorde 38), ossos e empacotador de UV |
 | `RP/render_controllers/hollow_ichigo.json` | o render controller do attachable |
 
 O attachable casa osso por **nome** com o rig do pai. O rig do player
@@ -239,6 +239,22 @@ qualquer item sem `minecraft:wearable` apontando pra slot certa.
 
 O awakening avisa no chat qual forma entrou (`despertou: Tensa Zangetsu` vs
 `despertou: Hollowficação`) — é por aí que se sabe qual dos dois está ativo.
+
+### Tamanho de caixa TEM que ser inteiro
+
+O Bedrock mapeia o UV pelo tamanho **real** da caixa. Uma caixa de largura `8.4`
+ocupa 8.4 pixels de UV, e como a textura só tem pixel inteiro, todo detalhe
+pintado nela sai deslocado — foi isso que borrou a máscara na primeira versão.
+O `origin` pode ser fracionário à vontade (só move a peça); o `size`, não.
+`hollow_model.py` tem um assert que reprova tamanho fracionário.
+
+### Armadura de forma não vira item de inventário
+
+`sweepFormArmor` roda no loop de travar itens **para todo player, com ou sem
+personagem**: a peça certa fica no peito, qualquer cópia solta some da mochila,
+e peça de forma que não está valendo sai do peito. É o que impede tirar a
+armadura (ganhando uma cópia), acumular, e usar sem personagem — e é o que faz
+ela sumir quando o awakening acaba e voltar quando ele volta.
 
 ### Por que o modelo é código e não um .geo.json
 

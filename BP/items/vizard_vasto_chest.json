@@ -1,0 +1,23 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "vizard:vasto_chest",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "vizard:vasto_chest",
+      "minecraft:display_name": {
+        "value": "Vasto Lorde"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:should_despawn": false,
+      "minecraft:glint": true,
+      "minecraft:wearable": {
+        "slot": "slot.armor.chest"
+      }
+    }
+  }
+}

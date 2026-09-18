@@ -313,6 +313,9 @@
     },
     "vizard:hollow_chest": {
       "textures": "textures/items/vizard_hollow_chest"
+    },
+    "vizard:vasto_chest": {
+      "textures": "textures/items/vizard_vasto_chest"
     }
   }
 }

@@ -445,7 +445,14 @@ const CHARACTERS = {
         healPerInterval: { amount: 300, ticks: 160 }, // 300 a cada 8s
         waveScale: 2.2,
         dashTeleports: true, // o dash vira teleporte no alvo
-        armorPiece: "vizard:hollow_chest",
+        armorPiece: "vizard:vasto_chest",
+        // aura constante: e o que faz a forma verdadeira ser vista de longe
+        aura: {
+          particle: "vizard:cero",
+          radius: 1.7,
+          height: 2.8,
+          perTick: 6,
+        },
         titleForAll: "AHHHHHHH",
         titleSound: "mob.enderdragon.growl",
         items: {
@@ -472,6 +479,7 @@ const BYAKUYA_ALT_WEAPONS = [
 const EXTRA_OWNED_ITEMS = {
   "yammy:ira_marker": "yammy",
   "vizard:hollow_chest": "ichigo_vizard",
+  "vizard:vasto_chest": "ichigo_vizard",
 };
 
 const STARKK_ALT_WEAPONS = [
@@ -504,6 +512,16 @@ const ARCS = [
     ],
   },
 ];
+
+// Todo peitoral de forma que existe, pra poder varrer os que estao sobrando.
+// Sem isso da pra tirar a peca, ficar com uma copia na mochila e vestir ela
+// depois sem personagem nenhum.
+const FORM_ARMOR_PIECES = new Set();
+for (const key in CHARACTERS) {
+  const form = CHARACTERS[key].awakening;
+  if (form?.armorPiece) FORM_ARMOR_PIECES.add(form.armorPiece);
+  if (form?.trueForm?.armorPiece) FORM_ARMOR_PIECES.add(form.trueForm.armorPiece);
+}
 
 // mapa reverso: itemId -> personagem dono (pra saber o que pode ser dropado/travado)
 const ITEM_OWNER = {};
@@ -1524,6 +1542,31 @@ function equipArmorPiece(player, itemId) {
   } catch (e) {
     return false;
   }
+}
+
+/* O peitoral da forma nao pode virar item de inventario. Tirando ele, o loop
+   devolvia uma copia pro peito e a que saiu ficava na mochila: dava pra
+   acumular e ate vestir sem personagem nenhum. Agora a peca certa fica no
+   peito, qualquer copia solta some, e peca de forma que nao esta valendo sai
+   do peito tambem - e por isso que a armadura some quando o awakening acaba. */
+function sweepFormArmor(player, wanted) {
+  try {
+    const inv = getInv(player);
+    for (let slot = 0; slot < inv.size; slot++) {
+      const item = inv.getItem(slot);
+      if (item && FORM_ARMOR_PIECES.has(item.typeId)) inv.setItem(slot, undefined);
+    }
+  } catch (e) {}
+
+  try {
+    const equip = player.getComponent("minecraft:equippable");
+    const chest = equip?.getEquipment(EquipmentSlot.Chest);
+    if (chest && FORM_ARMOR_PIECES.has(chest.typeId) && chest.typeId !== wanted) {
+      equip.setEquipment(EquipmentSlot.Chest, undefined);
+    }
+  } catch (e) {}
+
+  if (wanted) equipArmorPiece(player, wanted);
 }
 
 function clearArmorPiece(player, itemId) {
@@ -7650,6 +7693,39 @@ system.runInterval(() => {
 }, 20);
 
 /* ---------------------------------------------------------
+   Aura da forma: anel de reiatsu em volta de quem esta numa
+   forma que pede aura (o Vasto Lorde)
+   --------------------------------------------------------- */
+
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    const aura = activeFormOf(player)?.aura;
+    if (!aura) continue;
+
+    try {
+      const loc = player.location;
+      // o raio pulsa: aura de raio fixo parece anel parado
+      const pulse = 0.75 + Math.sin(system.currentTick / 7) * 0.25;
+      for (let i = 0; i < aura.perTick; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = aura.radius * pulse * (0.7 + Math.random() * 0.3);
+        player.dimension.spawnParticle(aura.particle, {
+          x: loc.x + Math.cos(angle) * dist,
+          y: loc.y + Math.random() * aura.height,
+          z: loc.z + Math.sin(angle) * dist,
+        });
+      }
+      // e uma coluna subindo no meio
+      player.dimension.spawnParticle(aura.particle, {
+        x: loc.x + (Math.random() - 0.5) * 0.5,
+        y: loc.y + aura.height * Math.random(),
+        z: loc.z + (Math.random() - 0.5) * 0.5,
+      });
+    } catch (e) {}
+  }
+}, 2);
+
+/* ---------------------------------------------------------
    Guarda: desenha o escudo e derruba o bloqueio no fim do prazo
    (e no fim do prazo que o cooldown comeca a contar)
    --------------------------------------------------------- */
@@ -7721,6 +7797,10 @@ system.runInterval(() => {
     forceGiveLockedItem(inv, SELECTOR_SLOT, SELECTOR_ITEM);
 
     const character = getActiveCharacter(player);
+
+    // roda mesmo sem personagem: e assim que a peca sobrando some da mochila
+    sweepFormArmor(player, activeFormOf(player, character)?.armorPiece);
+
     if (!character) continue;
 
     const activeItems = getActiveItemsForPlayer(player, character);
@@ -7732,10 +7812,6 @@ system.runInterval(() => {
     // o marcador da offhand precisa continuar la: e ele que segura a escala
     const marker = character.awakening?.offhandMarker;
     if (marker && isAwakened(player)) setOffhandMarker(player, marker);
-
-    // e o peitoral tambem: sem ele a skin da forma volta pra normal
-    const armorPiece = activeFormOf(player, character)?.armorPiece;
-    if (armorPiece) equipArmorPiece(player, armorPiece);
   }
 }, 10);
 

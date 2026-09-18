@@ -3042,6 +3042,34 @@ TEXTURES = {
             "........",
         ],
     },
+    # Peitoral do Vasto Lorde: torso de osso com chifres
+    "items/vizard_vasto_chest": {
+        "palette": {
+            "=": (244, 242, 234, 255),
+            "#": (206, 202, 190, 255),
+            "%": (128, 124, 118, 255),
+            "&": (20, 20, 26, 255),
+            "$": (176, 26, 26, 255),
+        },
+        "grid": [
+            "..&&........&&..",
+            ".&==&......&==&.",
+            ".&=#&......&#=&.",
+            "..&=&&&&&&&&=&..",
+            "..&==========&..",
+            "..&=$======$=&..",
+            "..&==&&==&&==&..",
+            "..&==========&..",
+            "..&=&=&=&=&==&..",
+            ".&&&&&&&&&&&&&&.",
+            "&%%==========%%&",
+            "&%&=&######&=&%&",
+            "&%&=&#&..&#&=&%&",
+            "&%&==&&..&&==&%&",
+            "&%%&&&....&&&%%&",
+            "&&&&........&&&&",
+        ],
+    },
     "items/yammy_ira_marker": {
         "palette": {},
         "grid": [
@@ -3066,14 +3094,14 @@ TEXTURES = {
 }
 
 # ---------------------------------------------------------------------------
-# Textura do attachable do Ichigo hollowficado.
+# Texturas dos attachables do Ichigo Vizard.
 #
-# Ela NAO e escrita aqui: vem de tools/hollow_model.py, o mesmo arquivo que gera
-# a geometria. Textura e modelo precisam concordar sobre onde esta o UV de cada
-# caixa, entao os dois saem da mesma fonte - manter duas listas separadas seria
-# garantir que uma hora elas divergem.
+# Elas NAO sao escritas aqui: vem de tools/hollow_model.py, o mesmo arquivo que
+# gera a geometria. Textura e modelo precisam concordar sobre onde esta o UV de
+# cada caixa, entao os dois saem da mesma fonte.
 # ---------------------------------------------------------------------------
 
-from hollow_model import TEXTURE_SPEC as _HOLLOW_TEXTURE  # noqa: E402
+from hollow_model import TEXTURE_SPECS as _HOLLOW_TEXTURES  # noqa: E402
 
-TEXTURES["entity/hollow_ichigo"] = _HOLLOW_TEXTURE
+TEXTURES["entity/hollow_ichigo"] = _HOLLOW_TEXTURES["hollow"]
+TEXTURES["entity/vasto_lorde"] = _HOLLOW_TEXTURES["vasto"]
