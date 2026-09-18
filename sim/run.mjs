@@ -65,6 +65,7 @@ const ROSTER = [
       "harribel",
       "barragan",
       "szayelaporro",
+      "ichigo_vizard",
     ],
   },
 ];
@@ -128,6 +129,13 @@ function virtualHp(p) {
 function virtualDamage(target, entry) {
   const scale = target.getDynamicProperty("mv:health_scale") ?? 1;
   return Math.round(entry.amount * scale);
+}
+
+// acima do teto do Bedrock a vida e virtual: setar o numero cru na componente
+// nao e a mesma coisa que setar a vida que o player ve
+function setVirtualHp(p, value) {
+  const scale = p.getDynamicProperty("mv:health_scale") ?? 1;
+  hp(p).setCurrentValue(value / scale);
 }
 
 function virtualMax(p) {
@@ -1018,7 +1026,7 @@ check(
 );
 check(
   "segundo arco traz os Arrancar",
-  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy", "Harribel", "Barragan", "Szayelaporro"].every((n) =>
+  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy", "Harribel", "Barragan", "Szayelaporro", "Vizard"].every((n) =>
     shown.buttons.join(" ").includes(n)
   ),
   shown.buttons.join(", ")
@@ -3417,6 +3425,380 @@ check(
 );
 cobaiaSzayel.kill();
 domada.kill();
+
+/* ================= Ichigo (pós-treino Vizard) ================= */
+
+scenario("Ichigo Vizard: ativação");
+const vizard = createPlayer("VizardPlayer", { x: 5000, y: 64, z: 5000 });
+const alvoV = createDummy("AlvoV", { x: 5003, y: 64, z: 5000 }, 500000);
+emit("playerSpawn", { player: vizard, initialSpawn: true });
+advanceTicks(20, "spawn-vizard");
+
+mark = errors.length;
+await pickCharacter(vizard, "ichigo_vizard");
+advanceTicks(20, "ativar-vizard");
+noNewErrors("ativar Ichigo Vizard sem erro", mark);
+check("vida maxima 1500", virtualMax(vizard) === 1500, `${virtualMax(vizard)}`);
+check(
+  "5 itens base nos slots 0-4",
+  JSON.stringify(slotIds(vizard, 5)) ===
+    JSON.stringify([
+      "vizard:m1_bankai",
+      "vizard:dash_n_slash",
+      "vizard:getsuga_barrage",
+      "vizard:descent_tensho",
+      "vizard:super_nuke",
+    ]),
+  JSON.stringify(slotIds(vizard, 5))
+);
+dmgBefore = log.damages.length;
+const animBefore = log.animations.length;
+hitWith(vizard, alvoV, "vizard:m1_bankai");
+check(
+  "m1 dá 40 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 40)
+);
+check(
+  "e toca a animação de corte",
+  log.animations.slice(animBefore).some(
+    (a) => a.target === "VizardPlayer" && a.animationName === "animation.vizard.slash"
+  )
+);
+
+scenario("Dash 'n Slash: 20 por tick avançando");
+mark = errors.length;
+vizard.teleport({ x: 5000, y: 64, z: 5000 });
+vizard._view = { x: 1, y: 0, z: 0 };
+alvoV.teleport({ x: 5003, y: 64, z: 5000 });
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:dash_n_slash");
+advanceTicks(30, "dash-n-slash");
+noNewErrors("Dash 'n Slash executa limpo", mark);
+const cortesV = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV");
+check(
+  "bate várias vezes, 20 por tick",
+  cortesV.length >= 3 && cortesV.every((d) => d.amount === 20),
+  `${cortesV.length} ticks de ${JSON.stringify([...new Set(cortesV.map((d) => d.amount))])}`
+);
+check("e avança de verdade", vizard.location.x > 5010, `x=${vizard.location.x.toFixed(1)}`);
+
+scenario("Getsuga Barrage: 6 getsugas de 100");
+mark = errors.length;
+vizard.teleport({ x: 5100, y: 64, z: 5100 });
+vizard._view = { x: 1, y: 0, z: 0 };
+alvoV.teleport({ x: 5108, y: 64, z: 5100 });
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:getsuga_barrage");
+advanceTicks(90, "getsuga-barrage");
+noNewErrors("Getsuga Barrage executa limpo", mark);
+const getsugas = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV");
+check(
+  "6 getsugas de 100",
+  getsugas.length === 6 && getsugas.every((d) => d.amount === 100),
+  `${getsugas.length} getsugas de ${JSON.stringify([...new Set(getsugas.map((d) => d.amount))])}`
+);
+
+scenario("Descent Tenshō: estoura no chão numa área grande");
+mark = errors.length;
+vizard.teleport({ x: 5200, y: 64, z: 5200 });
+vizard._view = { x: 1, y: 0, z: 0 };
+alvoV.teleport({ x: 5212, y: 64, z: 5200 });
+const longeDoBaque = createDummy("LongeDoBaque", { x: 5212, y: 64, z: 5230 }, 500000);
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:descent_tensho");
+advanceTicks(20, "descent-tensho");
+noNewErrors("Descent Tenshō executa limpo", mark);
+check(
+  "200 de dano em quem está perto do impacto",
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 200),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV"))
+);
+check(
+  "quem está longe não leva",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "LongeDoBaque")
+);
+longeDoBaque.kill();
+
+scenario("Super Nuke Tenshou: dobro da velocidade do Nuke");
+mark = errors.length;
+vizard.teleport({ x: 5300, y: 64, z: 5300 });
+vizard._view = { x: 1, y: 0, z: 0 };
+alvoV.teleport({ x: 5312, y: 64, z: 5300 });
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:super_nuke");
+// 12 blocos a speed 6 = chega em 2 ticks; o Nuke original levaria 4
+advanceTicks(3, "super-nuke-rapido");
+noNewErrors("Super Nuke executa limpo", mark);
+check(
+  "600 de dano e já chega em 3 ticks (velocidade 6)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 600),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV"))
+);
+
+scenario("Hollowficação: primeira fase");
+mark = errors.length;
+vizard.teleport({ x: 5000, y: 64, z: 5000 });
+vizard.setDynamicProperty(DP.awakening, 100);
+setVirtualHp(vizard, 600);
+vizard.isSneaking = true;
+useItem(vizard, "vizard:m1_bankai");
+vizard.isSneaking = false;
+advanceTicks(20, "hollowficacao");
+noNewErrors("Hollowficação sem erro", mark);
+check("awakened = true", vizard.getDynamicProperty(DP.awakened) === true);
+check("ainda NÃO é a segunda fase", !vizard.getDynamicProperty("mv:true_form"));
+check("speed 5 (amplifier 4)", vizard.getEffect("speed")?.amplifier === 4, `${vizard.getEffect("speed")?.amplifier}`);
+check("vida maxima segue 1500", virtualMax(vizard) === 1500, `${virtualMax(vizard)}`);
+// "cada awk recupera toda vida ao ser ativada"
+check(
+  "cura tudo ao ativar, mesmo sem mudar o teto",
+  Math.round(virtualHp(vizard)) === 1500,
+  `${virtualHp(vizard)}`
+);
+check(
+  "veste o peitoral que troca a skin",
+  vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId ===
+    "vizard:hollow_chest",
+  String(vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId)
+);
+
+scenario("Hollowficação: getsuga maior e cura de 30 a cada 5s");
+mark = errors.length;
+vizard.teleport({ x: 5400, y: 64, z: 5400 });
+vizard._view = { x: 1, y: 0, z: 0 };
+// fora do alcance do getsuga normal (raio 3.4), dentro do aumentado (x1.6)
+const naBordaViz = createDummy("NaBorda", { x: 5408, y: 64, z: 5404.6 }, 500000);
+advanceTicks(600, "cooldown-getsuga-barrage"); // a Barrage ainda estava recarregando
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:getsuga_barrage");
+advanceTicks(90, "getsuga-maior");
+noNewErrors("getsuga aumentado executa limpo", mark);
+check(
+  "o getsuga aumentado alcança quem estava fora do raio normal",
+  log.damages.slice(dmgBefore).some((d) => d.target === "NaBorda"),
+  JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.target))
+);
+naBordaViz.kill();
+
+setVirtualHp(vizard, 500);
+let curaAlinhadaV = false;
+for (let i = 0; i < 8 && !curaAlinhadaV; i++) {
+  advanceTicks(20, "alinhar-cura-vizard");
+  if (Math.round(virtualHp(vizard)) > 500) curaAlinhadaV = true;
+}
+check("a cura em bloco cai", curaAlinhadaV);
+setVirtualHp(vizard, 500);
+advanceTicks(80, "quase-5s");
+check("não cura antes dos 5s", Math.round(virtualHp(vizard)) === 500, `${virtualHp(vizard)}`);
+advanceTicks(40, "5s");
+check("cura 30 aos 5s", Math.round(virtualHp(vizard)) === 530, `${virtualHp(vizard)}`);
+
+scenario("TRUE AWAKENING: Vasto Lorde aos 100 de vida");
+mark = errors.length;
+const msgsBeforeVL = log.worldMessages.length;
+const titlesBeforeVL = log.titles.length;
+setVirtualHp(vizard, 90); // abaixo do limite de 100
+advanceTicks(20, "vasto-lorde");
+noNewErrors("a ascensão executa limpo", mark);
+check("virou a segunda fase", vizard.getDynamicProperty("mv:true_form") === true);
+check("vida maxima 3000", virtualMax(vizard) === 3000, `${virtualMax(vizard)}`);
+check(
+  "e recupera toda a vida ao ascender",
+  Math.round(virtualHp(vizard)) === 3000,
+  `${virtualHp(vizard)}`
+);
+check("speed 6 (amplifier 5)", vizard.getEffect("speed")?.amplifier === 5, `${vizard.getEffect("speed")?.amplifier}`);
+check(
+  "manda AHHHHHHH como title pra TODOS os players",
+  log.titles.slice(titlesBeforeVL).filter((t) => t.title.includes("AHHHHHHH")).length >=
+    world.getPlayers().length - 1,
+  `${log.titles.slice(titlesBeforeVL).filter((t) => t.title.includes("AHHHHHHH")).length} titles`
+);
+check(
+  "com o rugido do ender dragon",
+  log.sounds.some((s) => s.soundId === "mob.enderdragon.growl")
+);
+check(
+  "4 skills novas + m1 do Vasto Lorde",
+  JSON.stringify(slotIds(vizard, 5)) ===
+    JSON.stringify([
+      "vizard:m1_vasto",
+      "vizard:whites_showdown",
+      "vizard:bullet_hell",
+      "vizard:everything_but_the_rain",
+      "vizard:grito_del_diablo",
+    ]),
+  JSON.stringify(slotIds(vizard, 5))
+);
+
+scenario("Vasto Lorde: m1 de 90 com hit explosivo");
+mark = errors.length;
+vizard.teleport({ x: 5500, y: 64, z: 5500 });
+alvoV.teleport({ x: 5502, y: 64, z: 5500 });
+const respingo = createDummy("Respingo", { x: 5503.5, y: 64, z: 5500 }, 500000);
+dmgBefore = log.damages.length;
+hitWith(vizard, alvoV, "vizard:m1_vasto");
+advanceTicks(2, "m1-vasto");
+noNewErrors("o m1 explosivo executa limpo", mark);
+check(
+  "90 no alvo",
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 90)
+);
+check(
+  "e o estouro pega quem está do lado",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Respingo" && d.amount === 40),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Respingo"))
+);
+respingo.kill();
+
+scenario("White's Showdown: teleporta, enterra e solta ondas");
+mark = errors.length;
+vizard.teleport({ x: 5600, y: 64, z: 5600 });
+const socado = createPlayer("Socado", { x: 5620, y: 64, z: 5600 });
+emit("playerSpawn", { player: socado, initialSpawn: true });
+advanceTicks(20, "spawn-socado");
+await pickCharacter(socado, "yammy");
+advanceTicks(20, "ativar-socado");
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:whites_showdown");
+advanceTicks(30, "whites-showdown");
+noNewErrors("White's Showdown executa limpo", mark);
+check(
+  "teleporta em cima do alvo",
+  Math.abs(vizard.location.x - 5620) < 3,
+  `x=${vizard.location.x.toFixed(1)}`
+);
+check("enterra o alvo dois blocos abaixo", socado.location.y <= 62, `y=${socado.location.y}`);
+const ondas = log.damages.slice(dmgBefore).filter((d) => d.target === "Socado");
+check(
+  "e solta várias ondas de choque",
+  ondas.length >= 3,
+  `${ondas.length} ondas`
+);
+
+scenario("Bullet Hell: ceros por 10s com estouro em área");
+mark = errors.length;
+vizard.teleport({ x: 5700, y: 64, z: 5700 });
+vizard._view = { x: 1, y: 0, z: 0 };
+alvoV.teleport({ x: 5712, y: 64, z: 5700 });
+// fora do cero, mas dentro do estouro (raio 9)
+const naExplosao = createDummy("NaExplosao", { x: 5712, y: 64, z: 5706 }, 500000);
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:bullet_hell");
+advanceTicks(60, "bullet-hell");
+noNewErrors("Bullet Hell executa limpo", mark);
+check(
+  "os ceros acertam de 75",
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 75)
+);
+check(
+  "e o estouro pega quem está fora do cero",
+  log.damages.slice(dmgBefore).some((d) => d.target === "NaExplosao" && d.amount === 75),
+  JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "NaExplosao"))
+);
+mark = errors.length;
+advanceTicks(200, "bullet-hell-fim");
+noNewErrors("Bullet Hell roda os 10s sem erro", mark);
+dmgBefore = log.damages.length;
+advanceTicks(60, "bullet-hell-parou");
+check("para sozinho", !log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV"));
+naExplosao.kill();
+
+scenario("Everything But the Rain: chuva de ceros");
+mark = errors.length;
+vizard.teleport({ x: 5800, y: 64, z: 5800 });
+alvoV.teleport({ x: 5802, y: 64, z: 5800 });
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:everything_but_the_rain");
+advanceTicks(260, "chuva-de-cero");
+noNewErrors("Everything But the Rain executa limpo", mark);
+const pingos = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV" && d.amount === 20);
+check(
+  "vários pingos de 20 caem do céu",
+  pingos.length >= 4,
+  `${pingos.length} pingos`
+);
+mark = errors.length;
+advanceTicks(200, "chuva-fim");
+noNewErrors("a chuva acaba sozinha", mark);
+
+scenario("Grito del Diablo: 10 por tick por 10s, alcance absurdo");
+mark = errors.length;
+vizard.teleport({ x: 5900, y: 64, z: 5900 });
+// 35 blocos de distância: dentro do raio 45
+const bemLongeViz = createDummy("BemLonge", { x: 5935, y: 64, z: 5900 }, 500000);
+alvoV.teleport({ x: 6200, y: 64, z: 6200 }); // fora do alcance
+dmgBefore = log.damages.length;
+useItem(vizard, "vizard:grito_del_diablo");
+advanceTicks(210, "grito");
+noNewErrors("Grito del Diablo executa limpo", mark);
+const grito = log.damages.slice(dmgBefore).filter((d) => d.target === "BemLonge");
+check(
+  "10 por tick durante 10 segundos (200 ticks)",
+  grito.length === 200 && grito.every((d) => d.amount === 10),
+  `${grito.length} ticks de ${JSON.stringify([...new Set(grito.map((d) => d.amount))])}`
+);
+check(
+  "quem está a 300 blocos não leva",
+  !log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV")
+);
+dmgBefore = log.damages.length;
+advanceTicks(60, "grito-acabou");
+check("para sozinho", !log.damages.slice(dmgBefore).some((d) => d.target === "BemLonge"));
+bemLongeViz.kill();
+
+scenario("Vasto Lorde: o dash vira teleporte no alvo");
+mark = errors.length;
+// o awakening dura 100s e ja drenou nos testes acima: volta pra forma pra medir
+vizard.setDynamicProperty(DP.awakening, 100);
+vizard.isSneaking = true;
+useItem(vizard, "vizard:m1_bankai");
+vizard.isSneaking = false;
+advanceTicks(20, "re-hollowficar");
+setVirtualHp(vizard, 90);
+advanceTicks(20, "re-ascender");
+check("de volta no Vasto Lorde", vizard.getDynamicProperty("mv:true_form") === true);
+
+vizard.teleport({ x: 6000, y: 64, z: 6000 });
+socado.teleport({ x: 6025, y: 64, z: 6000 });
+vizard.setDynamicProperty("mv:cd_dash", undefined);
+const kbAntesDoDash = log.knockbacks.length;
+vizard.isSneaking = false;
+advanceTicks(4, "reset-dash-vl");
+vizard._velocity = { x: 0, y: 0.5, z: 0 };
+vizard.isSneaking = true;
+advanceTicks(4, "dash-vl");
+noNewErrors("o dash-teleporte executa limpo", mark);
+check(
+  "aparece em cima do alvo em vez de avançar",
+  Math.abs(vizard.location.x - 6025) < 3,
+  `x=${vizard.location.x.toFixed(1)}`
+);
+check(
+  "e não usa knockback",
+  !log.knockbacks.slice(kbAntesDoDash).some((k) => k.target === "VizardPlayer")
+);
+vizard.isSneaking = false;
+
+scenario("Fim do awakening do Vizard");
+mark = errors.length;
+vizard.setDynamicProperty(DP.awakening, 2);
+advanceTicks(90, "drenar-vizard");
+noNewErrors("reversão sem erro", mark);
+check("awakened = false", vizard.getDynamicProperty(DP.awakened) === false);
+check("segunda fase limpa", !vizard.getDynamicProperty("mv:true_form"));
+check("vida maxima volta pra 1500", virtualMax(vizard) === 1500, `${virtualMax(vizard)}`);
+check(
+  "o peitoral sai (a skin volta ao normal)",
+  !vizard.getComponent("minecraft:equippable").getEquipment("Chest"),
+  String(vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId)
+);
+check(
+  "itens base restaurados",
+  inv(vizard).getItem(0)?.typeId === "vizard:m1_bankai",
+  String(inv(vizard).getItem(0)?.typeId)
+);
+alvoV.kill();
 
 /* ================= dash universal ================= */
 

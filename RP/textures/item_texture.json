@@ -280,6 +280,39 @@
     },
     "szayel:gabriel": {
       "textures": "textures/items/szayel_gabriel"
+    },
+    "vizard:m1_bankai": {
+      "textures": "textures/items/vizard_m1_bankai"
+    },
+    "vizard:dash_n_slash": {
+      "textures": "textures/items/vizard_dash_n_slash"
+    },
+    "vizard:getsuga_barrage": {
+      "textures": "textures/items/vizard_getsuga_barrage"
+    },
+    "vizard:descent_tensho": {
+      "textures": "textures/items/vizard_descent_tensho"
+    },
+    "vizard:super_nuke": {
+      "textures": "textures/items/vizard_super_nuke"
+    },
+    "vizard:m1_vasto": {
+      "textures": "textures/items/vizard_m1_vasto"
+    },
+    "vizard:whites_showdown": {
+      "textures": "textures/items/vizard_whites_showdown"
+    },
+    "vizard:bullet_hell": {
+      "textures": "textures/items/vizard_bullet_hell"
+    },
+    "vizard:everything_but_the_rain": {
+      "textures": "textures/items/vizard_everything_but_the_rain"
+    },
+    "vizard:grito_del_diablo": {
+      "textures": "textures/items/vizard_grito_del_diablo"
+    },
+    "vizard:hollow_chest": {
+      "textures": "textures/items/vizard_hollow_chest"
     }
   }
 }

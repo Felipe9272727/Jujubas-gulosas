@@ -21,6 +21,7 @@ export const log = {
   teleports: [],
   blocks: [],
   rejectedEquipment: [],
+  animations: [],
   cameras: [],
 };
 
@@ -481,6 +482,15 @@ export class Entity {
     if (typeof verticalStrength !== "number") {
       throw new Error("applyKnockback: verticalStrength precisa ser numero");
     }
+    return true;
+  }
+
+  playAnimation(animationName, options) {
+    this._assertValid();
+    if (typeof animationName !== "string" || !animationName.startsWith("animation.")) {
+      throw new Error(`playAnimation com nome invalido: ${animationName}`);
+    }
+    log.animations.push({ target: this.name, animationName, options });
     return true;
   }
 

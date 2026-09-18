@@ -253,11 +253,12 @@ if player_entity.exists():
                 f"na description (achei: {engine!r}) - sem isso a skin de persona quebra"
             )
 
+main_js_text = (BP / "scripts" / "main.js").read_text(encoding="utf-8")
+
 # ------------------------------- vidas que o Bedrock nao consegue representar
 # health_boost anda de 4 em 4 a partir de 20, entao todo teto de vida e 20+4k.
 # Uma vida fora dessa grade e arredondada PRA CIMA e o personagem fica com 1 a 3
 # de vida a mais do que o configurado.
-main_js_text = (BP / "scripts" / "main.js").read_text(encoding="utf-8")
 for raw in sorted(set(re.findall(r"health:\s*(\d+)", main_js_text)), key=int):
     configured = int(raw)
     if (configured - 20) % 4 == 0:
@@ -287,6 +288,72 @@ for marker in sorted(set(re.findall(r'offhandMarker:\s*"([^"]+)"', main_js_text)
         )
     else:
         notes.append(f"marcador de offhand ok: {marker}")
+
+# ------------------------------------------------- attachables e animacoes
+# Um attachable quebrado nao da erro no jogo: ele simplesmente nao aparece.
+geometry_ids = set()
+for path in sorted(RP.glob("models/entity/*.json")):
+    data = parsed.get(path)
+    if not data:
+        continue
+    for geo in data.get("minecraft:geometry", []):
+        identifier = geo.get("description", {}).get("identifier")
+        if identifier:
+            geometry_ids.add(identifier)
+
+declared_controllers = set()
+for path in sorted(RP.glob("render_controllers/*.json")):
+    data = parsed.get(path)
+    if data:
+        declared_controllers |= set(data.get("render_controllers", {}))
+
+for path in sorted(RP.glob("attachables/*.json")):
+    data = parsed.get(path)
+    if not data:
+        continue
+    description = data.get("minecraft:attachable", {}).get("description", {})
+    identifier = description.get("identifier")
+    if not identifier:
+        fail(f"{path.relative_to(ROOT)} nao declara um identifier")
+        continue
+    # o attachable se amarra num ITEM: sem o item ele nunca e vestido
+    if identifier not in bp_items:
+        fail(f"o attachable '{identifier}' nao tem BP/items/*.json correspondente")
+    for name, tex in description.get("textures", {}).items():
+        if tex.startswith("textures/misc/"):
+            continue  # textura vanilla (glint)
+        if not (RP / f"{tex}.png").exists():
+            fail(f"o attachable '{identifier}' aponta pra textura inexistente: {tex}.png")
+    for name, geo in description.get("geometry", {}).items():
+        if geo not in geometry_ids:
+            fail(
+                f"o attachable '{identifier}' usa a geometria '{geo}' mas ela nao "
+                f"esta em RP/models/entity"
+            )
+    for controller in description.get("render_controllers", []):
+        cname = controller if isinstance(controller, str) else next(iter(controller))
+        if cname not in declared_controllers:
+            fail(
+                f"o attachable '{identifier}' usa o render controller '{cname}' "
+                f"mas ele nao esta em RP/render_controllers"
+            )
+    notes.append(f"attachable ok: {identifier}")
+
+# animacao citada pelo script tem que existir de verdade no RP
+animation_ids = set()
+for path in sorted(RP.glob("animations/*.json")):
+    data = parsed.get(path)
+    if data:
+        animation_ids |= set(data.get("animations", {}))
+
+for animation in sorted(set(re.findall(r'"(animation\.[a-z0-9_.]+)"', main_js_text))):
+    if animation not in animation_ids:
+        fail(
+            f"main.js toca a animacao '{animation}' mas ela nao esta definida "
+            f"em RP/animations"
+        )
+if animation_ids:
+    notes.append(f"animacoes: {', '.join(sorted(animation_ids))}")
 
 # ---------------------------------------------------------------- particulas
 particle_ids = set()

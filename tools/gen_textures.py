@@ -24,7 +24,33 @@ ROOT = Path(__file__).resolve().parent.parent
 RP_TEXTURES = ROOT / "RP" / "textures"
 
 
+def render_rects(spec: dict) -> Image.Image:
+    """Textura descrita por retangulos em vez de grid de caracteres.
+
+    Um grid serve pra icone 16x16; uma skin 64x64 viraria 64 linhas de 64
+    caracteres, ilegivel e impossivel de revisar. Aqui cada entrada e
+    [x, y, largura, altura, cor] e a paleta continua sendo char -> RGBA.
+    """
+    width, height = spec["size"]
+    palette = spec["palette"]
+
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    px = img.load()
+    for x0, y0, w, h, key in spec["rects"]:
+        if key not in palette:
+            raise ValueError(f"cor '{key}' nao esta na paleta")
+        color = palette[key]
+        for y in range(y0, y0 + h):
+            for x in range(x0, x0 + w):
+                if 0 <= x < width and 0 <= y < height:
+                    px[x, y] = color
+    return img
+
+
 def render(spec: dict) -> Image.Image:
+    if "rects" in spec:
+        return render_rects(spec)
+
     grid = spec["grid"]
     palette = spec["palette"]
 
@@ -46,6 +72,9 @@ def render(spec: dict) -> Image.Image:
 
 
 def scale_for(name: str) -> int:
+    # skin/geometria de entidade tem tamanho fixo: upscalar quebraria o UV
+    if name.startswith("entity/"):
+        return 1
     return PARTICLE_SCALE if name.startswith("particle/") else ITEM_SCALE
 
 

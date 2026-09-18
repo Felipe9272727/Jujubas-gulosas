@@ -38,6 +38,7 @@ const DP = {
   armCut: "mv:cut_arm",
   heartCut: "mv:cut_heart",
   gabrielArmed: "mv:gabriel_armed", // Gabriel esperando marcar um hospedeiro
+  trueForm: "mv:true_form", // segunda fase do awakening (Vasto Lorde)
 };
 
 const BASE_SPEED_AMPLIFIER = 1; // speed 2 pra todo personagem
@@ -409,6 +410,56 @@ const CHARACTERS = {
       },
     },
   },
+  ichigo_vizard: {
+    id: "ichigo_vizard",
+    name: "Ichigo (pós-treino Vizard)",
+    health: 1500,
+    items: {
+      0: "vizard:m1_bankai",
+      1: "vizard:dash_n_slash",
+      2: "vizard:getsuga_barrage",
+      3: "vizard:descent_tensho",
+      4: "vizard:super_nuke",
+    },
+    awakening: {
+      name: "Hollowficação",
+      triggerItem: "vizard:m1_bankai",
+      // a Hollowficação nao muda o teto de vida: ela muda velocidade, cura e o
+      // tamanho dos getsugas. Mas cura tudo ao ativar, como o pedido pede.
+      speedAmplifier: 4, // speed 5
+      healOnActivate: true,
+      healPerInterval: { amount: 30, ticks: 100 }, // 30 a cada 5s
+      waveScale: 1.6, // getsugas maiores
+      armorPiece: "vizard:hollow_chest", // peitoral que troca a skin
+      castAnimation: "animation.vizard.cast",
+      onActivate: "battlecry",
+      chatLine: "Não me subestime.",
+      cryParticle: "vizard:cero",
+      cryPitch: 0.7,
+      // Segunda fase: dispara sozinha quando a vida cai ate o limite.
+      trueForm: {
+        name: "TRUE AWAKENING: Vasto Lorde",
+        healthThreshold: 100,
+        health: 3000,
+        speedAmplifier: 5, // speed 6
+        healOnActivate: true,
+        healPerInterval: { amount: 300, ticks: 160 }, // 300 a cada 8s
+        waveScale: 2.2,
+        dashTeleports: true, // o dash vira teleporte no alvo
+        armorPiece: "vizard:hollow_chest",
+        castAnimation: "animation.vizard.cast",
+        titleForAll: "AHHHHHHH",
+        titleSound: "mob.enderdragon.growl",
+        items: {
+          0: "vizard:m1_vasto",
+          1: "vizard:whites_showdown",
+          2: "vizard:bullet_hell",
+          3: "vizard:everything_but_the_rain",
+          4: "vizard:grito_del_diablo",
+        },
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -420,7 +471,10 @@ const BYAKUYA_ALT_WEAPONS = [
 // itens da persona Lilynette do Starkk (so existem no registro "items" quando
 // a persona esta ativa, entao precisam de registro proprio pro ITEM_OWNER)
 // itens que nao ficam em slot de hotbar mas precisam de dono (pra nao serem dropados)
-const EXTRA_OWNED_ITEMS = { "yammy:ira_marker": "yammy" };
+const EXTRA_OWNED_ITEMS = {
+  "yammy:ira_marker": "yammy",
+  "vizard:hollow_chest": "ichigo_vizard",
+};
 
 const STARKK_ALT_WEAPONS = [
   "starkk:lilynette_shot",
@@ -448,6 +502,7 @@ const ARCS = [
       "harribel",
       "barragan",
       "szayelaporro",
+      "ichigo_vizard",
     ],
   },
 ];
@@ -672,11 +727,19 @@ const SKILL_COOLDOWN_TICKS = {
   "barragan:la_muerte": 2400, // 2 min - nao especificado
   "szayel:rush_and_pierce": 340, // 17s
   "szayel:ascendent_cut": 300, // 15s
-  "szayel:carbon_copy": 500, // 25s
-  "szayel:learn_and_adapt": 600, // 30s
-  "szayel:teatro_de_titeres": 400, // 20s - mas e uso unico por awakening
-  "szayel:posse": 500, // 25s
-  "szayel:gabriel": 500, // 25s
+  "szayel:carbon_copy": 700, // 35s
+  "szayel:learn_and_adapt": 900, // 45s
+  "szayel:teatro_de_titeres": 700, // 35s - e ainda por cima uso unico por awakening
+  "szayel:posse": 800, // 40s
+  "szayel:gabriel": 900, // 45s
+  "vizard:dash_n_slash": 400, // 20s
+  "vizard:getsuga_barrage": 600, // 30s
+  "vizard:descent_tensho": 300, // 15s
+  "vizard:super_nuke": 900, // 45s
+  "vizard:whites_showdown": 400, // 20s
+  "vizard:bullet_hell": 600, // 30s
+  "vizard:everything_but_the_rain": 800, // 40s
+  "vizard:grito_del_diablo": 3600, // 3 min
 };
 
 const SKILL_NAMES = {
@@ -750,6 +813,14 @@ const SKILL_NAMES = {
   "szayel:teatro_de_titeres": "Teatro de Títeres",
   "szayel:posse": "Posse",
   "szayel:gabriel": "Gabriel",
+  "vizard:dash_n_slash": "Dash 'n Slash",
+  "vizard:getsuga_barrage": "Getsuga Barrage",
+  "vizard:descent_tensho": "Descent Tenshō!",
+  "vizard:super_nuke": "Super Nuke Tenshou",
+  "vizard:whites_showdown": "White's Showdown",
+  "vizard:bullet_hell": "Bullet Hell",
+  "vizard:everything_but_the_rain": "Everything But the Rain",
+  "vizard:grito_del_diablo": "Grito del Diablo",
 };
 
 // dano aumentado
@@ -844,6 +915,19 @@ const DAMAGE = {
   // Resurreccion: Fornicaras
   fornicarasM1: 22,
   posseHit: 20, // por investida da entidade domada - nao especificado
+  // Ichigo (pos-treino Vizard)
+  vizardM1: 40,
+  dashNSlashTick: 20, // por tick de avanco
+  vizardBarrage: 100, // por getsuga, sao 6
+  descentTensho: 200,
+  superNuke: 600,
+  // TRUE AWAKENING: Vasto Lorde
+  vastoM1: 90,
+  vastoM1Blast: 40, // respingo do hit explosivo - nao especificado
+  whitesShowdown: 150, // por onda de choque (4 ondas = 600) - nao especificado
+  bulletHell: 75, // por cero
+  ceroRain: 20, // por pingo de cero
+  gritoDiabloTick: 10, // por tick, por 10s
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -854,6 +938,7 @@ const SLAM_RADIUS = 4.5; // area de dano aumentada
 const DASH_COOLDOWN_TICKS = 80; // 4s
 const DASH_HORIZONTAL_STRENGTH = 6.5; // impulso bem maior
 const DASH_VERTICAL_STRENGTH = 0.25;
+const DASH_TELEPORT_RANGE = 40; // alcance do dash-teleporte do Vasto Lorde
 
 // Zaraki Kenpachi
 const FLASH_SLASH = {
@@ -1027,6 +1112,59 @@ const VORTICE = {
   minOrbit: 2.5, // quem esta no olho do vortice e jogado pra fora pra girar
 };
 const MALDITA_AGUA = { range: 30, tickInterval: 20 }; // 20 por segundo, sem prazo
+
+// Ichigo (pos-treino Vizard)
+const DASH_N_SLASH = {
+  dashes: 6,
+  ticksPerDash: 4,
+  distancePerTick: 0.9,
+  forward: 4.5,
+  width: 4,
+  verticalReach: 3,
+};
+const VIZARD_BARRAGE = {
+  shots: 6,
+  gapTicks: 10,
+  radius: 3.4,
+  thickness: 1.4,
+  range: 26,
+  speed: 2.4,
+};
+const DESCENT_TENSHO = { travel: 12, steps: 8, blastRadius: 12 };
+// "dobro da velocidade" do Nuke Tenshou original (speed 3)
+const SUPER_NUKE = { radius: 5.4, thickness: 2.7, range: 34, speed: 6, rows: 18 };
+// TRUE AWAKENING: Vasto Lorde
+const WHITES_SHOWDOWN = {
+  searchRadius: 40,
+  behind: 1.4,
+  rings: 4,
+  ringGapTicks: 6,
+  maxRadius: 14,
+  buryDepth: 2, // dois blocos abaixo, como o pedido pede
+  buryTicks: 40,
+};
+const BULLET_HELL = {
+  durationTicks: 200, // 10s cuspindo cero
+  gapTicks: 12,
+  radius: 2.4,
+  range: 34,
+  speed: 1.8,
+  blastRadius: 9, // "area BEM GRANDE"
+};
+const CERO_RAIN = {
+  skyHeight: 34,
+  drops: 60,
+  gapTicks: 3,
+  spreadRadius: 14,
+  fallSpeed: 2.4,
+  hitRadius: 2.6,
+  // metade dos pingos cai perto de alguem em vez de num ponto qualquer: sem
+  // isso 60 pingos espalhados num raio grande acertam ~1 vez e a skill nao faz
+  // nada, que nao e o que "sao varios entao tudo bem" quer dizer
+  aimedShare: 0.5,
+  aimScatter: 3,
+};
+const GRITO_DIABLO = { radius: 45, durationTicks: 200 }; // alcance absurdo, 10s
 
 // Szayelaporro Granz
 const RUSH_AND_PIERCE = { searchRadius: 24, steps: 10, hitRadius: 2.6 };
@@ -1281,6 +1419,24 @@ function applyCharacterEffects(
   }
 }
 
+function isTrueForm(player) {
+  try {
+    return !!player.getDynamicProperty(DP.trueForm);
+  } catch (e) {
+    return false;
+  }
+}
+
+// Forma ativa do personagem. A segunda fase (o Vasto Lorde do Ichigo Vizard)
+// ganha da primeira, que ganha da forma base. TUDO que precisa saber "qual forma
+// esta valendo agora" passa por aqui, senao cada lugar decide diferente.
+function activeFormOf(player, character = getActiveCharacter(player)) {
+  if (!character || !character.awakening || !isAwakened(player)) return undefined;
+  const form = character.awakening;
+  if (form.trueForm && isTrueForm(player)) return form.trueForm;
+  return form;
+}
+
 // Reaplica os efeitos permanentes da forma atual. Um buff temporario (o Disparo
 // de La Pantera, por exemplo) SOBRESCREVE o efeito permanente em vez de somar,
 // entao quando ele acaba o player ficaria sem nada se ninguem reaplicasse.
@@ -1288,7 +1444,7 @@ function reapplyFormEffects(player) {
   const character = getActiveCharacter(player);
   if (!character) return;
 
-  const form = isAwakened(player) ? character.awakening : undefined;
+  const form = activeFormOf(player, character);
   applyCharacterEffects(
     player,
     form?.health ?? character.health,
@@ -1337,6 +1493,28 @@ function setOffhandMarker(player, itemId) {
   }
 }
 
+// Peitoral da forma: e ele que troca a skin do player no cliente (o RP tem um
+// attachable com a geometria e a textura do Ichigo hollowficado amarrados nesse
+// item). Sem ele a forma acontece so nos numeros.
+function equipArmorPiece(player, itemId) {
+  try {
+    const equip = player.getComponent("minecraft:equippable");
+    if (!equip) return;
+    const current = equip.getEquipment(EquipmentSlot.Chest);
+    if (current?.typeId === itemId) return;
+    equip.setEquipment(EquipmentSlot.Chest, new ItemStack(itemId, 1));
+  } catch (e) {}
+}
+
+function clearArmorPiece(player, itemId) {
+  try {
+    const equip = player.getComponent("minecraft:equippable");
+    if (!equip) return;
+    if (equip.getEquipment(EquipmentSlot.Chest)?.typeId !== itemId) return;
+    equip.setEquipment(EquipmentSlot.Chest, undefined);
+  } catch (e) {}
+}
+
 // tira os efeitos permanentes que so existiam na forma desperta
 function clearFormExtras(player, form) {
   for (const extra of form?.extraEffects ?? []) {
@@ -1345,6 +1523,9 @@ function clearFormExtras(player, form) {
     } catch (e) {}
   }
   if (form?.offhandMarker) setOffhandMarker(player, undefined);
+  // a peca pode ter vindo da primeira OU da segunda fase
+  if (form?.armorPiece) clearArmorPiece(player, form.armorPiece);
+  if (form?.trueForm?.armorPiece) clearArmorPiece(player, form.trueForm.armorPiece);
   disableTallView(player);
 }
 
@@ -1666,11 +1847,12 @@ function toggleStarkkForm(player) {
 
 // decide quais itens devem estar travados nos slots do player nesse momento
 function getActiveItemsForPlayer(player, character) {
-  if (character.awakening && isAwakened(player)) {
-    if (character.awakening.altForm && getStarkkForm(player) === "lilynette") {
-      return character.awakening.altForm.items;
+  const form = activeFormOf(player, character);
+  if (form) {
+    if (form.altForm && getStarkkForm(player) === "lilynette") {
+      return form.altForm.items;
     }
-    return character.awakening.items ?? character.items;
+    return form.items ?? character.items;
   }
   if (character.superAttack) {
     const weaponState = getByakuyaWeaponState(player);
@@ -1743,6 +1925,7 @@ function deactivateCharacter(player) {
   player.setDynamicProperty(DP.markedEnd, 0);
   player.setDynamicProperty(DP.character, undefined);
   player.setDynamicProperty(DP.awakened, false);
+  player.setDynamicProperty(DP.trueForm, false);
   player.setDynamicProperty(DP.awakening, 0);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
   player.setDynamicProperty(DP.starkkForm, "starkk");
@@ -1778,6 +1961,8 @@ function activateAwakening(player, character) {
   const items = form.items ?? character.items;
 
   player.setDynamicProperty(DP.awakened, true);
+  // toda ativacao entra pela PRIMEIRA fase; a segunda so vem pelo gatilho dela
+  player.setDynamicProperty(DP.trueForm, false);
   // o Teatro de Títeres e uso unico por Resurreccion, entao o crédito volta aqui
   player.setDynamicProperty(DP.teatroUsed, false);
   applyCharacterEffects(
@@ -1794,9 +1979,10 @@ function activateAwakening(player, character) {
   }
 
   // a cura existe pra encher o teto novo de vida (caso do Bankai). Um awakening
-  // que mantem o teto nao pode virar cura de graca.
-  if (health > character.health) {
-    system.runTimeout(() => healToMax(player, health), 2);
+  // que mantem o teto nao pode virar cura de graca - a menos que a forma peca
+  // isso de proposito (healOnActivate), que e o caso das do Ichigo Vizard.
+  if (form.healOnActivate || health > character.health) {
+    system.runTimeout(() => healToMax(player, cutHealthFor(player, health)), 2);
   }
 
   world.sendMessage(`§d§l${player.name} despertou: ${form.name}!`);
@@ -1804,6 +1990,8 @@ function activateAwakening(player, character) {
 
   // o marcador da offhand e o que faz o modelo ficar gigante no cliente
   if (form.offhandMarker) setOffhandMarker(player, form.offhandMarker);
+  // e o peitoral e o que troca a skin
+  if (form.armorPiece) equipArmorPiece(player, form.armorPiece);
 
   switch (form.onActivate) {
     case "pressure":
@@ -1828,6 +2016,7 @@ function revertAwakening(player, reason) {
   const previousHealth = hpBefore ? hpBefore.currentValue : character.health;
 
   player.setDynamicProperty(DP.awakened, false);
+  player.setDynamicProperty(DP.trueForm, false);
   player.setDynamicProperty(DP.starkkForm, "starkk");
   clearFormExtras(player, character.awakening);
   applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
@@ -2372,6 +2561,30 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "szayel:gabriel":
       castGabriel(player);
       break;
+    case "vizard:dash_n_slash":
+      castDashNSlash(player);
+      break;
+    case "vizard:getsuga_barrage":
+      castVizardBarrage(player);
+      break;
+    case "vizard:descent_tensho":
+      castDescentTensho(player);
+      break;
+    case "vizard:super_nuke":
+      castSuperNuke(player);
+      break;
+    case "vizard:whites_showdown":
+      castWhitesShowdown(player);
+      break;
+    case "vizard:bullet_hell":
+      castBulletHell(player);
+      break;
+    case "vizard:everything_but_the_rain":
+      castEverythingButTheRain(player);
+      break;
+    case "vizard:grito_del_diablo":
+      castGritoDelDiablo(player);
+      break;
   }
 });
 
@@ -2568,9 +2781,12 @@ function castGetsugaRun(player) {
 
 // funcao generica: dispara uma onda em formato de lua crescente pra frente
 function fireCrescentWave(player, options) {
+  // a Hollowficação aumenta o tamanho dos getsugas; quem nao tem waveScale
+  // continua com 1 e nada muda
+  const scale = activeFormOf(player)?.waveScale ?? 1;
   const {
-    radius,
-    thickness,
+    radius: baseRadius,
+    thickness: baseThickness,
     range,
     damage,
     speed = 2,
@@ -2580,6 +2796,9 @@ function fireCrescentWave(player, options) {
     // corte deitado: o arco abre pros lados em vez de pra cima e pra baixo
     horizontal = false,
   } = options;
+
+  const radius = baseRadius * scale;
+  const thickness = baseThickness * scale;
 
   const dim = player.dimension;
   const dir = forwardDirection(player);
@@ -3314,6 +3533,7 @@ function fireEnergySphere(player, options) {
     shellParticles = 22,
     direction,
     origin: customOrigin,
+    blast, // { radius, damage }: estoura em area ao acertar ou ao acabar
   } = options;
 
   const dim = player.dimension;
@@ -3326,6 +3546,7 @@ function fireEnergySphere(player, options) {
 
   let travelled = radius;
   let swallowed = false; // a Respira do Barragan comeu o projetil
+  let detonated = false; // cero com estouro ja abriu: nao abre duas vezes
   const hitEntities = new Set();
 
   const centerAt = (distance) => ({
@@ -3366,6 +3587,10 @@ function fireEnergySphere(player, options) {
       }
 
       dealDamage(entity, finalDamage, player);
+      if (blast) {
+        detonated = true;
+        detonateSphere(player, center, blast);
+      }
     }
   };
 
@@ -3389,14 +3614,34 @@ function fireEnergySphere(player, options) {
     const subSteps = Math.max(1, Math.ceil(speed / Math.max(0.5, radius)));
     for (let s = 1; s <= subSteps; s++) {
       hitAround(centerAt(travelled + (speed * s) / subSteps));
-      if (swallowed) break;
+      if (swallowed || detonated) break;
     }
 
     travelled += speed;
-    if (swallowed || travelled >= range) {
+    if (swallowed || detonated || travelled >= range) {
       system.clearRun(interval);
+      if (blast && !swallowed && !detonated) {
+        detonateSphere(player, centerAt(travelled), blast);
+      }
     }
   }, 1);
+}
+
+// estouro em area de um cero que tem `blast` configurado
+function detonateSphere(player, center, blast) {
+  try {
+    player.dimension.playSound("random.explode", center, { volume: 1.6, pitch: 0.7 });
+    for (let i = 0; i < 16; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = blast.radius * Math.sqrt(Math.random());
+      player.dimension.spawnParticle("minecraft:large_explosion", {
+        x: center.x + Math.cos(angle) * dist,
+        y: center.y + (Math.random() - 0.5) * 2,
+        z: center.z + Math.sin(angle) * dist,
+      });
+    }
+  } catch (e) {}
+  damageNearbyEntities(player, center, blast.radius, blast.damage);
 }
 
 // Corte reto desenhado na frente, cobrindo a mesma caixa que da dano.
@@ -6090,6 +6335,511 @@ function tryGabrielRebirth(player) {
 }
 
 /* ---------------------------------------------------------
+   Ichigo (pós-treino Vizard)
+   --------------------------------------------------------- */
+
+// toca a animacao de conjurar da forma atual, se ela tiver uma
+function playCastAnimation(player) {
+  const animation = activeFormOf(player)?.castAnimation;
+  if (!animation) return;
+  try {
+    player.playAnimation(animation);
+  } catch (e) {
+    // animacao ausente no RP nao pode derrubar a skill
+  }
+}
+
+function castDashNSlash(player) {
+  if (!tryUseSkill(player, "vizard:dash_n_slash")) return;
+
+  world.sendMessage(`§f${player.name} §7usou §fDash 'n Slash§7!`);
+  try {
+    player.dimension.playSound("mob.enderdragon.flap", player.location, {
+      volume: 1.1,
+      pitch: 1.8,
+    });
+  } catch (e) {}
+
+  const totalTicks = DASH_N_SLASH.dashes * DASH_N_SLASH.ticksPerDash;
+  let tick = 0;
+
+  const interval = system.runInterval(() => {
+    tick++;
+    // cada mini dash recomeca o rumo: e uma sequencia de avancos, nao um so
+    const restarting = tick % DASH_N_SLASH.ticksPerDash === 1;
+
+    try {
+      const dir = forwardDirection(player);
+      const from = player.location;
+      player.teleport(
+        {
+          x: from.x + dir.x * DASH_N_SLASH.distancePerTick,
+          y: from.y,
+          z: from.z + dir.z * DASH_N_SLASH.distancePerTick,
+        },
+        { keepVelocity: false }
+      );
+
+      drawSweep(player, DASH_N_SLASH, "minecraft:crit_particle", restarting);
+      if (restarting) {
+        playCastAnimation(player);
+        player.dimension.playSound("mob.enderdragon.flap", from, {
+          volume: 0.7,
+          pitch: 2,
+        });
+      }
+    } catch (e) {
+      system.clearRun(interval); // player saiu do mundo no meio da sequencia
+      return;
+    }
+
+    // 20 de dano POR TICK em quem estiver na frente
+    const finalDamage = DAMAGE.dashNSlashTick * dmgMultiplier(player);
+    for (const victim of entitiesInFrontBox(player, DASH_N_SLASH)) {
+      dealDamage(victim, finalDamage, player);
+    }
+
+    if (tick >= totalTicks) system.clearRun(interval);
+  }, 1);
+}
+
+function castVizardBarrage(player) {
+  if (!tryUseSkill(player, "vizard:getsuga_barrage")) return;
+
+  world.sendMessage(`§f${player.name}: §b§lGETSUGA BARRAGE!`);
+
+  for (let shot = 0; shot < VIZARD_BARRAGE.shots; shot++) {
+    system.runTimeout(() => {
+      try {
+        player.dimension.playSound("mob.wither.shoot", player.location, {
+          volume: 1.2,
+          pitch: 1.3,
+        });
+      } catch (e) {
+        return; // player saiu do mundo no meio da rajada
+      }
+      playCastAnimation(player);
+      fireCrescentWave(player, {
+        radius: VIZARD_BARRAGE.radius,
+        thickness: VIZARD_BARRAGE.thickness,
+        range: VIZARD_BARRAGE.range,
+        speed: VIZARD_BARRAGE.speed,
+        damage: DAMAGE.vizardBarrage,
+        particle: "vizard:cero",
+        burst: "minecraft:large_explosion",
+      });
+    }, shot * VIZARD_BARRAGE.gapTicks);
+  }
+}
+
+function castDescentTensho(player) {
+  if (!tryUseSkill(player, "vizard:descent_tensho")) return;
+
+  world.sendMessage(`§f${player.name}: §b§lDESCENT TENSHŌ!`);
+  playCastAnimation(player);
+
+  const dim = player.dimension;
+  const dir = forwardDirection(player);
+  const origin = player.location;
+
+  // o corte desce em direcao ao chao em vez de sair reto
+  let step = 0;
+  const interval = system.runInterval(() => {
+    step++;
+    const travelled = (DESCENT_TENSHO.travel * step) / DESCENT_TENSHO.steps;
+    const drop = (travelled / DESCENT_TENSHO.travel) * 3.5;
+    const point = {
+      x: origin.x + dir.x * travelled,
+      y: origin.y + 3 - drop,
+      z: origin.z + dir.z * travelled,
+    };
+
+    try {
+      for (let i = 0; i < 10; i++) {
+        dim.spawnParticle("vizard:cero", {
+          x: point.x + (Math.random() - 0.5) * 2.4,
+          y: point.y + (Math.random() - 0.5) * 1.4,
+          z: point.z + (Math.random() - 0.5) * 2.4,
+        });
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    if (step < DESCENT_TENSHO.steps) return;
+    system.clearRun(interval);
+
+    // estoura no chao numa area grande
+    const impact = { x: point.x, y: point.y, z: point.z };
+    try {
+      dim.playSound("random.explode", impact, { volume: 2, pitch: 0.6 });
+      for (let i = 0; i < 26; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = DESCENT_TENSHO.blastRadius * Math.sqrt(Math.random());
+        dim.spawnParticle("minecraft:large_explosion", {
+          x: impact.x + Math.cos(angle) * dist,
+          y: impact.y + Math.random() * 2,
+          z: impact.z + Math.sin(angle) * dist,
+        });
+      }
+    } catch (e) {}
+
+    damageNearbyEntities(player, impact, DESCENT_TENSHO.blastRadius, DAMAGE.descentTensho);
+  }, 1);
+}
+
+function castSuperNuke(player) {
+  if (!tryUseSkill(player, "vizard:super_nuke")) return;
+
+  world.sendMessage(`§4§l${player.name}: SUPER NUKE TENSHOU!!!`);
+  try {
+    player.dimension.playSound("mob.wither.death", player.location, {
+      volume: 2,
+      pitch: 0.25,
+    });
+  } catch (e) {}
+  playCastAnimation(player);
+
+  fireCrescentWave(player, {
+    radius: SUPER_NUKE.radius,
+    thickness: SUPER_NUKE.thickness,
+    range: SUPER_NUKE.range,
+    speed: SUPER_NUKE.speed, // dobro da velocidade do Nuke original
+    damage: DAMAGE.superNuke,
+    particle: "vizard:cero",
+    burst: "minecraft:large_explosion",
+    rows: SUPER_NUKE.rows,
+  });
+}
+
+/* ---------------------------------------------------------
+   TRUE AWAKENING: Vasto Lorde
+   --------------------------------------------------------- */
+
+function castWhitesShowdown(player) {
+  const victim = nearestPlayer(player, WHITES_SHOWDOWN.searchRadius);
+  if (!victim) {
+    player.sendMessage("§7Não tem nenhum player por perto.");
+    return;
+  }
+  if (!tryUseSkill(player, "vizard:whites_showdown")) return;
+
+  world.sendMessage(`§f§l${player.name}: WHITE'S SHOWDOWN!`);
+  playCastAnimation(player);
+
+  let impact;
+  try {
+    const target = victim.location;
+    const dir = directionToward(player.location, target);
+    // aparece colado nele
+    impact = {
+      x: target.x - dir.x * WHITES_SHOWDOWN.behind,
+      y: target.y,
+      z: target.z - dir.z * WHITES_SHOWDOWN.behind,
+    };
+    player.teleport(impact, { keepVelocity: false, facingLocation: target });
+    player.dimension.playSound("mob.enderdragon.growl", impact, {
+      volume: 1.6,
+      pitch: 1.4,
+    });
+  } catch (e) {
+    return; // alvo saiu do mundo entre a mira e o soco
+  }
+
+  // ondas crescentes, mesma ideia do Quebramundos
+  for (let ring = 1; ring <= WHITES_SHOWDOWN.rings; ring++) {
+    system.runTimeout(() => {
+      const radius = (WHITES_SHOWDOWN.maxRadius * ring) / WHITES_SHOWDOWN.rings;
+      try {
+        const points = 12 + ring * 6;
+        for (let i = 0; i < points; i++) {
+          const angle = (i / points) * Math.PI * 2;
+          player.dimension.spawnParticle("minecraft:large_explosion", {
+            x: impact.x + Math.cos(angle) * radius,
+            y: impact.y + 0.4,
+            z: impact.z + Math.sin(angle) * radius,
+          });
+        }
+        player.dimension.playSound("random.explode", impact, {
+          volume: 1.5,
+          pitch: 1.1 - ring * 0.15,
+        });
+      } catch (e) {
+        return;
+      }
+      damageNearbyEntities(player, impact, radius, DAMAGE.whitesShowdown);
+    }, (ring - 1) * WHITES_SHOWDOWN.ringGapTicks + 1);
+  }
+
+  // e o alvo do soco vai pro chao
+  try {
+    const loc = victim.location;
+    victim.teleport(
+      { x: loc.x, y: loc.y - WHITES_SHOWDOWN.buryDepth, z: loc.z },
+      { keepVelocity: false }
+    );
+    victim.addEffect("slowness", WHITES_SHOWDOWN.buryTicks, {
+      amplifier: 255,
+      showParticles: false,
+    });
+  } catch (e) {}
+}
+
+function castBulletHell(player) {
+  if (!tryUseSkill(player, "vizard:bullet_hell")) return;
+
+  world.sendMessage(`§f§l${player.name}: BULLET HELL!`);
+
+  let elapsed = 0;
+  const interval = system.runInterval(() => {
+    elapsed += BULLET_HELL.gapTicks;
+
+    try {
+      player.dimension.playSound("mob.wither.shoot", player.location, {
+        volume: 1.2,
+        pitch: 0.8,
+      });
+    } catch (e) {
+      system.clearRun(interval); // player saiu do mundo no meio da chuva
+      return;
+    }
+    playCastAnimation(player);
+
+    // cada cero estoura numa area bem grande quando acaba o alcance ou acerta
+    fireEnergySphere(player, {
+      radius: BULLET_HELL.radius,
+      range: BULLET_HELL.range,
+      speed: BULLET_HELL.speed,
+      damage: DAMAGE.bulletHell,
+      particle: "vizard:cero",
+      shellParticles: 18,
+      blast: { radius: BULLET_HELL.blastRadius, damage: DAMAGE.bulletHell },
+    });
+
+    if (elapsed >= BULLET_HELL.durationTicks) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7O Bullet Hell parou.");
+      } catch (e) {}
+    }
+  }, BULLET_HELL.gapTicks);
+}
+
+// um pingo da chuva de ceros: cai do ceu e estoura em quem estiver embaixo
+function dropCeroRain(player, center) {
+  const dim = player.dimension;
+  const angle = Math.random() * Math.PI * 2;
+  const dist = CERO_RAIN.spreadRadius * Math.sqrt(Math.random());
+  let ground = {
+    x: center.x + Math.cos(angle) * dist,
+    z: center.z + Math.sin(angle) * dist,
+  };
+
+  // parte dos pingos mira perto de quem esta embaixo
+  if (Math.random() < CERO_RAIN.aimedShare) {
+    try {
+      const below = dim
+        .getEntities({ location: center, maxDistance: CERO_RAIN.spreadRadius })
+        .filter((e) => e.id !== player.id && e.getComponent("minecraft:health"));
+      if (below.length > 0) {
+        const pick = below[Math.floor(Math.random() * below.length)].location;
+        ground = {
+          x: pick.x + (Math.random() - 0.5) * CERO_RAIN.aimScatter,
+          z: pick.z + (Math.random() - 0.5) * CERO_RAIN.aimScatter,
+        };
+      }
+    } catch (e) {
+      // sem ninguem por perto: o pingo cai no ponto aleatorio mesmo
+    }
+  }
+
+  let height = CERO_RAIN.skyHeight;
+  const interval = system.runInterval(() => {
+    height -= CERO_RAIN.fallSpeed;
+    const point = { x: ground.x, y: center.y + height, z: ground.z };
+
+    try {
+      for (let i = 0; i < 3; i++) {
+        dim.spawnParticle("vizard:cero", {
+          x: point.x + (Math.random() - 0.5) * 0.6,
+          y: point.y + Math.random() * 0.8,
+          z: point.z + (Math.random() - 0.5) * 0.6,
+        });
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    if (height > 0) return;
+
+    system.clearRun(interval);
+    try {
+      dim.spawnParticle("minecraft:large_explosion", {
+        x: point.x,
+        y: center.y + 0.4,
+        z: point.z,
+      });
+    } catch (e) {}
+    damageNearbyEntities(
+      player,
+      { x: point.x, y: center.y + 1, z: point.z },
+      CERO_RAIN.hitRadius,
+      DAMAGE.ceroRain
+    );
+  }, 1);
+}
+
+function castEverythingButTheRain(player) {
+  if (!tryUseSkill(player, "vizard:everything_but_the_rain")) return;
+
+  const dim = player.dimension;
+  world.sendMessage(`§f§l${player.name}: EVERYTHING BUT THE RAIN!`);
+  playCastAnimation(player);
+
+  let center;
+  try {
+    center = player.location;
+    dim.playSound("mob.wither.death", center, { volume: 2, pitch: 0.5 });
+  } catch (e) {
+    return;
+  }
+
+  // primeiro o cero gigante sobe pro ceu
+  fireEnergySphere(player, {
+    radius: 3.4,
+    range: CERO_RAIN.skyHeight,
+    speed: 3,
+    damage: 0,
+    particle: "vizard:cero",
+    shellParticles: 26,
+    direction: { x: 0, y: 1, z: 0 },
+  });
+
+  // e depois ele volta em pingos
+  for (let drop = 0; drop < CERO_RAIN.drops; drop++) {
+    system.runTimeout(() => {
+      try {
+        dropCeroRain(player, center);
+      } catch (e) {}
+    }, 20 + drop * CERO_RAIN.gapTicks);
+  }
+}
+
+function castGritoDelDiablo(player) {
+  if (!tryUseSkill(player, "vizard:grito_del_diablo")) return;
+
+  world.sendMessage(
+    `§4§l${player.name} soltou o GRITO DEL DIABLO! §r§7(${
+      GRITO_DIABLO.radius
+    } blocos, ${GRITO_DIABLO.durationTicks / 20}s)`
+  );
+  try {
+    player.playAnimation("animation.vizard.roar");
+  } catch (e) {}
+
+  let ticks = 0;
+  const interval = system.runInterval(() => {
+    ticks++;
+
+    let center;
+    try {
+      center = player.location;
+      if (ticks % 10 === 1) {
+        player.dimension.playSound("mob.enderdragon.growl", center, {
+          volume: 2,
+          pitch: 0.4,
+        });
+      }
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = GRITO_DIABLO.radius * Math.sqrt(Math.random());
+        player.dimension.spawnParticle("vizard:cero", {
+          x: center.x + Math.cos(angle) * dist,
+          y: center.y + 0.5 + Math.random() * 4,
+          z: center.z + Math.sin(angle) * dist,
+        });
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    damageNearbyEntities(player, center, GRITO_DIABLO.radius, DAMAGE.gritoDiabloTick);
+
+    if (ticks >= GRITO_DIABLO.durationTicks) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------------------------------------------------------
+   Segunda fase: a vida caindo ate o limite vira o Vasto Lorde
+   --------------------------------------------------------- */
+
+function ascendToTrueForm(player, character, form) {
+  const trueForm = form.trueForm;
+
+  player.setDynamicProperty(DP.trueForm, true);
+  applyCharacterEffects(
+    player,
+    trueForm.health ?? character.health,
+    trueForm.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+    "regenAmplifier" in trueForm ? trueForm.regenAmplifier : REGEN_AMPLIFIER,
+    trueForm.extraEffects
+  );
+
+  const inv = getInv(player);
+  for (const slot in trueForm.items ?? {}) {
+    inv.setItem(Number(slot), new ItemStack(trueForm.items[slot], 1));
+  }
+
+  // "cada awk recupera toda vida ao ser ativada"
+  system.runTimeout(
+    () => healToMax(player, cutHealthFor(player, trueForm.health ?? character.health)),
+    2
+  );
+
+  if (trueForm.armorPiece) equipArmorPiece(player, trueForm.armorPiece);
+
+  // o grito vai como TITLE pra todo mundo, nao so no chat
+  if (trueForm.titleForAll) {
+    for (const other of world.getPlayers()) {
+      try {
+        other.onScreenDisplay.setTitle(`§4§l${trueForm.titleForAll}`, {
+          subtitle: `§c${player.name}`,
+          fadeInDuration: 5,
+          fadeOutDuration: 20,
+          staySeconds: 3,
+        });
+      } catch (e) {}
+    }
+  }
+
+  try {
+    player.playAnimation("animation.vizard.roar");
+  } catch (e) {}
+
+  try {
+    if (trueForm.titleSound) {
+      player.dimension.playSound(trueForm.titleSound, player.location, {
+        volume: 2,
+        pitch: 0.4,
+      });
+    }
+    for (let i = 0; i < 40; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      player.dimension.spawnParticle("vizard:cero", {
+        x: player.location.x + Math.cos(angle) * (Math.random() * 4),
+        y: player.location.y + Math.random() * 4,
+        z: player.location.z + Math.sin(angle) * (Math.random() * 4),
+      });
+    }
+  } catch (e) {}
+
+  world.sendMessage(`§4§l${player.name} virou ${trueForm.name}!`);
+}
+
+/* ---------------------------------------------------------
    Camera alta da forma gigante
    --------------------------------------------------------- */
 
@@ -6484,6 +7234,20 @@ const MELEE_WEAPONS = {
     particle: "szayel:esporo",
     dot: null,
   },
+  "vizard:m1_bankai": {
+    baseDamage: DAMAGE.vizardM1,
+    particle: "minecraft:crit_particle",
+    dot: null,
+    animation: "animation.vizard.slash",
+  },
+  "vizard:m1_vasto": {
+    baseDamage: DAMAGE.vastoM1,
+    particle: "vizard:cero",
+    dot: null,
+    // "hits explosivos": cada golpe estoura em volta do alvo
+    blast: { radius: 3, damage: DAMAGE.vastoM1Blast },
+    animation: "animation.vizard.slash",
+  },
   "starkk:m1_zanpakuto": {
     baseDamage: DAMAGE.starkkM1,
     particle: "minecraft:crit_particle",
@@ -6551,6 +7315,14 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       addAwakening(damagingEntity, 1);
     }
 
+    if (weapon.animation) {
+      try {
+        damagingEntity.playAnimation(weapon.animation);
+      } catch (e) {
+        // animacao ausente no RP nao pode derrubar o golpe
+      }
+    }
+
     const dim = damagingEntity.dimension;
     const dir = forwardDirection(damagingEntity);
     const loc = damagingEntity.location;
@@ -6580,6 +7352,28 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       if (weapon.dot) {
         applyDot(hitEntity, damagingEntity, weapon.dot.perSecond, weapon.dot.seconds);
       }
+      // m1 com estouro (o Zangetsu do Vasto Lorde)
+      if (weapon.blast) {
+        try {
+          const loc = hitEntity.location;
+          for (let i = 0; i < 6; i++) {
+            dim.spawnParticle("minecraft:large_explosion", {
+              x: loc.x + (Math.random() - 0.5) * 2,
+              y: loc.y + 1 + (Math.random() - 0.5) * 1.5,
+              z: loc.z + (Math.random() - 0.5) * 2,
+            });
+          }
+          damageNearbyEntities(
+            damagingEntity,
+            { x: loc.x, y: loc.y + 1, z: loc.z },
+            weapon.blast.radius,
+            weapon.blast.damage
+          );
+        } catch (e) {
+          // o proprio golpe pode ter matado o alvo neste tick
+        }
+      }
+
       tryLaMuerteTouch(damagingEntity, hitEntity);
       tryGabrielMark(damagingEntity, hitEntity);
       if (weapon.combo) {
@@ -6622,15 +7416,36 @@ system.runInterval(() => {
     if (justJumped && !wasAlready) {
       if (!onCooldown(player, DP.dashCd, DASH_COOLDOWN_TICKS, now)) {
         setCooldown(player, DP.dashCd, now);
-        const dir = forwardDirection(player);
-        player.applyKnockback(
-          { x: dir.x * DASH_HORIZONTAL_STRENGTH, z: dir.z * DASH_HORIZONTAL_STRENGTH },
-          DASH_VERTICAL_STRENGTH
-        );
-        player.dimension.playSound("mob.enderdragon.flap", player.location, {
-          volume: 0.8,
-          pitch: 1.6,
-        });
+
+        // o Vasto Lorde nao avanca: ele aparece em cima do alvo
+        const teleportTarget = activeFormOf(player)?.dashTeleports
+          ? nearestTarget(player, DASH_TELEPORT_RANGE)
+          : undefined;
+
+        if (teleportTarget) {
+          try {
+            const to = teleportTarget.location;
+            const dir = directionToward(player.location, to);
+            player.teleport(
+              { x: to.x - dir.x * 1.4, y: to.y, z: to.z - dir.z * 1.4 },
+              { keepVelocity: false, facingLocation: to }
+            );
+            player.dimension.playSound("mob.endermen.portal", to, {
+              volume: 1,
+              pitch: 0.8,
+            });
+          } catch (e) {}
+        } else {
+          const dir = forwardDirection(player);
+          player.applyKnockback(
+            { x: dir.x * DASH_HORIZONTAL_STRENGTH, z: dir.z * DASH_HORIZONTAL_STRENGTH },
+            DASH_VERTICAL_STRENGTH
+          );
+          player.dimension.playSound("mob.enderdragon.flap", player.location, {
+            volume: 0.8,
+            pitch: 1.6,
+          });
+        }
       }
     }
     wasSneakJumping.set(player.id, justJumped);
@@ -6859,6 +7674,10 @@ system.runInterval(() => {
     // o marcador da offhand precisa continuar la: e ele que segura a escala
     const marker = character.awakening?.offhandMarker;
     if (marker && isAwakened(player)) setOffhandMarker(player, marker);
+
+    // e o peitoral tambem: sem ele a skin da forma volta pra normal
+    const armorPiece = activeFormOf(player, character)?.armorPiece;
+    if (armorPiece) equipArmorPiece(player, armorPiece);
   }
 }, 10);
 
@@ -6885,9 +7704,7 @@ const formHealTicks = new Map();
 
 system.runInterval(() => {
   for (const player of world.getPlayers()) {
-    const heal = isAwakened(player)
-      ? getActiveCharacter(player)?.awakening?.healPerInterval
-      : undefined;
+    const heal = activeFormOf(player)?.healPerInterval;
 
     if (!heal) {
       formHealTicks.delete(player.id);
@@ -6955,6 +7772,29 @@ system.runInterval(() => {
     }
   }
 }, 2);
+
+/* ---------------------------------------------------------
+   Segunda fase do awakening: a vida caindo ate o limite vira
+   a forma verdadeira sozinha (o Vasto Lorde do Ichigo Vizard)
+   --------------------------------------------------------- */
+
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    if (!isAwakened(player) || isTrueForm(player)) continue;
+
+    const character = getActiveCharacter(player);
+    const form = character?.awakening;
+    const trueForm = form?.trueForm;
+    if (!trueForm) continue;
+
+    try {
+      if (virtualHealth(player) > trueForm.healthThreshold) continue;
+      ascendToTrueForm(player, character, form);
+    } catch (e) {
+      // player saiu do mundo entre a checagem e a ascensao
+    }
+  }
+}, 10);
 
 /* ---------------------------------------------------------
    Drena o awakening 1%/segundo enquanto ativo, desativa em 0%

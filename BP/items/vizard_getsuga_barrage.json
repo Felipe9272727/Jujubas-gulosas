@@ -2,22 +2,22 @@
   "format_version": "1.26.40",
   "minecraft:item": {
     "description": {
-      "identifier": "szayel:learn_and_adapt",
+      "identifier": "vizard:getsuga_barrage",
       "menu_category": {
         "category": "equipment"
       }
     },
     "components": {
-      "minecraft:icon": "szayel:learn_and_adapt",
+      "minecraft:icon": "vizard:getsuga_barrage",
       "minecraft:display_name": {
-        "value": "Learn and Adapt"
+        "value": "Getsuga Barrage"
       },
       "minecraft:max_stack_size": 1,
-      "minecraft:hand_equipped": true,
       "minecraft:should_despawn": false,
+      "minecraft:hand_equipped": true,
       "minecraft:cooldown": {
-        "category": "szayel_learn_and_adapt",
-        "duration": 45
+        "category": "vizard_getsuga_barrage",
+        "duration": 30
       }
     }
   }

@@ -17,7 +17,7 @@
       "minecraft:should_despawn": false,
       "minecraft:cooldown": {
         "category": "szayel_teatro_de_titeres",
-        "duration": 20
+        "duration": 35
       }
     }
   }

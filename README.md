@@ -26,6 +26,7 @@ usar o seletor** passa pro próximo (dá a volta no último).
 | **Tier Harribel** | 2600 | Resurrección: Tiburón — "Reduce a cenizas, Tiburón" (3000 de vida) |
 | **Barragan Louisenbairn** | 3000 | Resurrección: Arrogante — "Envelhece, Arrogante!" (mesma vida) |
 | **Szayelaporro Granz** | 750 (752) | Resurrección: Fornicarás — "Sorva...Fornicarás" (1000, cura 40 a cada 6s) |
+| **Ichigo (pós-treino Vizard)** | 1500 | Hollowficação → **Vasto Lorde** aos 100 de vida (3000, troca a skin) |
 
 ## Layout
 

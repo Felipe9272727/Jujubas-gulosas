@@ -75,6 +75,7 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 | Tier Harribel | 2600 | Tiburón — "Reduce a cenizas, Tiburón" (3000) |
 | Barragan Louisenbairn | 3000 | Arrogante — "Envelhece, Arrogante!" (mesma vida) |
 | Szayelaporro Granz | 750 (752) | Fornicarás — "Sorva...Fornicarás" (1000, cura 40 a cada 6s) |
+| Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
 
 ## Sistemas genéricos (reusar, não duplicar)
 
@@ -97,6 +98,13 @@ Personagem que não estiver em `ARCS` **não aparece no menu**.
 | `markTarget` / `markMultiplierOf` | Marca de dano recebido. Pesquisa = 1.5x, Learn and Adapt = 2x |
 | `activeMutilations` | Mutilações sem prazo do Teatro de Títeres; caem quando um dos dois morre |
 | `cutHealthFor` | Aplica o coração furado (-30%) em toda troca de forma, não só no corte |
+| `activeFormOf` | **Qual forma está valendo agora**: 2ª fase > 1ª fase > base. Tudo que lê "a forma" passa aqui |
+| `awakening.trueForm` | Segunda fase automática por vida baixa (Vasto Lorde) |
+| `awakening.waveScale` | Multiplica raio/espessura de toda onda crescente da forma |
+| `awakening.armorPiece` | Peitoral que troca a skin do player via attachable |
+| `awakening.castAnimation` | Animação tocada com `playAnimation` ao conjurar |
+| `MELEE_WEAPONS[].blast` | m1 com estouro em área (Zangetsu do Vasto Lorde) |
+| `fireEnergySphere({blast})` | Cero que estoura em área ao acertar ou ao acabar o alcance |
 | `summonHomingBeast` | Fera guiada que explode ao encostar (Lobos, Tubarões) |
 | `spawnPoisonCloud` | Neblina parada; aceita partícula, cegueira e deterioração próprias |
 | `reapplyFormEffects` | Devolve os efeitos permanentes da forma |
@@ -186,6 +194,40 @@ cair, e um loop de 20 ticks devolve tudo quando isso acontece.
 | Braço | `DP.armCut`, lido por `dmgMultiplier` |
 | Coração | `DP.heartCut`, lido por `cutHealthFor` dentro de `applyCharacterEffects` — vale em toda troca de forma, não só no momento do corte |
 
+## Visual da Hollowficação (attachable)
+
+A skin não é trocada por script — **não existe setter de skin no Bedrock**. O que
+existe é um attachable amarrado a um item de peitoral:
+
+| Arquivo | Papel |
+|---|---|
+| `BP/items/vizard_hollow_chest.json` | o item, com `minecraft:wearable` no peito |
+| `RP/attachables/hollow_ichigo.json` | liga o item à geometria e à textura |
+| `RP/models/entity/hollow_ichigo.geo.json` | humanoide de caixas, `inflate` 0.3 por cima do player |
+| `RP/textures/entity/hollow_ichigo.png` | skin 64×64 (gerada por retângulos em `textures.py`) |
+| `RP/render_controllers/hollow_ichigo.json` | o render controller do attachable |
+
+Os **nomes dos ossos** da geometria (`body`, `head`, `leftArm`, `rightArm`,
+`leftLeg`, `rightLeg`, `waist`) têm que bater com o rig do player, senão o
+attachable não acompanha a animação dele e fica flutuando parado.
+
+O peitoral é reposto pelo loop de travar itens a cada 10 ticks, igual ao marcador
+da offhand do Yammy: tirar a peça não desfaz a forma.
+
+**Blender não serve aqui.** As ferramentas 3D desta sessão produzem GLB, e o
+Bedrock não carrega mesh — geometria de addon é caixa com UV de textura de pixel.
+Por isso o modelo é autorado direto no formato nativo.
+
+## Animações
+
+`RP/animations/vizard.animation.json` define `animation.vizard.cast`, `.slash` e
+`.roar`, tocadas por `player.playAnimation()`. O `validate.py` confere que toda
+animação citada no script existe no RP.
+
+**Limite conhecido:** isso anima o modelo em **terceira pessoa**. O braço em
+primeira pessoa é renderizado separado pelo Bedrock e não segue `playAnimation`,
+então quem está lançando não vê a própria mão — quem está olhando vê.
+
 ## Bugs conhecidos / limitações em aberto
 
 1. ~~Dano do m1 não escala com vida virtual.~~ **RESOLVIDO.** Os 13 itens de m1
@@ -234,6 +276,10 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | El Maldito (Barragan) | li "4 segundos" como a duração da névoa **e** da deterioração |
 | La Muerte (Barragan) | cooldown 2 min (não especificado) |
 | Resurrección: Arrogante | vida não especificada: mantém os 3000 da base, sem cura de graça |
+| White's Showdown (Vizard) | 150 por onda, 4 ondas = 600 no total |
+| Everything But the Rain | metade dos pingos mira perto de alguém; espalhados de verdade acertavam ~1 vez |
+| Dash 'n Slash | 6 mini avanços de 4 ticks |
+| Hollowficação | mantém os 1500 da base (só o Vasto Lorde sobe pra 3000) |
 | Deterioração (Barragan) | 80/s em todas as cinco skills (era 100) |
 | Carbon-Copy (Szayelaporro) | dura 10s, bate a cada 1,5s; 20 de dano se o alvo não tem personagem |
 | Learn and Adapt | dura 15s, igual à Pesquisa |
