@@ -17,9 +17,6 @@
       "minecraft:glint": true,
       "minecraft:wearable": {
         "slot": "slot.armor.chest"
-      },
-      "minecraft:armor": {
-        "protection": 0
       }
     }
   }

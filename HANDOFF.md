@@ -208,9 +208,21 @@ existe é um attachable amarrado a um item de peitoral:
 | `tools/hollow_model.py` | a fonte: 34 caixas, os ossos e o empacotador de UV |
 | `RP/render_controllers/hollow_ichigo.json` | o render controller do attachable |
 
-Os **nomes dos ossos** da geometria (`body`, `head`, `leftArm`, `rightArm`,
-`leftLeg`, `rightLeg`, `waist`) têm que bater com o rig do player, senão o
-attachable não acompanha a animação dele e fica flutuando parado.
+O attachable casa osso por **nome** com o rig do pai. O rig do player
+(`geometry.humanoid.custom`) é:
+
+```
+root ─┬─ waist ─── body ─┬─ head
+      │                  ├─ leftArm
+      │                  └─ rightArm
+      ├─ leftLeg
+      └─ rightLeg          <- as pernas saem da RAIZ, não da cintura
+```
+
+A primeira versão do modelo **não tinha `root`** e pendurava as pernas no
+`waist`. Osso faltando ou no pai errado não acompanha a animação do player — e
+isso **não dá erro nenhum no jogo**, só não aparece direito. O `validate.py`
+agora compara o rig do attachable com o do player osso por osso.
 
 O peitoral é reposto pelo loop de travar itens a cada 10 ticks, igual ao marcador
 da offhand do Yammy: tirar a peça não desfaz a forma. E `equipArmorPiece` **lê a

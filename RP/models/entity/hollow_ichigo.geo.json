@@ -16,12 +16,21 @@
       },
       "bones": [
         {
+          "name": "root",
+          "pivot": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
           "name": "waist",
           "pivot": [
             0,
             12,
             0
           ],
+          "parent": "root",
           "cubes": [
             {
               "origin": [
@@ -432,7 +441,7 @@
             12,
             0
           ],
-          "parent": "waist",
+          "parent": "root",
           "cubes": [
             {
               "origin": [
@@ -476,7 +485,7 @@
             12,
             0
           ],
-          "parent": "waist",
+          "parent": "root",
           "cubes": [
             {
               "origin": [

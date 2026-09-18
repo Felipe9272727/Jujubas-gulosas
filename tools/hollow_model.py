@@ -92,16 +92,25 @@ CUBES = [
 # ossos: nome -> (pai, pivot, rotacao)
 # Os seis primeiros sao o rig do player. Os de baixo sao meus, pra dar angulo
 # aos chifres e aos espinhos - e a rotacao que tira o modelo do plano.
+# Ossos: nome -> (pai, pivot, rotacao).
+#
+# Os sete primeiros ESPELHAM o rig do player (geometry.humanoid.custom), pai por
+# pai. Attachable casa osso por NOME com o rig do pai: osso que nao existe la, ou
+# pendurado no pai errado, nao acompanha a animacao. O rig do player e:
+#     root -> waist -> body -> head / leftArm / rightArm
+#     root -> leftLeg / rightLeg        <- as pernas saem da RAIZ, nao da cintura
+# Eu tinha esquecido o `root` e pendurado as pernas no `waist`.
 BONES = {
-    "waist":    (None,     [0, 12, 0],        None),
+    "root":     (None,     [0, 0, 0],         None),
+    "waist":    ("root",   [0, 12, 0],        None),
     "body":     ("waist",  [0, 24, 0],        None),
     "head":     ("body",   [0, 24, 0],        None),
     "rightArm": ("body",   [-5, 22, 0],       None),
     "leftArm":  ("body",   [5, 22, 0],        None),
-    "rightLeg": ("waist",  [-1.9, 12, 0],     None),
-    "leftLeg":  ("waist",  [1.9, 12, 0],      None),
-    # pivot na base da peca: a rotacao inclina o chifre/espinho em vez de
-    # arrancar ele do lugar
+    "rightLeg": ("root",   [-1.9, 12, 0],     None),
+    "leftLeg":  ("root",   [1.9, 12, 0],      None),
+    # ossos meus, pendurados na cabeca: inclinam chifre e espinho sem arrancar
+    # a peca do lugar
     "hornR":    ("head",   [-2.7, 30, -1.7],  [-12, 0, -16]),
     "hornL":    ("head",   [2.7, 30, -1.7],   [-12, 0, 16]),
     "spikeA":   ("head",   [0, 30.2, 2.6],    [36, 0, 0]),

@@ -290,6 +290,19 @@ for marker in sorted(set(re.findall(r'offhandMarker:\s*"([^"]+)"', main_js_text)
         notes.append(f"marcador de offhand ok: {marker}")
 
 # ------------------------------------------------- attachables e animacoes
+# rig do player vanilla (geometry.humanoid.custom): osso -> pai.
+# As pernas saem da RAIZ, nao da cintura - era esse o erro do primeiro modelo.
+PLAYER_RIG = {
+    "root": None,
+    "waist": "root",
+    "body": "waist",
+    "head": "body",
+    "rightArm": "body",
+    "leftArm": "body",
+    "rightLeg": "root",
+    "leftLeg": "root",
+}
+
 # Um attachable quebrado nao da erro no jogo: ele simplesmente nao aparece.
 geometry_ids = set()
 for path in sorted(RP.glob("models/entity/*.json")):
@@ -337,6 +350,31 @@ for path in sorted(RP.glob("attachables/*.json")):
                 f"o attachable '{identifier}' usa o render controller '{cname}' "
                 f"mas ele nao esta em RP/render_controllers"
             )
+    # O attachable casa osso por NOME com o rig do pai. Osso faltando, ou
+    # pendurado no pai errado, nao acompanha a animacao do player - e isso nao
+    # da erro nenhum no jogo, so nao aparece direito.
+    for geo in description.get("geometry", {}).values():
+        bones = {}
+        for path_geo in sorted(RP.glob("models/entity/*.json")):
+            data_geo = parsed.get(path_geo) or {}
+            for entry in data_geo.get("minecraft:geometry", []):
+                if entry.get("description", {}).get("identifier") != geo:
+                    continue
+                bones = {b["name"]: b.get("parent") for b in entry.get("bones", [])}
+        if not bones:
+            continue
+        for bone, parent in PLAYER_RIG.items():
+            if bone not in bones:
+                fail(
+                    f"a geometria '{geo}' nao tem o osso '{bone}' do rig do player "
+                    f"- ele nao vai acompanhar a animacao"
+                )
+            elif bones[bone] != parent:
+                fail(
+                    f"na geometria '{geo}' o osso '{bone}' esta pendurado em "
+                    f"{bones[bone]!r}, mas no rig do player ele sai de {parent!r}"
+                )
+
     notes.append(f"attachable ok: {identifier}")
 
 # animacao citada pelo script tem que existir de verdade no RP
