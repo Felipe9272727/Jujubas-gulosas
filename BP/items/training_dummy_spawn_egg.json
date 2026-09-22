@@ -1,0 +1,23 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "multiversal:training_dummy_spawn_egg",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "multiversal:training_dummy_spawn_egg",
+      "minecraft:display_name": {
+        "value": "Boneco de Teste"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:entity_placer": {
+        "entity": "multiversal:training_dummy"
+      }
+    }
+  }
+}

@@ -47,9 +47,6 @@
     "byakuya:bloodshed": {
       "textures": "textures/items/byakuya_bloodshed"
     },
-    "byakuya:coating": {
-      "textures": "textures/items/byakuya_coating"
-    },
     "byakuya:m1_senbonzakura_senkei": {
       "textures": "textures/items/byakuya_m1_senbonzakura_senkei"
     },
@@ -316,6 +313,243 @@
     },
     "vizard:vasto_chest": {
       "textures": "textures/items/vizard_vasto_chest"
+    },
+    "nnoitra:m1_zanpakuto": {
+      "textures": "textures/items/nnoitra_m1_zanpakuto"
+    },
+    "nnoitra:duro_slash": {
+      "textures": "textures/items/nnoitra_duro_slash"
+    },
+    "nnoitra:spinning_blade": {
+      "textures": "textures/items/nnoitra_spinning_blade"
+    },
+    "nnoitra:beyblade": {
+      "textures": "textures/items/nnoitra_beyblade"
+    },
+    "nnoitra:hierro": {
+      "textures": "textures/items/nnoitra_hierro"
+    },
+    "nnoitra:muerte_multiple": {
+      "textures": "textures/items/nnoitra_muerte_multiple"
+    },
+    "nnoitra:avance_fatal": {
+      "textures": "textures/items/nnoitra_avance_fatal"
+    },
+    "nnoitra:meteorito_de_hierro": {
+      "textures": "textures/items/nnoitra_meteorito_de_hierro"
+    },
+    "nnoitra:declaracion_del_intocable": {
+      "textures": "textures/items/nnoitra_declaracion_del_intocable"
+    },
+    "multiversal:cheat_options": {
+      "textures": "textures/items/cheat_options"
+    },
+    "byakuya:sakura_distraction": {
+      "textures": "textures/items/byakuya_sakura_distraction"
+    },
+    "mayuri:regenerate": {
+      "textures": "textures/items/mayuri_regenerate"
+    },
+    "mayuri:envenenar": {
+      "textures": "textures/items/mayuri_envenenar"
+    },
+    "multiversal:training_dummy_spawn_egg": {
+      "textures": "textures/items/training_dummy_spawn_egg"
+    },
+    "ulquiorra:cero_oscuras_triplo": {
+      "textures": "textures/items/ulquiorra_cero_oscuras_triplo"
+    },
+    "ulquiorra:segunda_chest": {
+      "textures": "textures/items/ulquiorra_segunda_chest"
+    },
+    "aaroniero:m1": {
+      "textures": "textures/items/aaroniero_m1"
+    },
+    "aaroniero:cero_metalico": {
+      "textures": "textures/items/aaroniero_cero_metalico"
+    },
+    "aaroniero:nejibana": {
+      "textures": "textures/items/aaroniero_nejibana"
+    },
+    "aaroniero:devorar": {
+      "textures": "textures/items/aaroniero_devorar"
+    },
+    "aaroniero:mascara_kaien": {
+      "textures": "textures/items/aaroniero_mascara_kaien"
+    },
+    "aaroniero:m1_glotoneria": {
+      "textures": "textures/items/aaroniero_m1_glotoneria"
+    },
+    "aaroniero:tentaculos": {
+      "textures": "textures/items/aaroniero_tentaculos"
+    },
+    "aaroniero:tridente_kaien": {
+      "textures": "textures/items/aaroniero_tridente_kaien"
+    },
+    "aaroniero:cero_metalico_gloton": {
+      "textures": "textures/items/aaroniero_cero_metalico_gloton"
+    },
+    "aaroniero:banquete": {
+      "textures": "textures/items/aaroniero_banquete"
+    },
+    "aaroniero:glotoneria": {
+      "textures": "textures/items/aaroniero_glotoneria"
+    },
+    "gin:m1_shinso": {
+      "textures": "textures/items/gin_m1_shinso"
+    },
+    "gin:extended_blade": {
+      "textures": "textures/items/gin_extended_blade"
+    },
+    "gin:spiral": {
+      "textures": "textures/items/gin_spiral"
+    },
+    "gin:pursuing_blade": {
+      "textures": "textures/items/gin_pursuing_blade"
+    },
+    "gin:piercing_shinso": {
+      "textures": "textures/items/gin_piercing_shinso"
+    },
+    "hitsugaya:m1_hyorinmaru": {
+      "textures": "textures/items/hitsugaya_m1_hyorinmaru"
+    },
+    "hitsugaya:m1_daiguren": {
+      "textures": "textures/items/hitsugaya_m1_daiguren"
+    },
+    "hitsugaya:ryusenka": {
+      "textures": "textures/items/hitsugaya_ryusenka"
+    },
+    "hitsugaya:sennen_hyoro": {
+      "textures": "textures/items/hitsugaya_sennen_hyoro"
+    },
+    "hitsugaya:guncho_tsurara": {
+      "textures": "textures/items/hitsugaya_guncho_tsurara"
+    },
+    "hitsugaya:tenso_jurin": {
+      "textures": "textures/items/hitsugaya_tenso_jurin"
+    },
+    "hitsugaya:dragons_breath": {
+      "textures": "textures/items/hitsugaya_dragons_breath"
+    },
+    "hitsugaya:ice_age": {
+      "textures": "textures/items/hitsugaya_ice_age"
+    },
+    "hitsugaya:ice_barrier": {
+      "textures": "textures/items/hitsugaya_ice_barrier"
+    },
+    "hitsugaya:ice_explosion": {
+      "textures": "textures/items/hitsugaya_ice_explosion"
+    },
+    "shunsui:m1_katen_kyokotsu": {
+      "textures": "textures/items/shunsui_m1_katen_kyokotsu"
+    },
+    "shunsui:kageoni": {
+      "textures": "textures/items/shunsui_kageoni"
+    },
+    "shunsui:takaoni": {
+      "textures": "textures/items/shunsui_takaoni"
+    },
+    "shunsui:irooni": {
+      "textures": "textures/items/shunsui_irooni"
+    },
+    "shunsui:jokenpo": {
+      "textures": "textures/items/shunsui_jokenpo"
+    },
+    "soifon:m1_suzumebachi": {
+      "textures": "textures/items/soifon_m1_suzumebachi"
+    },
+    "soifon:shunpo": {
+      "textures": "textures/items/soifon_shunpo"
+    },
+    "soifon:stealthy": {
+      "textures": "textures/items/soifon_stealthy"
+    },
+    "soifon:shunko": {
+      "textures": "textures/items/soifon_shunko"
+    },
+    "soifon:nigeki_kessatsu": {
+      "textures": "textures/items/soifon_nigeki_kessatsu"
+    },
+    "rukia:m1_zanpakuto": {
+      "textures": "textures/items/rukia_m1_zanpakuto"
+    },
+    "rukia:white_moon": {
+      "textures": "textures/items/rukia_white_moon"
+    },
+    "rukia:white_wave": {
+      "textures": "textures/items/rukia_white_wave"
+    },
+    "rukia:white_sword": {
+      "textures": "textures/items/rukia_white_sword"
+    },
+    "rukia:juhaku": {
+      "textures": "textures/items/rukia_juhaku"
+    },
+    "ukitake:m1_sogyo_no_kotowari": {
+      "textures": "textures/items/ukitake_m1_sogyo_no_kotowari"
+    },
+    "ukitake:throw_n_pull": {
+      "textures": "textures/items/ukitake_throw_n_pull"
+    },
+    "ukitake:double_slam": {
+      "textures": "textures/items/ukitake_double_slam"
+    },
+    "ukitake:ying_yang": {
+      "textures": "textures/items/ukitake_ying_yang"
+    },
+    "ukitake:stagnation": {
+      "textures": "textures/items/ukitake_stagnation"
+    },
+    "ukitake:absorb": {
+      "textures": "textures/items/ukitake_absorb"
+    },
+    "shinji:m1_sakanade": {
+      "textures": "textures/items/shinji_m1_sakanade"
+    },
+    "shinji:triple_slash": {
+      "textures": "textures/items/shinji_triple_slash"
+    },
+    "shinji:sakanas_cut": {
+      "textures": "textures/items/shinji_sakanas_cut"
+    },
+    "shinji:hollow_mask": {
+      "textures": "textures/items/shinji_hollow_mask"
+    },
+    "shinji:cero": {
+      "textures": "textures/items/shinji_cero"
+    },
+    "tosen:m1_suzumushi": {
+      "textures": "textures/items/tosen_m1_suzumushi"
+    },
+    "tosen:nake": {
+      "textures": "textures/items/tosen_nake"
+    },
+    "tosen:benihiko": {
+      "textures": "textures/items/tosen_benihiko"
+    },
+    "tosen:hado_88": {
+      "textures": "textures/items/tosen_hado_88"
+    },
+    "tosen:silent_cut": {
+      "textures": "textures/items/tosen_silent_cut"
+    },
+    "multiversal:generic_skills": {
+      "textures": "textures/items/generic_skills"
+    },
+    "tosen:m1_visored": {
+      "textures": "textures/items/tosen_m1_visored"
+    },
+    "tosen:palacio_de_las_espadas": {
+      "textures": "textures/items/tosen_palacio_de_las_espadas"
+    },
+    "tosen:ecolocalizacion": {
+      "textures": "textures/items/tosen_ecolocalizacion"
+    },
+    "tosen:cero": {
+      "textures": "textures/items/tosen_cero"
+    },
+    "tosen:los_nueve_aspectos": {
+      "textures": "textures/items/tosen_los_nueve_aspectos"
     }
   }
 }

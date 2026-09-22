@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "ulquiorra:cero_oscuras_triplo",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "ulquiorra:cero_oscuras_triplo",
+      "minecraft:display_name": {
+        "value": "Cero Oscuras Triplo"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "ulquiorra_cero_oscuras_triplo",
+        "duration": 30
+      }
+    }
+  }
+}

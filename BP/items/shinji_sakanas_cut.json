@@ -1,0 +1,24 @@
+{
+  "format_version": "1.21.90",
+  "minecraft:item": {
+    "description": {
+      "identifier": "shinji:sakanas_cut",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "shinji:sakanas_cut",
+      "minecraft:display_name": {
+        "value": "§6Sakana's Cut §8• §f300 DMG"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "shinji_sakanas_cut",
+        "duration": 0.05
+      }
+    }
+  }
+}

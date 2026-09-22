@@ -1,0 +1,20 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:attachable": {
+    "description": {
+      "identifier": "shinji:mask_visual",
+      "materials": {
+        "default": "armor"
+      },
+      "textures": {
+        "default": "textures/entity/shinji_mask"
+      },
+      "geometry": {
+        "default": "geometry.shinji_mask"
+      },
+      "render_controllers": [
+        "controller.render.shinji_mask"
+      ]
+    }
+  }
+}

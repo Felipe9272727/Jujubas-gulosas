@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "nnoitra:declaracion_del_intocable",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "nnoitra:declaracion_del_intocable",
+      "minecraft:display_name": {
+        "value": "Declaración del Intocable"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "nnoitra_declaracion_del_intocable",
+        "duration": 60
+      }
+    }
+  }
+}

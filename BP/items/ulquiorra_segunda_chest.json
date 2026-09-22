@@ -1,0 +1,23 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "ulquiorra:segunda_chest",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "ulquiorra:segunda_chest",
+      "minecraft:display_name": {
+        "value": "Ulquiorra Segunda Etapa"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:should_despawn": false,
+      "minecraft:glint": true,
+      "minecraft:wearable": {
+        "slot": "slot.armor.chest"
+      }
+    }
+  }
+}

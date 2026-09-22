@@ -5,8 +5,123 @@ import {
   ItemStack,
   EquipmentSlot,
   BlockPermutation,
+  Dimension,
 } from "@minecraft/server";
 import { ActionFormData, MessageFormData } from "@minecraft/server-ui";
+import { createShinji } from "./shinji.js";
+
+/* =========================================================
+   OTIMIZAÇÃO ANTI-LAG
+   Tudo aqui é protegido por try/catch: se alguma parte não puder ser aplicada
+   nessa versão do jogo, o addon roda igual, só sem aquela otimização.
+   ========================================================= */
+
+// Tempo real entre um tick e outro. Se o mundo está engasgando, o addon desenha
+// MENOS partículas em vez de piorar o lag (e de derrubar quem joga no celular).
+let __lastTickMs = Date.now();
+let __tickGapMs = 50;
+system.runInterval(() => {
+  const nowMs = Date.now();
+  __tickGapMs = nowMs - __lastTickMs;
+  __lastTickMs = nowMs;
+}, 1);
+
+// Loops criados DURANTE o jogo (as skills) que erram 20 ticks seguidos são
+// desligados, e o erro de qualquer loop vira um único aviso no log. Antes um
+// loop quebrado gritava no log todo tick, pra sempre.
+let __bootDone = false;
+system.run(() => {
+  __bootDone = true;
+});
+try {
+  const rawRunInterval = system.runInterval.bind(system);
+  system.runInterval = (callback, tickInterval) => {
+    const createdDuringGame = __bootDone;
+    let failures = 0;
+    let id;
+    id = rawRunInterval(() => {
+      try {
+        callback();
+        failures = 0;
+      } catch (e) {
+        failures++;
+        if (failures === 1) console.warn(`[anti-lag] erro num loop: ${e}`);
+        if (createdDuringGame && failures >= 20) {
+          try {
+            system.clearRun(id);
+          } catch (e2) {}
+        }
+      }
+    }, tickInterval);
+    return id;
+  };
+} catch (e) {}
+
+// Limite de partículas em "balde de fichas". O limite antigo cortava tudo que
+// passava de 80 por tick e, como os círculos (Enigma, Senkei) são desenhados de
+// uma vez só, saía só uma parte do círculo. Agora o balde enche a cada tick e
+// permite rajadas grandes (um círculo inteiro cabe folgado); só o gasto CONTÍNUO
+// alto (várias skills ao mesmo tempo) é limitado, e quando o balde esvazia as
+// partículas são reduzidas de forma espalhada, sem sumir um pedaço inteiro.
+// O dano NÃO depende de partícula: só o visual fica mais enxuto.
+try {
+  const rawSpawnParticle = Dimension.prototype.spawnParticle;
+  const HEAVY_PARTICLES = new Set([
+    "minecraft:large_explosion",
+    "minecraft:huge_explosion_emitter",
+  ]);
+  let tokens = 320;
+  let lastRefillTick = system.currentTick;
+  let pHeavy = 0;
+  Dimension.prototype.spawnParticle = function (effectName, location, molang) {
+    const now = system.currentTick;
+    if (now !== lastRefillTick) {
+      // rendimento cai sozinho se o mundo está lento
+      const rate = __tickGapMs > 90 ? 20 : __tickGapMs > 65 ? 45 : 80;
+      const cap = __tickGapMs > 90 ? 110 : __tickGapMs > 65 ? 200 : 320;
+      tokens = Math.min(cap, tokens + Math.min(10, now - lastRefillTick) * rate);
+      lastRefillTick = now;
+      pHeavy = 0;
+    }
+    if (tokens < 1) return;
+    // balde baixo: reduz de forma espalhada em vez de cortar um pedaço da forma
+    if (tokens < 60 && Math.random() > tokens / 60) return;
+    // explosão grande é a partícula mais pesada do jogo: só 1 em cada 3
+    if (HEAVY_PARTICLES.has(effectName) && pHeavy++ % 3 !== 0) return;
+    tokens -= 1;
+    return molang
+      ? rawSpawnParticle.call(this, effectName, location, molang)
+      : rawSpawnParticle.call(this, effectName, location);
+  };
+} catch (e) {}
+
+// getEntities sem filtro devolve item no chão, orbe de xp, flecha... e o addon
+// só quer quem tem vida. Excluir esses tipos na busca poupa o loop de cada skill.
+try {
+  const rawGetEntities = Dimension.prototype.getEntities;
+  const SKIPPED_ENTITY_TYPES = [
+    "minecraft:item",
+    "minecraft:xp_orb",
+    "minecraft:arrow",
+    "minecraft:falling_block",
+    "minecraft:snowball",
+    "minecraft:egg",
+    "minecraft:ender_pearl",
+    "minecraft:fishing_hook",
+  ];
+  Dimension.prototype.getEntities = function (options) {
+    if (!options) {
+      return rawGetEntities.call(this, { excludeTypes: SKIPPED_ENTITY_TYPES });
+    }
+    if (options.type || options.excludeTypes || options.families) {
+      return rawGetEntities.call(this, options);
+    }
+    return rawGetEntities.call(this, {
+      ...options,
+      excludeTypes: SKIPPED_ENTITY_TYPES,
+    });
+  };
+} catch (e) {}
 
 /* =========================================================
    COMBATES MULTIVERSAIS - main.js
@@ -23,7 +138,7 @@ const DP = {
   byakuyaWeapon: "mv:byakuya_weapon", // "base" | "senkei" | "finisher"
   starkkForm: "mv:starkk_form", // "starkk" | "lilynette"
   tallView: "mv:tall_view", // camera alta da forma gigante
-  arc: "mv:arc", // indice do arco escolhido no seletor
+  race: "mv:race", // indice da raça escolhida no seletor
   healthScale: "mv:health_scale", // vida virtual / vida real
   markedEnd: "mv:marked_end", // marca da Pesquisa do Ulquiorra
   blockEnd: "mv:block_end", // bloqueio universal (agachar + m1)
@@ -39,7 +154,29 @@ const DP = {
   heartCut: "mv:cut_heart",
   gabrielArmed: "mv:gabriel_armed", // Gabriel esperando marcar um hospedeiro
   trueForm: "mv:true_form", // segunda fase do awakening (Vasto Lorde)
+  hierroEnd: "mv:hierro_end", // Hierro do Nnoitra: dano recebido reduzido
+  pressureEnabled: "mv:pressure_enabled",
+  genericSkill: "mv:generic_skill",
+  pressureActiveUntil: "mv:generic_pressure_until",
+  pressureCooldown: "mv:generic_pressure_cd",
+  airStepActive: "mv:air_step_active",
+  airStepBlock: "mv:air_step_block",
+  infiniteAwakening: "mv:infinite_awakening",
+  intocableEnd: "mv:intocable_end", // Declaración del Intocable
+  aaronieroAbsorbed: "mv:aaroniero_absorbed",
+  aaronieroMaskEnd: "mv:aaroniero_mask_end",
+  aaronieroDevouredCount: "mv:aaroniero_devoured_count",
+  tosenVisored: "mv:tosen_visored", // Visored do Tosen: forma alternativa (nao usa o medidor de awakening)
+  mayuriParalysis: "mv:mayuri_paralysis",
+  mayuriParalysisX: "mv:mayuri_paralysis_x",
+  mayuriParalysisY: "mv:mayuri_paralysis_y",
+  mayuriParalysisZ: "mv:mayuri_paralysis_z",
+  noDash: "mv:cd_nodash", // Ice Age do Hitsugaya: sem dash por um tempo
 };
+
+// Paralisia do Piercing Shinso do Gin: id da entidade -> tick limite. O isFrozen()
+// tambem le esse mapa, entao o paralisado fica preso pelas mesmas travas do Teatro.
+const ginParalyzed = new Map();
 
 const BASE_SPEED_AMPLIFIER = 1; // speed 2 pra todo personagem
 const REGEN_AMPLIFIER = 1; // regen 2 pra todo personagem
@@ -50,13 +187,16 @@ const HOLLOW_MASK_DURATION_TICKS = 600; // 30s
 // item que fica sempre locked no ultimo slot da hotbar (slot 8)
 const SELECTOR_ITEM = "multiversal:character_selector";
 const SELECTOR_SLOT = 8;
+const CHEAT_OPTIONS_ITEM = "multiversal:cheat_options";
+const GENERIC_SKILL_ITEM = "multiversal:generic_skills";
+const GENERIC_SKILL_SLOT = 7;
 
 // registro de personagens - estrutura pensada pra crescer com o addon
 const CHARACTERS = {
   ichigo: {
     id: "ichigo",
     name: "Ichigo Kurosaki (Shikai)",
-    health: 200,
+    health: 700,
     // slot do hotbar -> item id
     items: {
       0: "ichigo:m1_zangetsu",
@@ -67,7 +207,7 @@ const CHARACTERS = {
     },
     awakening: {
       name: "Tensa Zangetsu (Awakening)",
-      health: 400,
+      health: 1100,
       speedAmplifier: 3, // speed 4
       triggerItem: "ichigo:m1_zangetsu", // agachado + usar esse item com awakening 100%
       items: {
@@ -95,13 +235,13 @@ const CHARACTERS = {
   byakuya: {
     id: "byakuya",
     name: "Byakuya Kuchiki (Shikai)",
-    health: 200,
+    health: 700,
     items: {
       0: "byakuya:m1_senbonzakura",
       1: "byakuya:tripleshot",
       2: "byakuya:disperse",
       3: "byakuya:bloodshed",
-      4: "byakuya:coating",
+      4: "byakuya:sakura_distraction",
     },
     // super ataque no lugar de uma segunda forma persistente
     superAttack: {
@@ -110,8 +250,10 @@ const CHARACTERS = {
       chargeTicksForSenkei: 100, // 5s agachado segurando a m1 = desbloqueia o Senkei
       kageyoshi: {
         radius: 15, // area 30x30
-        dotPerSecond: 30,
-        durationSeconds: 15,
+        dotPerSecond: 70,
+        durationSeconds: 12,
+        slownessAmplifier: 1,
+        blocksDash: true,
       },
       senkei: {
         radius: 15, // area 30x30
@@ -124,7 +266,7 @@ const CHARACTERS = {
   kenpachi: {
     id: "kenpachi",
     name: "Zaraki Kenpachi",
-    health: 300,
+    health: 1700,
     items: {
       0: "kenpachi:m1_zanpakuto",
       1: "kenpachi:flash_slash",
@@ -137,7 +279,7 @@ const CHARACTERS = {
     awakening: {
       name: "Pressão (tapa-olho removido)",
       triggerItem: "kenpachi:m1_zanpakuto",
-      damageMultiplier: 1.5, // +50% em todas as skills e no m1
+      damageMultiplier: 2, // dobra o dano de todas as skills e do m1
       onActivate: "pressure",
       pressure: {
         radius: 25, // area 50x50
@@ -156,12 +298,13 @@ const CHARACTERS = {
   mayuri: {
     id: "mayuri",
     name: "Mayuri Kurotsuchi (Shikai)",
-    health: 180,
-    // so 3 itens: os slots 3 e 4 ficam livres ate ele ganhar mais skills
+    health: 600,
     items: {
       0: "mayuri:m1_ashisogi_jizo",
       1: "mayuri:poison_slash",
       2: "mayuri:toxic_fog",
+      3: "mayuri:regenerate",
+      4: "mayuri:envenenar",
     },
     // Bankai como super ataque (nao troca item nem vida, igual ao Kageyoshi):
     // agachar + usar a m1 com o medidor em 100%
@@ -170,12 +313,12 @@ const CHARACTERS = {
       triggerItem: "mayuri:m1_ashisogi_jizo",
       // mesma neblina da Toxic Fog, so que gigante e muito mais forte
       konjiki: {
-        radius: 25, // area 50x50
+        radius: 30, // area 60x60
         height: 3.2,
         durationTicks: 300, // 15s
         tickInterval: 10,
         refreshTicks: 30,
-        poisonAmplifier: 19, // poison 20
+        mayuriPoison: { durationSeconds: 15, damagePerSecond: 40 },
         slownessAmplifier: 255, // "lentidao inf"
         particlesPerTick: 60, // area 25x maior que a da Toxic Fog
         endMessage: "§7A Konjiki Ashisogi Jizō se dissipou.",
@@ -210,6 +353,31 @@ const CHARACTERS = {
       },
     },
   },
+  aaroniero: {
+    id: "aaroniero",
+    name: "Aaroniero Arruruerie (Espada 9)",
+    health: 700,
+    items: {
+      0: "aaroniero:m1",
+      1: "aaroniero:cero_metalico",
+      2: "aaroniero:nejibana",
+      3: "aaroniero:devorar",
+      4: "aaroniero:mascara_kaien",
+    },
+    awakening: {
+      name: "Awakening: Glotonería",
+      triggerItem: "aaroniero:m1",
+      health: 1100,
+      items: {
+        0: "aaroniero:m1_glotoneria",
+        1: "aaroniero:tentaculos",
+        2: "aaroniero:tridente_kaien",
+        3: "aaroniero:cero_metalico_gloton",
+        4: "aaroniero:banquete",
+        5: "aaroniero:glotoneria",
+      },
+    },
+  },
   ulquiorra: {
     id: "ulquiorra",
     name: "Ulquiorra Cifer",
@@ -235,6 +403,24 @@ const CHARACTERS = {
         2: "ulquiorra:enigma",
         3: "ulquiorra:cero_oscuras",
         4: "ulquiorra:lanza",
+      },
+      canFly: true,
+      // Segunda Etapa: só pode ser ativada depois da Ressurrección, com 50%
+      // do medidor restante. Agachar + usar a M1 novamente transforma a forma.
+      trueForm: {
+        name: "TRUE AWAKENING: Segunda Etapa",
+        triggerItem: "ulquiorra:m1_garras",
+        health: 2800,
+        speedAmplifier: 2,
+        canFly: true,
+        armorPiece: "ulquiorra:segunda_chest",
+        items: {
+          0: "ulquiorra:m1_garras",
+          1: "ulquiorra:cero_oscuras_triplo",
+          2: "ulquiorra:nihil",
+          3: "ulquiorra:enigma",
+          4: "ulquiorra:lanza",
+        },
       },
     },
   },
@@ -292,7 +478,7 @@ const CHARACTERS = {
     awakening: {
       name: "Resurrección: Ira",
       triggerItem: "yammy:m1_punches",
-      health: 10000,
+      health: 6000,
       speedAmplifier: 0, // speed 1
       // a Ira troca a regeneracao passiva por uma cura em bloco
       regenAmplifier: null,
@@ -446,13 +632,6 @@ const CHARACTERS = {
         waveScale: 2.2,
         dashTeleports: true, // o dash vira teleporte no alvo
         armorPiece: "vizard:vasto_chest",
-        // aura constante: e o que faz a forma verdadeira ser vista de longe
-        aura: {
-          particle: "vizard:cero",
-          radius: 1.7,
-          height: 2.8,
-          perTick: 6,
-        },
         titleForAll: "AHHHHHHH",
         titleSound: "mob.enderdragon.growl",
         items: {
@@ -463,6 +642,187 @@ const CHARACTERS = {
           4: "vizard:grito_del_diablo",
         },
       },
+    },
+  },
+  nnoitra: {
+    id: "nnoitra",
+    name: "Nnoitra Gilga",
+    health: 1300,
+    // individualidade: recebe 10% menos dano de todo ataque (vale o tempo todo)
+    damageTakenMultiplier: 0.9,
+    items: {
+      0: "nnoitra:m1_zanpakuto",
+      1: "nnoitra:duro_slash",
+      2: "nnoitra:spinning_blade",
+      3: "nnoitra:beyblade",
+      4: "nnoitra:hierro",
+    },
+    awakening: {
+      name: "Resurrección: Santa Teresa",
+      triggerItem: "nnoitra:m1_zanpakuto",
+      health: 1600,
+      onActivate: "battlecry",
+      chatLine: "¡Ruega, Santa Teresa!",
+      cryParticle: "nnoitra:corte",
+      cryPitch: 0.7,
+      // individualidade da Resurrección: ignora 30% do dano de todos os ataques
+      awakeningDamageTakenMultiplier: 0.7,
+      items: {
+        0: "nnoitra:m1_zanpakuto",
+        1: "nnoitra:muerte_multiple",
+        2: "nnoitra:avance_fatal",
+        3: "nnoitra:meteorito_de_hierro",
+        4: "nnoitra:declaracion_del_intocable",
+      },
+    },
+  },
+  gin: {
+    id: "gin",
+    name: "Gin Ichimaru",
+    health: 4000,
+    items: {
+      0: "gin:m1_shinso",
+      1: "gin:extended_blade",
+      2: "gin:spiral",
+      3: "gin:pursuing_blade",
+      4: "gin:piercing_shinso",
+    },
+    // Bankai como super ataque (nao troca item nem vida): agachar + usar a m1
+    // com o medidor em 100%
+    superAttack: {
+      onTrigger: "gin",
+      triggerItem: "gin:m1_shinso",
+    },
+  },
+  hitsugaya: {
+    id: "hitsugaya",
+    name: "Toshiro Hitsugaya (Hyōrinmaru)",
+    health: 2500,
+    items: {
+      0: "hitsugaya:m1_hyorinmaru",
+      1: "hitsugaya:ryusenka",
+      2: "hitsugaya:sennen_hyoro",
+      3: "hitsugaya:guncho_tsurara",
+      4: "hitsugaya:tenso_jurin",
+    },
+    // Awk-Bankai: agachar + usar a m1 com o medidor em 100%
+    awakening: {
+      name: "Daiguren Hyōrinmaru (Bankai)",
+      health: 3000,
+      triggerItem: "hitsugaya:m1_hyorinmaru",
+      canFly: true, // asas de gelo: voa (mesmo mecanismo do Ulquiorra)
+      onActivate: "battlecry",
+      chatLine: "Bankai: Daiguren Hyōrinmaru",
+      cryParticle: "hitsugaya:gelo",
+      items: {
+        0: "hitsugaya:m1_daiguren",
+        1: "hitsugaya:dragons_breath",
+        2: "hitsugaya:ice_age",
+        3: "hitsugaya:ice_barrier",
+        4: "hitsugaya:ice_explosion",
+      },
+    },
+  },
+  shunsui: {
+    id: "shunsui",
+    name: "Shunsui Kyoraku (Katen Kyokotsu)",
+    health: 4500,
+    items: {
+      0: "shunsui:m1_katen_kyokotsu",
+      1: "shunsui:kageoni",
+      2: "shunsui:takaoni",
+      3: "shunsui:irooni",
+      4: "shunsui:jokenpo",
+    },
+    // Awk-Bankai como super ataque: agachar + m1 com o medidor em 100%
+    superAttack: {
+      onTrigger: "shunsui",
+      triggerItem: "shunsui:m1_katen_kyokotsu",
+    },
+  },
+  soifon: {
+    id: "soifon",
+    name: "Soi Fon (Suzumebachi)",
+    health: 2000,
+    items: {
+      0: "soifon:m1_suzumebachi",
+      1: "soifon:shunpo",
+      2: "soifon:stealthy",
+      3: "soifon:shunko",
+      4: "soifon:nigeki_kessatsu",
+    },
+    // Bankai como super ataque: agachar + m1 com o medidor em 100%
+    superAttack: {
+      onTrigger: "soifon",
+      triggerItem: "soifon:m1_suzumebachi",
+    },
+  },
+  rukia: {
+    id: "rukia",
+    name: "Rukia Kuchiki (Sode no Shirayuki)",
+    health: 600,
+    items: {
+      0: "rukia:m1_zanpakuto",
+      1: "rukia:white_moon",
+      2: "rukia:white_wave",
+      3: "rukia:white_sword",
+      4: "rukia:juhaku",
+    },
+    // Awk: Hadō #73 como super ataque: agachar + m1 com o medidor em 100%
+    superAttack: {
+      onTrigger: "rukia",
+      triggerItem: "rukia:m1_zanpakuto",
+    },
+  },
+  shinji: {
+    id: "shinji",
+    name: "§6Shinji Hirako §8[Tier 4]§r",
+    health: 2600,
+    items: {
+      0: "shinji:m1_sakanade",
+      1: "shinji:triple_slash",
+      2: "shinji:sakanas_cut",
+      3: "shinji:hollow_mask",
+      4: "shinji:cero",
+    },
+    awakening: {
+      name: "Sakanade — Inverter o Mundo",
+      triggerItem: "shinji:m1_sakanade",
+    },
+  },
+  ukitake: {
+    id: "ukitake",
+    name: "Jūshiro Ukitake (Sōgyo no Kotowari)",
+    health: 4400,
+    items: {
+      0: "ukitake:m1_sogyo_no_kotowari",
+      1: "ukitake:throw_n_pull",
+      2: "ukitake:double_slam",
+      3: "ukitake:ying_yang",
+      4: "ukitake:stagnation",
+      5: "ukitake:absorb",
+    },
+    // Awk: Hansha como super ataque: agachar + m1 com o medidor em 100%
+    superAttack: {
+      onTrigger: "ukitake",
+      triggerItem: "ukitake:m1_sogyo_no_kotowari",
+    },
+  },
+  tosen: {
+    id: "tosen",
+    name: "Kaname Tōsen (Suzumushi)",
+    health: 1500,
+    items: {
+      0: "tosen:m1_suzumushi",
+      1: "tosen:nake",
+      2: "tosen:benihiko",
+      3: "tosen:hado_88",
+      4: "tosen:silent_cut",
+    },
+    // Awk-Bankai (Enma Kōrogi) como super ataque: agachar + m1 com o medidor em 100%
+    superAttack: {
+      onTrigger: "tosen",
+      triggerItem: "tosen:m1_suzumushi",
     },
   },
 };
@@ -477,9 +837,11 @@ const BYAKUYA_ALT_WEAPONS = [
 // a persona esta ativa, entao precisam de registro proprio pro ITEM_OWNER)
 // itens que nao ficam em slot de hotbar mas precisam de dono (pra nao serem dropados)
 const EXTRA_OWNED_ITEMS = {
+  "shinji:mask_visual": "shinji",
   "yammy:ira_marker": "yammy",
   "vizard:hollow_chest": "ichigo_vizard",
   "vizard:vasto_chest": "ichigo_vizard",
+  "ulquiorra:segunda_chest": "ulquiorra",
 };
 
 const STARKK_ALT_WEAPONS = [
@@ -489,29 +851,70 @@ const STARKK_ALT_WEAPONS = [
   "starkk:cero_metralleta",
 ];
 
-// O seletor mostra um arco por vez. Agachar + usar o seletor passa pro proximo.
-// Personagem novo tem que entrar no arco dele aqui, senao nao aparece no menu.
-const ARCS = [
-  {
-    id: "soul_society",
-    name: "Invasão à Soul Society",
-    characters: ["ichigo", "byakuya", "kenpachi", "mayuri"],
-  },
-  {
-    id: "hueco_mundo",
-    name: "Arrancar / Hueco Mundo",
-    characters: [
-      "grimmjow",
-      "ulquiorra",
-      "starkk",
-      "yammy",
-      "harribel",
-      "barragan",
-      "szayelaporro",
-      "ichigo_vizard",
-    ],
-  },
+// Seletor por raça + tier. Agachar + usar o seletor passa para a próxima raça.
+// Ao abrir o seletor, o primeiro menu mostra os tiers; ao escolher um tier,
+// aparecem somente os personagens daquela raça e daquele tier.
+const RACES = [
+  { id: "shinigami", name: "Shinigami" },
+  { id: "hollow", name: "Hollow" },
+  { id: "quincy", name: "Quincy" },
+  { id: "fullbringer", name: "Fullbringer" },
+  { id: "hybrid", name: "Híbrido" },
 ];
+
+const TIERS = [
+  { id: 1, name: "Tier 1", subtitle: "Nível Tenente" },
+  { id: 2, name: "Tier 2", subtitle: "Nível Capitão baixo" },
+  { id: 3, name: "Tier 3", subtitle: "Nível Capitão médio" },
+  { id: 4, name: "Tier 4", subtitle: "Nível Sternritter" },
+  { id: 5, name: "Tier 5", subtitle: "Nível Capitão alto" },
+  { id: 6, name: "Tier 6", subtitle: "Nível Elite Sternritter" },
+  { id: 7, name: "Tier 7", subtitle: "Nível Capitão Geral" },
+  { id: 8, name: "Tier 8", subtitle: "Nível Divisão Zero" },
+  { id: 9, name: "Tier 9", subtitle: "Transcendente" },
+];
+
+// Classificação atual dos personagens disponíveis no seletor.
+const CHARACTER_RACE_TIER = {
+  byakuya: { race: "shinigami", tier: 2 },
+  kenpachi: { race: "shinigami", tier: 3 },
+  mayuri: { race: "shinigami", tier: 2 },
+  gin: { race: "shinigami", tier: 5 },
+  hitsugaya: { race: "shinigami", tier: 4 },
+  shunsui: { race: "shinigami", tier: 5 },
+  soifon: { race: "shinigami", tier: 4 },
+  rukia: { race: "shinigami", tier: 2 },
+  ukitake: { race: "shinigami", tier: 5 },
+  shinji: { race: "hybrid", tier: 4 },
+  tosen: { race: "hybrid", tier: 3 },
+
+  grimmjow: { race: "hollow", tier: 2 },
+  szayelaporro: { race: "hollow", tier: 2 },
+  aaroniero: { race: "hollow", tier: 2 },
+  nnoitra: { race: "hollow", tier: 3 },
+  ulquiorra: { race: "hollow", tier: 3 },
+  harribel: { race: "hollow", tier: 3 },
+  barragan: { race: "hollow", tier: 4 },
+  starkk: { race: "hollow", tier: 4 },
+  yammy: { race: "hollow", tier: 5 },
+
+  ichigo: { race: "hybrid", tier: 2 },
+  ichigo_vizard: { race: "hybrid", tier: 4 },
+};
+
+const SPIRITUAL_PRESSURE = { durationTicks: 200, cooldownTicks: 600, intervalTicks: 60, effectDurationTicks: 70, radii: {1:10,2:15,3:20,4:30,5:40,6:60,7:80,8:100,9:200}, effects: {2:{amplifier:1,damage:10},3:{amplifier:2,damage:20},4:{amplifier:3,damage:50}} };
+function isSpiritualPressureEnabled(player){ return player.getDynamicProperty(DP.pressureEnabled)!==false; }
+function setSpiritualPressureEnabled(player,enabled){ player.setDynamicProperty(DP.pressureEnabled,!!enabled); }
+function isInfiniteAwakening(player){ return player.getDynamicProperty(DP.infiniteAwakening)===true; }
+function genericSkillIndex(player){const n=Number(player.getDynamicProperty(DP.genericSkill));return n===1||n===2?n:0;}
+function genericSkillName(player){return ["Pressão Espiritual","Air Step","Reiatsu Jump"][genericSkillIndex(player)];}
+function cycleGenericSkill(player){const tier=tierOfPlayer(player),cur=genericSkillIndex(player),next=tier>=5?(cur+1)%3:(cur===0?2:0);player.setDynamicProperty(DP.genericSkill,next);player.sendMessage(`§bSkill: §f${genericSkillName(player)}`);}
+function activateGenericSpiritualPressure(player){if(onCooldown(player,DP.pressureCooldown,SPIRITUAL_PRESSURE.cooldownTicks,system.currentTick)){player.sendMessage("§cPressão Espiritual em cooldown.");return;}player.setDynamicProperty(DP.pressureActiveUntil,system.currentTick+SPIRITUAL_PRESSURE.durationTicks);setCooldown(player,DP.pressureCooldown,system.currentTick);player.sendMessage("§4§lPressão Espiritual ativada! §r§7(10s)");}
+function removeAirStepBlock(player){const raw=player.getDynamicProperty(DP.airStepBlock);if(raw){try{const p=JSON.parse(raw),b=player.dimension.getBlock(p);if(b?.typeId==="minecraft:barrier")b.setType("minecraft:air");}catch(e){}}player.setDynamicProperty(DP.airStepBlock,undefined);}
+function setAirStepBlock(player){const l=player.location,pos={x:Math.floor(l.x),y:Math.floor(l.y-1),z:Math.floor(l.z)},raw=player.getDynamicProperty(DP.airStepBlock);if(raw){try{const o=JSON.parse(raw);if(o.x===pos.x&&o.y===pos.y&&o.z===pos.z)return;const b=player.dimension.getBlock(o);if(b?.typeId==="minecraft:barrier")b.setType("minecraft:air");}catch(e){}}try{const b=player.dimension.getBlock(pos);if(!b?.isAir)return;b.setType("minecraft:barrier");player.setDynamicProperty(DP.airStepBlock,JSON.stringify(pos));}catch(e){}}
+function toggleGenericAirStep(player){if(tierOfPlayer(player)<5){player.sendMessage("§cAir Step exige Tier 5 ou superior.");return;}const on=player.getDynamicProperty(DP.airStepActive)===true;player.setDynamicProperty(DP.airStepActive,!on);if(on){removeAirStepBlock(player);player.sendMessage("§7Air Step desativado.");}else{setAirStepBlock(player);player.sendMessage("§bAir Step ativado.");}}
+function activateReiatsuJump(player){const now=system.currentTick,last=tickOf(player,"mv:reiatsu_jump_cd");if(typeof last==="number"&&now-last<200){player.sendMessage("§cReiatsu Jump em cooldown.");return;}const c=Number(player.getDynamicProperty("mv:reiatsu_jump_charge"))||0;const amp=c>=120?2:c>=80?1:0;player.addEffect("jump_boost",2,{amplifier:amp,showParticles:false});player.setDynamicProperty("mv:reiatsu_jump_cd",now);player.setDynamicProperty("mv:reiatsu_jump_charge",0);}
+function handleGenericSkillUse(player){const i=genericSkillIndex(player);if(i===0)activateGenericSpiritualPressure(player);else if(i===1)toggleGenericAirStep(player);else activateReiatsuJump(player);}
 
 // Todo peitoral de forma que existe, pra poder varrer os que estao sobrando.
 // Sem isso da pra tirar a peca, ficar com uma copia na mochila e vestir ela
@@ -533,6 +936,11 @@ for (const key in CHARACTERS) {
   if (c.awakening) {
     for (const slot in c.awakening.items) {
       ITEM_OWNER[c.awakening.items[slot]] = c.id;
+    }
+    if (c.awakening.trueForm?.items) {
+      for (const slot in c.awakening.trueForm.items) {
+        ITEM_OWNER[c.awakening.trueForm.items[slot]] = c.id;
+      }
     }
   }
 }
@@ -610,7 +1018,8 @@ function virtualHealth(entity) {
 }
 
 // Bloqueio universal: agachar + m1. Corta metade do dano de TUDO - so nao vale
-// contra golpe marcado como quebra-bloqueio (hoje so a Royal Cleave do Barragan).
+// contra golpe marcado como quebra-bloqueio (hoje a Royal Cleave do Barragan e
+// o Duro Slash do Nnoitra).
 const BLOCK = {
   durationTicks: 100, // 5s no maximo segurando a guarda
   cooldownTicks: 100, // 5s, contados de quando o bloqueio ACABA
@@ -664,20 +1073,61 @@ function markMultiplierOf(entity) {
   }
 }
 
+function isIntocable(entity) {
+  try {
+    return (
+      system.currentTick <
+      readTickDeadline(entity, DP.intocableEnd, INTocable.durationTicks)
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
 function dealDamage(target, amount, source, options) {
-  const marked = markMultiplierOf(target);
+  if (isIntocable(target)) {
+    if (!options?.bypassesIntocable) {
+      try {
+        showIntocableGuard(target);
+      } catch (e) {}
+      return;
+    }
+    // so o golpe que quebra a defesa (o Hell's Cut do Zaraki) chega aqui: a
+    // defesa cai (senao o Resistance total do Intocable engoliria o dano)
+    endIntocable(target, true);
+  }
+
+  // Karamatsu Shinjū: quem esta na peca so toma dano da propria peca
+  if (karamatsuProtected.has(target.id) && !options?.karamatsu) return;
+
+  // Ice Barrier do Hitsugaya: a parede virada pro golpe segura ele inteiro
+  if (absorbIceBarrier(target, source)) return;
+
+  // Jokenpo do Shunsui: quem perdeu toma mais dano por um tempo
+  const marked =
+    markMultiplierOf(target) * vulnerabilityMultiplierOf(target) * fragilityMultiplierOf(target);
 
   const guarded = !options?.breaksBlock && isBlocking(target);
   if (guarded) showBlockSpark(target);
 
   const blocked = guarded ? BLOCK.damageMultiplier : 1;
-  target.applyDamage((amount * marked * blocked) / healthScaleOf(target), {
+  // individualidade e Hierro do Nnoitra: valem contra TUDO, ate contra o golpe
+  // que quebra a guarda (a guarda e uma coisa, a pele dele e outra)
+  const resisted = damageTakenMultiplierOf(target);
+  const finalAmount = amount * marked * blocked * resisted;
+  // Absorb do Ukitake: imune ao dano, que fica guardado pro Hansha
+  if (absorbUkitakeDamage(target, finalAmount)) return;
+  target.applyDamage(finalAmount / healthScaleOf(target), {
     cause: EntityDamageCause.entityAttack,
     damagingEntity: source,
   });
 }
 
 const SKILL_COOLDOWN_TICKS = {
+  "shinji:triple_slash": 400,
+  "shinji:sakanas_cut": 500,
+  "shinji:hollow_mask": 1300,
+  "shinji:cero": 200,
   "ichigo:getsuga_slam": 200,
   "ichigo:getsuga_slash": 320,
   "ichigo:getsuga_run": 320,
@@ -689,13 +1139,15 @@ const SKILL_COOLDOWN_TICKS = {
   "byakuya:tripleshot": 300,
   "byakuya:disperse": 440,
   "byakuya:bloodshed": 600,
-  "byakuya:coating": 3600,
+  "byakuya:sakura_distraction": 3600,
   "kenpachi:flash_slash": 360,
   "kenpachi:stomp": 240,
   "kenpachi:hunt": 400,
   "kenpachi:hells_cut": 400, // 20% a menos que o Getsuga Tenshou (500)
-  "mayuri:poison_slash": 300, // 15s
-  "mayuri:toxic_fog": 600, // 30s
+  "mayuri:poison_slash": 300,
+  "mayuri:toxic_fog": 600,
+  "mayuri:regenerate": 800,
+  "mayuri:envenenar": 400,
   "grimmjow:desgarra": 300, // 15s
   "grimmjow:raza": 400, // 20s
   "grimmjow:gran_rey_cero": 600, // 30s
@@ -708,8 +1160,9 @@ const SKILL_COOLDOWN_TICKS = {
   "ulquiorra:sonido": 160, // 8s
   "ulquiorra:pesquisa": 400, // 20s - nao especificado
   "ulquiorra:nihil": 500, // 25s - nao especificado
-  "ulquiorra:enigma": 800, // 40s - nao especificado
-  "ulquiorra:cero_oscuras": 700, // 35s - nao especificado
+  "ulquiorra:enigma": 800, // 40s na primeira etapa; 20s na Segunda Etapa
+  "ulquiorra:cero_oscuras": 700,
+  "ulquiorra:cero_oscuras_triplo": 600, // 30s // 35s - nao especificado
   "ulquiorra:lanza": 1200, // 60s - nao especificado
   "starkk:slash_barrage": 460, // 23s
   "starkk:sideway_cuts": 360, // 18s
@@ -748,14 +1201,68 @@ const SKILL_COOLDOWN_TICKS = {
   "szayel:teatro_de_titeres": 700, // 35s - e ainda por cima uso unico por awakening
   "szayel:posse": 800, // 40s
   "szayel:gabriel": 900, // 45s
-  "vizard:dash_n_slash": 400, // 20s
-  "vizard:getsuga_barrage": 600, // 30s
-  "vizard:descent_tensho": 300, // 15s
-  "vizard:super_nuke": 900, // 45s
-  "vizard:whites_showdown": 400, // 20s
-  "vizard:bullet_hell": 600, // 30s
-  "vizard:everything_but_the_rain": 800, // 40s
-  "vizard:grito_del_diablo": 3600, // 3 min
+  "vizard:dash_n_slash": 600,
+  "vizard:getsuga_barrage": 800,
+  "vizard:descent_tensho": 500,
+  "vizard:super_nuke": 1100,
+  "vizard:whites_showdown": 600,
+  "vizard:bullet_hell": 800,
+  "vizard:everything_but_the_rain": 1000,
+  "vizard:grito_del_diablo": 4200,
+  "aaroniero:cero_metalico": 340,
+  "aaroniero:nejibana": 300,
+  "aaroniero:devorar": 240,
+  "aaroniero:mascara_kaien": 800,
+  "aaroniero:tentaculos": 360,
+  "aaroniero:tridente_kaien": 440,
+  "aaroniero:cero_metalico_gloton": 560,
+  "aaroniero:banquete": 2400,
+  "aaroniero:glotoneria": 400,
+  "nnoitra:duro_slash": 200, // 10s
+  "nnoitra:spinning_blade": 400, // 20s
+  "nnoitra:beyblade": 600, // 30s
+  "nnoitra:hierro": 700, // 35s
+  "nnoitra:muerte_multiple": 400, // 20s
+  "nnoitra:avance_fatal": 400, // 20s
+  "nnoitra:meteorito_de_hierro": 600, // 30s
+  "nnoitra:declaracion_del_intocable": 1200, // 60s
+  "gin:extended_blade": 200, // 10s
+  "gin:spiral": 400, // 20s
+  "gin:pursuing_blade": 500, // 25s
+  "gin:piercing_shinso": 600, // 30s
+  "hitsugaya:ryusenka": 300, // 15s
+  "hitsugaya:sennen_hyoro": 700, // 35s
+  "hitsugaya:guncho_tsurara": 500, // 25s
+  "hitsugaya:tenso_jurin": 900, // 45s
+  "hitsugaya:dragons_breath": 500, // 25s
+  "hitsugaya:ice_age": 800, // 40s
+  "hitsugaya:ice_barrier": 400, // 20s
+  "hitsugaya:ice_explosion": 1200, // 60s
+  "shunsui:kageoni": 300, // 15s
+  "shunsui:takaoni": 500, // 25s
+  "shunsui:irooni": 600, // 30s
+  "shunsui:jokenpo": 800, // 40s
+  "soifon:shunpo": 100, // 5s
+  "soifon:stealthy": 300, // 15s
+  "soifon:shunko": 600, // 30s (nao foi especificado)
+  "soifon:nigeki_kessatsu": 1600, // 80s
+  "rukia:white_moon": 500, // 25s
+  "rukia:white_wave": 400, // 20s
+  "rukia:white_sword": 600, // 30s
+  "rukia:juhaku": 800, // 40s (nao foi especificado)
+  "ukitake:throw_n_pull": 300, // 15s
+  "ukitake:double_slam": 400, // 20s
+  "ukitake:ying_yang": 400, // 20s
+  "ukitake:stagnation": 700, // 35s
+  "ukitake:absorb": 800, // 40s
+  "tosen:nake": 400, // 20s
+  "tosen:benihiko": 600, // 30s
+  "tosen:hado_88": 900, // 45s
+  "tosen:silent_cut": 600, // 30s
+  "tosen:palacio_de_las_espadas": 360, // 18s
+  "tosen:ecolocalizacion": 400, // 20s
+  "tosen:cero": 800, // 40s
+  "tosen:los_nueve_aspectos": 900, // 45s
 };
 
 const SKILL_NAMES = {
@@ -770,13 +1277,15 @@ const SKILL_NAMES = {
   "byakuya:tripleshot": "Senbonzakura Tripleshot",
   "byakuya:disperse": "Senbonzakura Disperse",
   "byakuya:bloodshed": "Senbonzakura Bloodshed",
-  "byakuya:coating": "Sakura's Coating",
+  "byakuya:sakura_distraction": "Sakura's Distraction",
   "kenpachi:flash_slash": "Flash Slash",
   "kenpachi:stomp": "Stomp",
   "kenpachi:hunt": "Kenpachi's Hunt",
   "kenpachi:hells_cut": "Hell's Cut",
   "mayuri:poison_slash": "Poison Slash",
   "mayuri:toxic_fog": "Toxic Fog",
+  "mayuri:regenerate": "Regenerate",
+  "mayuri:envenenar": "Envenenar",
   "grimmjow:desgarra": "Desgarra de la Pantera",
   "grimmjow:raza": "Raza de la Pantera",
   "grimmjow:gran_rey_cero": "Gran Rey Cero",
@@ -837,36 +1346,91 @@ const SKILL_NAMES = {
   "vizard:bullet_hell": "Bullet Hell",
   "vizard:everything_but_the_rain": "Everything But the Rain",
   "vizard:grito_del_diablo": "Grito del Diablo",
+  "aaroniero:cero_metalico": "Cero Metálico",
+  "aaroniero:nejibana": "Nejibana",
+  "aaroniero:devorar": "Devorar",
+  "aaroniero:mascara_kaien": "Máscara do Kaien",
+  "aaroniero:tentaculos": "Tentáculos",
+  "aaroniero:tridente_kaien": "Tridente de Kaien",
+  "aaroniero:cero_metalico_gloton": "Cero Metálico Glotón",
+  "aaroniero:banquete": "Banquete",
+  "aaroniero:glotoneria": "Glotonería",
+  "nnoitra:duro_slash": "Duro Slash",
+  "nnoitra:spinning_blade": "Spinning Blade",
+  "nnoitra:beyblade": "Beyblade",
+  "nnoitra:hierro": "Hierro",
+  "nnoitra:muerte_multiple": "Muerte Múltiple",
+  "nnoitra:avance_fatal": "Avance Fatal",
+  "nnoitra:meteorito_de_hierro": "Meteorito de Hierro",
+  "nnoitra:declaracion_del_intocable": "Declaración del Intocable",
+  "gin:extended_blade": "Extended Blade",
+  "gin:spiral": "Spiral",
+  "gin:pursuing_blade": "Pursuing Blade",
+  "gin:piercing_shinso": "Piercing Shinso",
+  "hitsugaya:ryusenka": "Ryūsenka",
+  "hitsugaya:sennen_hyoro": "Sennen Hyōrō",
+  "hitsugaya:guncho_tsurara": "Guncho Tsurara",
+  "hitsugaya:tenso_jurin": "Tensō Jūrin",
+  "hitsugaya:dragons_breath": "Dragon's Breath",
+  "hitsugaya:ice_age": "Ice Age",
+  "hitsugaya:ice_barrier": "Ice Barrier",
+  "hitsugaya:ice_explosion": "Ice Explosion",
+  "shunsui:kageoni": "Kageoni",
+  "shunsui:takaoni": "Takaoni",
+  "shunsui:irooni": "Irooni",
+  "shunsui:jokenpo": "Jokenpo",
+  "soifon:shunpo": "Shunpo",
+  "soifon:stealthy": "Stealthy",
+  "soifon:shunko": "Shunkō",
+  "soifon:nigeki_kessatsu": "Nigeki Kessatsu",
+  "rukia:white_moon": "White Moon",
+  "rukia:white_wave": "White Wave",
+  "rukia:white_sword": "White Sword",
+  "rukia:juhaku": "Juhaku",
+  "ukitake:throw_n_pull": "Throw 'n Pull",
+  "ukitake:double_slam": "Double Slam",
+  "ukitake:ying_yang": "Ying Yang",
+  "ukitake:stagnation": "Stagnation",
+  "ukitake:absorb": "Absorb",
+  "tosen:nake": "Nake",
+  "tosen:benihiko": "Benihikō",
+  "tosen:hado_88": "Hadō #88",
+  "tosen:silent_cut": "Silent Cut",
+  "tosen:palacio_de_las_espadas": "Palacio de las Espadas",
+  "tosen:ecolocalizacion": "Ecolocalización",
+  "tosen:cero": "Cero",
+  "tosen:los_nueve_aspectos": "Los Nueve Aspectos",
 };
 
 // dano aumentado
 const DAMAGE = {
   // Ichigo (Shikai) - reduzido
-  m1: 8,
-  slam: 26,
-  slash: 38,
-  run: 34,
-  tenshou: 75,
-  // Ichigo (Tensa Zangetsu / Bankai) - reduzido mais forte
-  tensaM1: 11,
-  barrage: 70,
-  tenshouBankai: 130,
-  nuke: 170,
-  // Byakuya - aumentado
-  byakuyaM1: 12,
+  m1: 17,
+  slam: 60,
+  slash: 87,
+  run: 77,
+  tenshou: 145,
+  // Ichigo (Tensa Zangetsu / Bankai)
+  tensaM1: 22,
+  barrage: 150,
+  tenshouBankai: 280,
+  doubleGetsuga: 300,
+  nuke: 500,
+  // Byakuya
+  byakuyaM1: 18,
   tripleshot: 35,
-  disperse: 42,
-  bloodshed: 25,
-  byakuyaSenkeiM1: 22,
-  byakuyaFinisher: 130,
+  disperse: 100,
+  bloodshed: 125,
+  byakuyaSenkeiM1: 26,
+  byakuyaFinisher: 650,
   // Zaraki Kenpachi
-  kenpachiM1: 14,
-  flashSlash: 30, // por avanco, sao 3 avancos
-  stomp: 45,
-  hellsCut: 75, // mesmo dano do Getsuga Tenshou, metade do alcance
+  kenpachiM1: 40,
+  flashSlash: 150,
+  stomp: 200,
+  hellsCut: 400,
   // Mayuri Kurotsuchi
-  mayuriM1: 8,
-  poisonSlash: 20,
+  mayuriM1: 16,
+  poisonSlash: 60,
   // Grimmjow Jaegerjaquez
   grimmjowM1: 20,
   desgarra: 100,
@@ -882,7 +1446,8 @@ const DAMAGE = {
   ceroBala: 100, // por tiro, sao 4
   // Murcielago (Resurreccion)
   garrasMurcielago: 60,
-  ceroOscuras: 1400, // 4x o Gran Rey Cero
+  ceroOscuras: 1400, // original
+  ceroOscurasTriplo: 1120, // 20% menos que a Cero Oscuras original
   lanza: 900,
   // Coyote Starkk
   starkkM1: 80,
@@ -931,19 +1496,80 @@ const DAMAGE = {
   // Resurreccion: Fornicaras
   fornicarasM1: 22,
   posseHit: 20, // por investida da entidade domada - nao especificado
-  // Ichigo (pos-treino Vizard)
-  vizardM1: 40,
-  dashNSlashTick: 20, // por tick de avanco
-  vizardBarrage: 100, // por getsuga, sao 6
-  descentTensho: 200,
-  superNuke: 600,
-  // TRUE AWAKENING: Vasto Lorde
-  vastoM1: 90,
-  vastoM1Blast: 40, // respingo do hit explosivo - nao especificado
-  whitesShowdown: 150, // por onda de choque (4 ondas = 600) - nao especificado
-  bulletHell: 75, // por cero
-  ceroRain: 20, // por pingo de cero
-  gritoDiabloTick: 10, // por tick, por 10s
+  // Aaroniero Arruruerie
+  aaronieroM1: 16,
+  aaronieroAwkM1: 20,
+  ceroMetalico: 110,
+  nejibana: 70,
+  devorar: 45,
+  tentaculos: 45,
+  tridenteKaien: 160,
+  ceroMetalicoGloton: 260,
+  banquete: 400,
+  // Nnoitra Gilga
+  nnoitraM1: 40,
+  nnoitraResM1: 50,
+  muerteMultipleHit: 20,
+  avanceFatal: 200,
+  duroSlash: 100, // quebra a guarda
+  spinningBladeHit: 40, // por corte da lamina girando
+  beybladeHit: 60, // por corte da lamina arremessada
+  // Gin Ichimaru
+  ginM1: 90,
+  ginExtendedBlade: 150,
+  ginSpiralHit: 100, // por hit da lamina girando
+  ginPursuingBlade: 300,
+  ginPiercingShinso: 350, // por alvo atravessado
+  // Toshiro Hitsugaya
+  hitsugayaM1: 50,
+  hitsugayaBankaiM1: 90,
+  ryusenka: 100,
+  gunchoTsurara: 50, // por estaca
+  dragonsBreath: 300,
+  iceExplosion: 500,
+  // Shunsui Kyoraku
+  shunsuiM1: 100,
+  kageoni: 150, // dividido nos dois cortes
+  takaoni: 300,
+  irooni: 400,
+  // Soi Fon
+  soifonM1: 65,
+  jakuho: 2000, // Jakuhō Raikōben (super)
+  // Rukia Kuchiki
+  rukiaM1: 15,
+  whiteWave: 30, // por projetil
+  whiteSword: 180,
+  hado73: 270, // dobra com o encantamento
+  // Jūshiro Ukitake
+  ukitakeM1: 100,
+  throwPull: 180,
+  doubleSlam: 240,
+  yingYang: 100, // por giro
+  // Kaname Tosen
+  tosenM1: 30,
+  nake: 150,
+  benihiko: 250, // total por alvo, dividido entre as laminas
+  hado88: 450,
+  silentCut: 200,
+  silentCutGrimmjow: 400,
+  // Kaname Tosen (Visored)
+  tosenM1Visored: 40,
+  tosenPalacio: 85, // por espada, ate 8 vezes no mesmo alvo
+  tosenCero: 400,
+  tosenNueveAspectos: 50, // por ataque, ate 10 vezes
+  // Ichigo (pos-treino Vizard) - entre Ulquiorra base e Murcielago
+  vizardM1: 50,
+  dashNSlashTick: 12,
+  vizardBarrage: 70,
+  descentTensho: 150,
+  superNuke: 400,
+  // TRUE AWAKENING: Vasto Lorde - reduzido para equilibrar com Barragan
+  vastoM1: 65,
+  vastoM1Blast: 25,
+  whitesShowdown: 100,
+  bulletHell: 45,
+  ceroRain: 10,
+  gritoDiabloTick: 6,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -1020,7 +1646,7 @@ const TOXIC_FOG = {
   durationTicks: 300, // 15s
   tickInterval: 10,
   refreshTicks: 30, // um pouco maior que o intervalo pro efeito nao piscar
-  poisonAmplifier: 9, // poison 10
+  mayuriPoison: { durationSeconds: 10, damagePerSecond: 10 },
   slownessAmplifier: 2, // slowness 3
   particlesPerTick: 14,
   endMessage: "§7A Toxic Fog se dissipou.",
@@ -1168,17 +1794,17 @@ const BULLET_HELL = {
   blastRadius: 9, // "area BEM GRANDE"
 };
 const CERO_RAIN = {
-  skyHeight: 34,
-  drops: 60,
-  gapTicks: 3,
-  spreadRadius: 14,
-  fallSpeed: 2.4,
-  hitRadius: 2.6,
+  skyHeight: 42,
+  drops: 320,
+  gapTicks: 1,
+  spreadRadius: 30,
+  fallSpeed: 2.8,
+  hitRadius: 4.5,
   // metade dos pingos cai perto de alguem em vez de num ponto qualquer: sem
   // isso 60 pingos espalhados num raio grande acertam ~1 vez e a skill nao faz
   // nada, que nao e o que "sao varios entao tudo bem" quer dizer
   aimedShare: 0.5,
-  aimScatter: 3,
+  aimScatter: 4.5,
 };
 const GRITO_DIABLO = { radius: 45, durationTicks: 200 }; // alcance absurdo, 10s
 
@@ -1252,6 +1878,29 @@ const EL_MALDITO = {
 };
 const LA_MUERTE = { seconds: 20 };
 
+// Nnoitra Gilga
+const DURO_SLASH = { forward: 6, width: 9, verticalReach: 3 }; // corte deitado, largo
+// A Spinning Blade e a Beyblade sao a MESMA lamina dupla (pedido: mesmo
+// tamanho), entao o tamanho mora num lugar so. radius = alcance de cada ponta,
+// ou seja, a area toda tem 12 blocos de ponta a ponta.
+const DOUBLE_BLADE = { radius: 6, reachBelow: 1.3, reachAbove: 1.9 };
+const SPINNING_BLADE = {
+  durationTicks: 200, // 10s
+  degreesPerTick: 18, // 1 volta por segundo: uma ponta passa a cada meio segundo
+  hitIntervalTicks: 8, // o mesmo alvo so leva "por hit" de novo depois disso
+};
+const BEYBLADE = {
+  startDistance: 2,
+  range: 28,
+  speed: 0.8, // blocos por tick
+  degreesPerTick: 30, // gira mais rapido que a Spinning Blade, e um piao
+  hitIntervalTicks: 5,
+};
+const HIERRO = {
+  durationTicks: 200, // 10s
+  damageTakenMultiplier: 0.7, // recebe 70% do dano; soma (multiplica) com a individualidade
+};
+
 const CERO_METRALLETA = {
   volleys: 15,
   volleyGapTicks: 20, // 15 disparos em 15s
@@ -1284,6 +1933,10 @@ function getAwakening(player) {
 }
 
 function addAwakening(player, amount) {
+  // personagem sem awakening nem super ataque (o Nnoitra) nao tem o que encher
+  const character = getActiveCharacter(player);
+  if (character && !character.awakening && !character.superAttack) return;
+
   const cur = getAwakening(player);
   const next = Math.min(100, cur + amount);
   player.setDynamicProperty(DP.awakening, next);
@@ -1335,9 +1988,18 @@ function clearSessionTimers(player) {
   player.setDynamicProperty(DP.blockEnd, 0);
   player.setDynamicProperty(DP.blockCd, undefined);
   player.setDynamicProperty(DP.respiraEnd, 0);
+  player.setDynamicProperty(DP.hierroEnd, 0);
+  player.setDynamicProperty(DP.intocableEnd, 0);
   player.setDynamicProperty(DP.muerteArmed, false);
+  player.setDynamicProperty(DP.mayuriParalysis, false);
+  player.setDynamicProperty("mv:mayuri_poison_gabriel", false);
   player.setDynamicProperty(DP.frozenEnd, 0);
+  player.setDynamicProperty(DP.genericSkill,0);player.setDynamicProperty(DP.pressureActiveUntil,0);player.setDynamicProperty(DP.pressureCooldown,undefined);player.setDynamicProperty(DP.airStepActive,false);player.setDynamicProperty("mv:reiatsu_jump_cd",undefined);player.setDynamicProperty("mv:reiatsu_jump_charge",0);
   player.setDynamicProperty(DP.gabrielArmed, false);
+  player.setDynamicProperty(DP.aaronieroMaskEnd, 0);
+  player.setDynamicProperty(DP.aaronieroAbsorbed, JSON.stringify([]));
+  player.setDynamicProperty(DP.aaronieroDevouredCount, 0);
+  player.setDynamicProperty("mv:aaroniero_selected", 0);
 }
 
 function setCooldown(player, key, currentTick) {
@@ -1349,10 +2011,17 @@ function cdKeyForSkill(itemId) {
 }
 
 function forceGiveLockedItem(container, slot, itemId) {
-  const existing = container.getItem(slot);
-  if (!existing || existing.typeId !== itemId) {
-    container.setItem(slot, new ItemStack(itemId, 1));
+  // getSlot/hasItem/typeId NAO cria ItemStack: esse loop roda pra todo player
+  // varias vezes por segundo
+  let has = false;
+  try {
+    const cs = container.getSlot(slot);
+    has = cs.hasItem() && cs.typeId === itemId;
+  } catch (e) {
+    const existing = container.getItem(slot);
+    has = !!existing && existing.typeId === itemId;
   }
+  if (!has) container.setItem(slot, new ItemStack(itemId, 1));
 }
 
 function healToMax(player, maxHealth) {
@@ -1413,11 +2082,20 @@ function applyCharacterEffects(
   regenAmplifier = REGEN_AMPLIFIER,
   extraEffects
 ) {
-  const maxHealth = cutHealthFor(player, configuredMaxHealth);
+  let adjustedConfiguredHealth = configuredMaxHealth;
+  if (getActiveCharacter(player)?.id === "aaroniero") {
+    const absorbed = getAaronieroDevouredCount(player);
+    adjustedConfiguredHealth = Math.round(configuredMaxHealth * (1 + absorbed * 0.05));
+  }
+  const maxHealth = cutHealthFor(player, adjustedConfiguredHealth);
   player.setDynamicProperty(DP.healthScale, healthScaleFor(maxHealth));
 
   setMaxHealth(player, maxHealth);
   setPermanentEffect(player, "speed", speedAmplifier);
+  // Individualidade do Tosen: cegueira permanente (so some durante a Enma Korogi)
+  if (getActiveCharacter(player)?.id === "tosen" && !tosenEnma.has(player.id)) {
+    setPermanentEffect(player, "blindness", 0);
+  }
 
   // regenAmplifier null = forma sem regeneracao passiva. A Ira do Yammy troca
   // ela por uma cura em bloco a cada 4s; somar as duas descaracterizaria o numero.
@@ -1549,14 +2227,25 @@ function equipArmorPiece(player, itemId) {
    acumular e ate vestir sem personagem nenhum. Agora a peca certa fica no
    peito, qualquer copia solta some, e peca de forma que nao esta valendo sai
    do peito tambem - e por isso que a armadura some quando o awakening acaba. */
+// a mochila inteira so precisa ser varrida de tempos em tempos (o peitoral que
+// sobrou some em ate 2s), nao a cada 10 ticks pra cada player
+const lastArmorSweepTick = new Map();
+
 function sweepFormArmor(player, wanted) {
-  try {
-    const inv = getInv(player);
-    for (let slot = 0; slot < inv.size; slot++) {
-      const item = inv.getItem(slot);
-      if (item && FORM_ARMOR_PIECES.has(item.typeId)) inv.setItem(slot, undefined);
-    }
-  } catch (e) {}
+  const nowTick = system.currentTick;
+  if (
+    FORM_ARMOR_PIECES.size > 0 &&
+    nowTick - (lastArmorSweepTick.get(player.id) ?? -1000) >= 40
+  ) {
+    lastArmorSweepTick.set(player.id, nowTick);
+    try {
+      const inv = getInv(player);
+      for (let slot = 0; slot < inv.size; slot++) {
+        const cs = inv.getSlot(slot);
+        if (cs.hasItem() && FORM_ARMOR_PIECES.has(cs.typeId)) cs.setItem(undefined);
+      }
+    } catch (e) {}
+  }
 
   try {
     const equip = player.getComponent("minecraft:equippable");
@@ -1673,6 +2362,9 @@ function dmgMultiplier(player) {
 
   // formas despertas que dao buff permanente de dano (Pressao do Kenpachi)
   const character = getActiveCharacter(player);
+  if (character?.id === "aaroniero" && system.currentTick < readTickDeadline(player, DP.aaronieroMaskEnd, 240)) {
+    multiplier *= 1.15;
+  }
   const awakenedBonus = character?.awakening?.damageMultiplier;
   if (awakenedBonus && isAwakened(player)) {
     multiplier *= awakenedBonus;
@@ -1797,7 +2489,7 @@ function skillBlockingZoneFor(player) {
 
 // zona que prende esse player no lugar (usada pra travar o dash)
 function trappingZoneFor(player) {
-  return zonesAt(player).find((zone) => zone.traps);
+  return zonesAt(player).find((zone) => zone.traps || zone.blocksDash);
 }
 
 function removeZonesOwnedBy(ownerId) {
@@ -1917,6 +2609,9 @@ function getActiveItemsForPlayer(player, character) {
     }
     return form.items ?? character.items;
   }
+  if (character.id === "tosen" && isTosenVisored(player)) {
+    return TOSEN_VISORED.items;
+  }
   if (character.superAttack) {
     const weaponState = getByakuyaWeaponState(player);
     if (weaponState === "senkei") {
@@ -1937,6 +2632,7 @@ function activateCharacter(player, characterId) {
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
   player.setDynamicProperty(DP.starkkForm, "starkk");
+  if (characterId === "aaroniero") { clearAaronieroDevoured(player); player.setDynamicProperty("mv:aaroniero_selected", 0); player.setDynamicProperty(DP.aaronieroMaskEnd, 0); }
   clearComboCounters(player);
 
   applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
@@ -1945,6 +2641,11 @@ function activateCharacter(player, characterId) {
   for (const slot in character.items) {
     inv.setItem(Number(slot), new ItemStack(character.items[slot], 1));
   }
+  player.setDynamicProperty(DP.genericSkill,0);
+  player.setDynamicProperty(DP.pressureActiveUntil,0);
+  player.setDynamicProperty(DP.airStepActive,false);
+  removeAirStepBlock(player);
+  forceGiveLockedItem(inv,GENERIC_SKILL_SLOT,GENERIC_SKILL_ITEM);
 
   system.runTimeout(() => {
     healToMax(player, character.health);
@@ -1957,6 +2658,7 @@ function activateCharacter(player, characterId) {
 }
 
 function deactivateCharacter(player) {
+  soiClearNigeki(player.id);
   const character = getActiveCharacter(player);
   if (!character) return;
 
@@ -1973,6 +2675,8 @@ function deactivateCharacter(player) {
   const activeItems = getActiveItemsForPlayer(player, character);
 
   const inv = getInv(player);
+  if(inv.getItem(GENERIC_SKILL_SLOT)?.typeId===GENERIC_SKILL_ITEM) inv.setItem(GENERIC_SKILL_SLOT,undefined);
+  player.setDynamicProperty(DP.airStepActive,false);removeAirStepBlock(player);player.setDynamicProperty(DP.pressureActiveUntil,0);
   for (const slot in activeItems) {
     const item = inv.getItem(Number(slot));
     if (item && item.typeId === activeItems[slot]) {
@@ -1980,9 +2684,16 @@ function deactivateCharacter(player) {
     }
   }
 
+  if (character.id === "ulquiorra" || character.id === "hitsugaya") setUlquiorraFlight(player, false);
   clearFormExtras(player, character.awakening);
   player.removeEffect("health_boost");
   player.removeEffect("speed");
+  if (character.id === "tosen") player.removeEffect("blindness");
+  if (character.id === "tosen") {
+    player.setDynamicProperty(DP.tosenVisored, false);
+    resetTosenVisoredCharge(player);
+    tosenOldHelmet.delete(player.id);
+  }
   player.removeEffect("regeneration");
   player.setDynamicProperty(DP.healthScale, 1);
   player.setDynamicProperty(DP.markedEnd, 0);
@@ -1992,6 +2703,7 @@ function deactivateCharacter(player) {
   player.setDynamicProperty(DP.awakening, 0);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
   player.setDynamicProperty(DP.starkkForm, "starkk");
+  if (character.id === "aaroniero") { clearAaronieroDevoured(player); player.setDynamicProperty("mv:aaroniero_selected", 0); player.setDynamicProperty(DP.aaronieroMaskEnd, 0); }
   clearComboCounters(player);
   removeZonesOwnedBy(player.id);
   removeCursesBy(player.id);
@@ -1999,7 +2711,11 @@ function deactivateCharacter(player) {
   gabrielHosts.delete(player.id);
   player.setDynamicProperty(DP.blockEnd, 0);
   player.setDynamicProperty(DP.respiraEnd, 0);
+  player.setDynamicProperty(DP.hierroEnd, 0);
+  endIntocable(player);
   player.setDynamicProperty(DP.muerteArmed, false);
+  player.setDynamicProperty(DP.mayuriParalysis, false);
+  player.setDynamicProperty("mv:mayuri_poison_gabriel", false);
   blockingNow.delete(player.id);
 
   system.runTimeout(() => {
@@ -2008,6 +2724,18 @@ function deactivateCharacter(player) {
   }, 2);
 
   player.sendMessage("§cPersonagem desativado. Vida normal restaurada.");
+}
+
+/* ---------------------------------------------------------
+   Voo do Ulquiorra (somente enquanto uma forma desperta estiver ativa)
+   --------------------------------------------------------- */
+
+function setUlquiorraFlight(player, enabled) {
+  try {
+    const flightId = getActiveCharacter(player)?.id;
+    if (flightId !== "ulquiorra" && flightId !== "hitsugaya") return;
+    player.runCommand(`ability @s mayfly ${enabled ? "true" : "false"}`);
+  } catch (e) {}
 }
 
 /* ---------------------------------------------------------
@@ -2024,8 +2752,13 @@ function activateAwakening(player, character) {
   const items = form.items ?? character.items;
 
   player.setDynamicProperty(DP.awakened, true);
-  // toda ativacao entra pela PRIMEIRA fase; a segunda so vem pelo gatilho dela
+  // Toda ativacao entra pela PRIMEIRA fase. O medidor continua em 100% e
+  // passa a drenar normalmente como qualquer outro Awakening. A Segunda Etapa
+  // so pode ser ativada depois, quando o medidor chegar a 50%.
   player.setDynamicProperty(DP.trueForm, false);
+  if (character.id === "ulquiorra") {
+    player.setDynamicProperty(DP.awakening, 100);
+  }
   // o Teatro de Títeres e uso unico por Resurreccion, entao o crédito volta aqui
   player.setDynamicProperty(DP.teatroUsed, false);
   applyCharacterEffects(
@@ -2058,6 +2791,8 @@ function activateAwakening(player, character) {
     player.sendMessage("§8§lA hollowficação tomou seu corpo. §r§7(máscara, chifres e shihakusho)");
   }
 
+  if (form.canFly) setUlquiorraFlight(player, true);
+
   switch (form.onActivate) {
     case "pressure":
       activateSpiritualPressure(player, form.pressure);
@@ -2073,6 +2808,8 @@ function revertAwakening(player, reason) {
   if (!character || !character.awakening) return;
   if (!isAwakened(player)) return;
 
+  if (character.id === "shinji") shinji.endAwakening(player);
+
   if (isMasked(player)) {
     deactivateHollowMask(player);
   }
@@ -2080,6 +2817,7 @@ function revertAwakening(player, reason) {
   const hpBefore = player.getComponent("minecraft:health");
   const previousHealth = hpBefore ? hpBefore.currentValue : character.health;
 
+  if (character.id === "ulquiorra" || character.id === "hitsugaya") setUlquiorraFlight(player, false);
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.trueForm, false);
   player.setDynamicProperty(DP.starkkForm, "starkk");
@@ -2110,8 +2848,48 @@ function revertAwakening(player, reason) {
   );
 }
 
+function activateTrueAwakening(player, character) {
+  const form = character.awakening?.trueForm;
+  if (!form || !isAwakened(player) || isTrueForm(player)) return false;
+
+  // A Segunda Etapa é liberada quando Ulquiorra chega a 1000 de vida ou menos.
+  // O medidor de Awakening continua independente e segue drenando normalmente.
+  // virtualHealth() respeita a escala de vida usada pelo addon.
+  if (virtualHealth(player) > 1000 || virtualHealth(player) <= 0) return false;
+
+  player.setDynamicProperty(DP.trueForm, true);
+
+  const health = form.health ?? character.awakening.health ?? character.health;
+  applyCharacterEffects(
+    player,
+    health,
+    form.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+    "regenAmplifier" in form ? form.regenAmplifier : REGEN_AMPLIFIER,
+    form.extraEffects
+  );
+
+  const inv = getInv(player);
+  for (const slot in form.items ?? {}) {
+    inv.setItem(Number(slot), new ItemStack(form.items[slot], 1));
+  }
+
+  if (form.healOnActivate || health > character.awakening.health) {
+    system.runTimeout(() => healToMax(player, cutHealthFor(player, health)), 2);
+  }
+
+  if (form.armorPiece) equipArmorPiece(player, form.armorPiece);
+  if (form.canFly) setUlquiorraFlight(player, true);
+
+  world.sendMessage(`§5§l${player.name} atingiu: ${form.name}!`);
+  player.sendMessage("§5§lA Segunda Etapa foi despertada! §r§dO poder de Ulquiorra atingiu um novo nível.");
+  try {
+    player.dimension.playSound("mob.wither.death", player.location, { volume: 2, pitch: 0.45 });
+  } catch (e) {}
+  return true;
+}
+
 // devolve se REALMENTE despertou: agachar + m1 tambem e a tecla do bloqueio,
-// entao quando o medidor nao esta cheio a tecla tem que sobrar pra guarda
+// entao quando o medidor nao estava cheio a tecla tem que sobrar pra guarda
 function tryTriggerAwakening(player) {
   const character = getActiveCharacter(player);
   if (!character || !character.awakening) return false;
@@ -2199,24 +2977,23 @@ function deactivateHollowMask(player) {
    Menu do seletor de personagens
    --------------------------------------------------------- */
 
-function getArcIndex(player) {
-  const stored = player.getDynamicProperty(DP.arc);
-  if (typeof stored !== "number" || stored < 0 || stored >= ARCS.length) return 0;
+function getRaceIndex(player) {
+  const stored = player.getDynamicProperty(DP.race);
+  if (typeof stored !== "number" || stored < 0 || stored >= RACES.length) return 0;
   return stored;
 }
 
-function cycleArc(player) {
-  const next = (getArcIndex(player) + 1) % ARCS.length;
-  player.setDynamicProperty(DP.arc, next);
+function cycleRace(player) {
+  const next = (getRaceIndex(player) + 1) % RACES.length;
+  player.setDynamicProperty(DP.race, next);
 
-  const arc = ARCS[next];
+  const race = RACES[next];
+  const count = Object.values(CHARACTER_RACE_TIER).filter((data) => data.race === race.id).length;
   player.sendMessage(
-    `§6Arco: §e${arc.name} §7(${arc.characters.length} personagem${
-      arc.characters.length === 1 ? "" : "s"
-    })`
+    `§6Raça: §e${race.name} §7(${count} personagem${count === 1 ? "" : "s"})`
   );
   player.onScreenDisplay.setTitle("", {
-    subtitle: `§6${arc.name}`,
+    subtitle: `§6${race.name}`,
     fadeInDuration: 0,
     fadeOutDuration: 5,
     staySeconds: 10,
@@ -2227,33 +3004,77 @@ function cycleArc(player) {
   });
 }
 
-function openCharacterMenu(player) {
+function openTierMenu(player) {
   const active = getActiveCharacter(player);
-  const arc = ARCS[getArcIndex(player)];
+  const race = RACES[getRaceIndex(player)];
 
   const form = new ActionFormData()
     .title("Bleach battlegrounds")
     .body(
-      `§6Arco: §e${arc.name}§r\n§7(agache + use o seletor para trocar de arco)\n\n` +
+      `§6Raça: §e${race.name}§r\n§7(agache + use o seletor para trocar de raça)\n\n` +
         (active
           ? `Personagem atual: §6${active.name}§r\n\nDesative antes de escolher outro.`
-          : "Escolha seu personagem:")
+          : "Escolha um tier:")
     );
 
-  // so os personagens do arco atual - o indice do botao e relativo a esta lista
-  const ids = arc.characters.filter((id) => CHARACTERS[id]);
-  for (const id of ids) {
-    form.button(CHARACTERS[id].name);
+  for (const tier of TIERS) {
+    const count = Object.values(CHARACTER_RACE_TIER).filter(
+      (data) => data.race === race.id && data.tier === tier.id
+    ).length;
+    form.button(`${tier.name}\n§7${tier.subtitle} §8(${count})`);
   }
-  if (active) {
-    form.button("§cDesativar personagem");
-  }
+
+  if (active) form.button("§cDesativar personagem");
 
   form.show(player).then((res) => {
     if (res.canceled || res.selection === undefined) return;
 
-    if (active && res.selection === ids.length) {
+    if (active && res.selection === TIERS.length) {
       deactivateCharacter(player);
+      return;
+    }
+
+    const tier = TIERS[res.selection];
+    if (!tier) return;
+
+    if (active) {
+      player.sendMessage(
+        "§cVocê já tem um personagem ativado! Desative primeiro."
+      );
+      return;
+    }
+
+    openCharacterTierMenu(player, race.id, tier.id);
+  });
+}
+
+function openCharacterTierMenu(player, raceId, tierId) {
+  const race = RACES.find((r) => r.id === raceId);
+  const tier = TIERS.find((t) => t.id === tierId);
+  if (!race || !tier) return;
+
+  const active = getActiveCharacter(player);
+  const ids = Object.entries(CHARACTER_RACE_TIER)
+    .filter(([, data]) => data.race === raceId && data.tier === tierId)
+    .map(([id]) => id)
+    .filter((id) => CHARACTERS[id]);
+
+  const form = new ActionFormData()
+    .title(`${race.name} — ${tier.name}`)
+    .body(
+      `§6${race.name} §7• §e${tier.name}§r\n§7${tier.subtitle}\n\n` +
+        (ids.length
+          ? "Escolha seu personagem:"
+          : "§8Nenhum personagem disponível neste tier.")
+    );
+
+  for (const id of ids) form.button(CHARACTERS[id].name);
+  form.button("§7Voltar aos tiers");
+
+  form.show(player).then((res) => {
+    if (res.canceled || res.selection === undefined) return;
+    if (res.selection === ids.length) {
+      openTierMenu(player);
       return;
     }
 
@@ -2277,6 +3098,7 @@ function openCharacterMenu(player) {
 
 world.afterEvents.playerSpawn.subscribe((ev) => {
   const { player, initialSpawn } = ev;
+  shinji.reset(player);
 
   if (initialSpawn) {
     player.runCommand("hud @s hide health");
@@ -2286,19 +3108,86 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     const inv = getInv(player);
     forceGiveLockedItem(inv, SELECTOR_SLOT, SELECTOR_ITEM);
   } else {
+    soiClearNigeki(player.id);
+    ukitakeAbsorb.delete(player.id);
+    player.setDynamicProperty(UKITAKE_STORED, 0);
     // respawn depois de morrer: reaplica personagem se tinha um ativo
     // (awakening eh cancelado na morte, volta pra forma base)
     if (isAwakened(player)) {
+      if (["ulquiorra", "hitsugaya"].includes(getActiveCharacter(player)?.id)) {
+        setUlquiorraFlight(player, false);
+      }
       player.setDynamicProperty(DP.awakened, false);
+      player.setDynamicProperty(DP.trueForm, false);
+      player.setDynamicProperty(DP.awakening, 0);
     }
     player.setDynamicProperty(DP.maskEnd, 0);
+    player.setDynamicProperty(DP.hierroEnd, 0);
+    player.setDynamicProperty(DP.intocableEnd, 0);
+    player.setDynamicProperty(DP.mayuriParalysis, false);
+    player.setDynamicProperty("mv:mayuri_poison_gabriel", false);
+    if (getActiveCharacter(player)?.id === "aaroniero") { clearAaronieroDevoured(player); player.setDynamicProperty("mv:aaroniero_selected", 0); player.setDynamicProperty(DP.aaronieroMaskEnd, 0); }
     const character = getActiveCharacter(player);
     if (character) {
+      forceGiveLockedItem(getInv(player),GENERIC_SKILL_SLOT,GENERIC_SKILL_ITEM);
+      player.setDynamicProperty(DP.genericSkill,0);
       applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
       system.runTimeout(() => healToMax(player, character.health), 2);
     }
   }
 });
+
+function openCheatOptionsMenu(player) {
+  const pressure = isSpiritualPressureEnabled(player);
+  const infiniteAwk = isInfiniteAwakening(player);
+  const form = new ActionFormData()
+    .title("Opções / Cheats")
+    .body(
+      "§6Configurações de combate\\n\\n" +
+      `Pressão Espiritual: ${pressure ? "§aATIVADA" : "§cDESATIVADA"}\\n` +
+      `Awk infinito: ${infiniteAwk ? "§aATIVADO" : "§cDESATIVADO"}`
+    )
+    .button(pressure ? "§cDesligar Pressão Espiritual" : "§aLigar Pressão Espiritual")
+    .button("§eDar Awakening (100%)")
+    .button(infiniteAwk ? "§cDesligar Awk Infinito" : "§aLigar Awk Infinito")
+    .button("§bZerar cooldowns")
+    .button("§7Fechar");
+
+  form.show(player).then((res) => {
+    if (res.canceled || res.selection === undefined) return;
+    if (res.selection === 0) {
+      setSpiritualPressureEnabled(player, !pressure);
+      openCheatOptionsMenu(player);
+    } else if (res.selection === 1) {
+      const awkCharacter = getActiveCharacter(player);
+      if (!awkCharacter?.awakening && !awkCharacter?.superAttack) {
+        player.sendMessage("§cVocê precisa estar usando um personagem com Awakening ou Super.");
+      } else {
+        player.setDynamicProperty(DP.awakening, 100);
+        player.sendMessage("§aAwakening preenchido em 100%!");
+      }
+      openCheatOptionsMenu(player);
+    } else if (res.selection === 2) {
+      player.setDynamicProperty(DP.infiniteAwakening, !infiniteAwk);
+      openCheatOptionsMenu(player);
+    } else if (res.selection === 3) {
+      for (const itemId in SKILL_COOLDOWN_TICKS) player.setDynamicProperty(cdKeyForSkill(itemId), undefined);
+      player.setDynamicProperty(DP.dashCd, undefined);
+      player.setDynamicProperty(DP.blockCd, undefined);
+      player.setDynamicProperty(DP.noDash, undefined); // Ice Age do Hitsugaya
+      cdFrozen.delete(player.id); // cooldown congelado (Hitsugaya)
+      player.sendMessage("§bTodos os cooldowns foram zerados!");
+      openCheatOptionsMenu(player);
+    }
+  });
+}
+
+system.runInterval(()=>{
+  const players=world.getPlayers();
+  for(const source of players){const until=source.getDynamicProperty(DP.pressureActiveUntil);if(!getActiveCharacter(source)||typeof until!=="number"||until<=system.currentTick)continue;const tier=tierOfPlayer(source),radius=SPIRITUAL_PRESSURE.radii[tier];if(!radius)continue;for(const target of players){if(target.id===source.id||target.dimension.id!==source.dimension.id||!getActiveCharacter(target))continue;const diff=tier-tierOfPlayer(target);if(diff<2)continue;const dx=source.location.x-target.location.x,dy=source.location.y-target.location.y,dz=source.location.z-target.location.z;if(dx*dx+dy*dy+dz*dz>radius*radius)continue;if(diff>=5){try{target.kill();}catch(e){}continue;}const cfg=SPIRITUAL_PRESSURE.effects[diff];if(!cfg)continue;try{target.addEffect("slowness",SPIRITUAL_PRESSURE.intervalTicks+10,{amplifier:cfg.amplifier,showParticles:false});dealDamage(target,cfg.damage,source);}catch(e){}}}
+},SPIRITUAL_PRESSURE.intervalTicks);
+const genericSneakState=new Map();
+system.runInterval(()=>{for(const player of world.getPlayers()){const held=getInv(player).getItem(GENERIC_SKILL_SLOT),holding=held?.typeId===GENERIC_SKILL_ITEM,sneak=player.isSneaking,prev=genericSneakState.get(player.id)===true;if(holding&&sneak&&!prev&&getActiveCharacter(player))cycleGenericSkill(player);genericSneakState.set(player.id,sneak);if(player.getDynamicProperty(DP.airStepActive)===true){if(tierOfPlayer(player)<5||!getActiveCharacter(player)){player.setDynamicProperty(DP.airStepActive,false);removeAirStepBlock(player);continue;}try{const v=player.getVelocity();if(sneak)player.teleport({x:player.location.x,y:player.location.y-0.12,z:player.location.z},{keepVelocity:false});else if(v.y>0.08)player.teleport({x:player.location.x,y:player.location.y+0.12,z:player.location.z},{keepVelocity:false});}catch(e){}setAirStepBlock(player);}if(holding&&genericSkillIndex(player)===2&&sneak&&getActiveCharacter(player))player.setDynamicProperty("mv:reiatsu_jump_charge",Math.min(120,(Number(player.getDynamicProperty("mv:reiatsu_jump_charge"))||0)+2));}},2);
 
 /* ---------------------------------------------------------
    Uso de itens
@@ -2310,24 +3199,58 @@ world.afterEvents.itemUse.subscribe((ev) => {
 
   if (itemStack.typeId === SELECTOR_ITEM) {
     if (player.isSneaking) {
-      cycleArc(player);
+      cycleRace(player);
     } else {
-      openCharacterMenu(player);
+      openTierMenu(player);
     }
+    return;
+  }
+
+  if (itemStack.typeId === CHEAT_OPTIONS_ITEM) {
+    openCheatOptionsMenu(player);
+    return;
+  }
+
+  if (itemStack.typeId === GENERIC_SKILL_ITEM) {
+    handleGenericSkillUse(player);
     return;
   }
 
   const character = getActiveCharacter(player);
   if (!character) return;
 
-  // agachado + usar a zangetsu (m1) com awakening 100% = desperta o Awakening
+  // Ulquiorra: a Segunda Etapa agora depende da VIDA REAL/virtual, não do
+  // percentual do medidor. Durante a Murciélago, com 1000 de vida ou menos,
+  // agachar + usar a M1 da própria forma (m1_garras) transforma.
+  if (
+    character.id === "ulquiorra" &&
+    character.awakening?.trueForm &&
+    isAwakened(player) &&
+    !isTrueForm(player) &&
+    player.isSneaking &&
+    itemStack.typeId === character.awakening.trueForm.triggerItem
+  ) {
+    if (activateTrueAwakening(player, character)) return;
+  }
+
+  // agachado + usar a m1 do Shinji com awakening 100% = Sakanade
+  if (
+    character.id === "shinji" &&
+    character.awakening &&
+    itemStack.typeId === character.awakening.triggerItem &&
+    player.isSneaking &&
+    !isAwakened(player)
+  ) {
+    if (getAwakening(player) >= 100 && shinji.awaken(player)) return;
+  }
+
+  // agachado + usar a m1 com awakening 100% = desperta o Awakening
   if (
     character.awakening &&
     itemStack.typeId === character.awakening.triggerItem &&
     player.isSneaking &&
     !isAwakened(player)
   ) {
-    // se o medidor nao estava cheio a tecla sobra pro bloqueio, la embaixo
     if (tryTriggerAwakening(player)) return;
   }
 
@@ -2344,6 +3267,30 @@ world.afterEvents.itemUse.subscribe((ev) => {
       return;
     }
     // vida alta demais pra mascara: a tecla vira bloqueio em vez de nao fazer nada
+  }
+
+  // agachado (5s) + usar a Suzumushi base com a mascara carregada = Visored
+  if (
+    character.id === "tosen" &&
+    itemStack.typeId === "tosen:m1_suzumushi" &&
+    player.isSneaking &&
+    tosenVisoredReady.has(player.id) &&
+    !isTosenVisored(player)
+  ) {
+    resetTosenVisoredCharge(player);
+    activateTosenVisored(player, character);
+    return;
+  }
+
+  // agachado + usar a Suzumushi do Visored = tira a mascara e volta ao normal
+  if (
+    character.id === "tosen" &&
+    itemStack.typeId === "tosen:m1_visored" &&
+    player.isSneaking &&
+    isTosenVisored(player)
+  ) {
+    deactivateTosenVisored(player, "manual");
+    return;
   }
 
   // agachado + usar a senbonzakura base com awakening 100% = Kageyoshi ou Senkei
@@ -2401,10 +3348,19 @@ world.afterEvents.itemUse.subscribe((ev) => {
   }
 
   // preso no Teatro de Títeres: ninguem usa skill, nem quem abriu o Teatro
-  if (itemStack.typeId in SKILL_COOLDOWN_TICKS && isFrozen(player)) {
-    player.sendMessage("§7O Teatro de Títeres trava as skills enquanto está aberto.");
+  if (
+    itemStack.typeId in SKILL_COOLDOWN_TICKS &&
+    isFrozen(player) &&
+    itemStack.typeId !== "mayuri:regenerate"
+  ) {
+    player.sendMessage(
+      ginParalyzed.has(player.id)
+        ? "§7Você está paralisado e não consegue usar skills."
+        : "§7O Teatro de Títeres trava as skills enquanto está aberto."
+    );
     return;
   }
+  if (isMayuriParalyzed(player) && itemStack.typeId !== "mayuri:regenerate") return;
 
   // enquanto preso num senkei, ninguem pode usar skill - so a m1
   if (itemStack.typeId in SKILL_COOLDOWN_TICKS) {
@@ -2416,6 +3372,12 @@ world.afterEvents.itemUse.subscribe((ev) => {
   }
 
   switch (itemStack.typeId) {
+    case "shinji:triple_slash":
+    case "shinji:sakanas_cut":
+    case "shinji:hollow_mask":
+    case "shinji:cero":
+      shinji.cast(player, itemStack.typeId);
+      break;
     case "ichigo:getsuga_slam":
       castGetsugaSlam(player);
       break;
@@ -2449,8 +3411,8 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "byakuya:bloodshed":
       castByakuyaBloodshed(player);
       break;
-    case "byakuya:coating":
-      castSakuraCoating(player);
+    case "byakuya:sakura_distraction":
+      castSakuraDistraction(player);
       break;
     case "kenpachi:flash_slash":
       castFlashSlash(player);
@@ -2469,6 +3431,12 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "mayuri:toxic_fog":
       castToxicFog(player);
+      break;
+    case "mayuri:regenerate":
+      castMayuriRegenerate(player);
+      break;
+    case "mayuri:envenenar":
+      castMayuriEnvenenar(player);
       break;
     case "grimmjow:desgarra":
       castDesgarra(player);
@@ -2491,6 +3459,33 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "grimmjow:disparo":
       castDisparo(player);
       break;
+    case "aaroniero:cero_metalico":
+      castAaronieroCeroMetalico(player);
+      break;
+    case "aaroniero:nejibana":
+      castAaronieroNejibana(player);
+      break;
+    case "aaroniero:devorar":
+      castAaronieroDevorar(player);
+      break;
+    case "aaroniero:mascara_kaien":
+      castAaronieroMascara(player);
+      break;
+    case "aaroniero:tentaculos":
+      castAaronieroTentaculos(player);
+      break;
+    case "aaroniero:tridente_kaien":
+      castAaronieroTridente(player);
+      break;
+    case "aaroniero:cero_metalico_gloton":
+      castAaronieroCeroGloton(player);
+      break;
+    case "aaroniero:banquete":
+      castAaronieroBanquete(player);
+      break;
+    case "aaroniero:glotoneria":
+      castAaronieroGlotoneria(player);
+      break;
     case "ulquiorra:gran_rey_cero":
       castGranReyCero(player, "ulquiorra:gran_rey_cero");
       break;
@@ -2511,6 +3506,9 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "ulquiorra:cero_oscuras":
       castCeroOscuras(player);
+      break;
+    case "ulquiorra:cero_oscuras_triplo":
+      castCeroOscurasTriplo(player);
       break;
     case "ulquiorra:lanza":
       castLanza(player);
@@ -2650,6 +3648,141 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "vizard:grito_del_diablo":
       castGritoDelDiablo(player);
       break;
+    case "nnoitra:duro_slash":
+      castDuroSlash(player);
+      break;
+    case "nnoitra:spinning_blade":
+      castSpinningBlade(player);
+      break;
+    case "nnoitra:beyblade":
+      castBeyblade(player);
+      break;
+    case "nnoitra:hierro":
+      castHierro(player);
+      break;
+    case "nnoitra:muerte_multiple":
+      castMuerteMultiple(player);
+      break;
+    case "nnoitra:avance_fatal":
+      castAvanceFatal(player);
+      break;
+    case "nnoitra:meteorito_de_hierro":
+      castMeteoritoDeHierro(player);
+      break;
+    case "nnoitra:declaracion_del_intocable":
+      castDeclaracionDelIntocable(player);
+      break;
+    case "gin:extended_blade":
+      castExtendedBlade(player);
+      break;
+    case "gin:spiral":
+      castSpiral(player);
+      break;
+    case "gin:pursuing_blade":
+      castPursuingBlade(player);
+      break;
+    case "gin:piercing_shinso":
+      castPiercingShinso(player);
+      break;
+    case "hitsugaya:ryusenka":
+      castRyusenka(player);
+      break;
+    case "hitsugaya:sennen_hyoro":
+      castSennenHyoro(player);
+      break;
+    case "hitsugaya:guncho_tsurara":
+      castGunchoTsurara(player);
+      break;
+    case "hitsugaya:tenso_jurin":
+      castTensoJurin(player);
+      break;
+    case "hitsugaya:dragons_breath":
+      castDragonsBreath(player);
+      break;
+    case "hitsugaya:ice_age":
+      castIceAge(player);
+      break;
+    case "hitsugaya:ice_barrier":
+      castIceBarrier(player);
+      break;
+    case "hitsugaya:ice_explosion":
+      castIceExplosion(player);
+      break;
+    case "shunsui:kageoni":
+      castKageoni(player);
+      break;
+    case "shunsui:takaoni":
+      castTakaoni(player);
+      break;
+    case "shunsui:irooni":
+      castIrooni(player);
+      break;
+    case "shunsui:jokenpo":
+      castJokenpo(player);
+      break;
+    case "soifon:shunpo":
+      castShunpo(player);
+      break;
+    case "soifon:stealthy":
+      castStealthy(player);
+      break;
+    case "soifon:shunko":
+      castShunko(player);
+      break;
+    case "soifon:nigeki_kessatsu":
+      castNigekiKessatsu(player);
+      break;
+    case "rukia:white_moon":
+      castWhiteMoon(player);
+      break;
+    case "rukia:white_wave":
+      castWhiteWave(player);
+      break;
+    case "rukia:white_sword":
+      castWhiteSword(player);
+      break;
+    case "rukia:juhaku":
+      castJuhaku(player);
+      break;
+    case "ukitake:throw_n_pull":
+      castThrowPull(player);
+      break;
+    case "ukitake:double_slam":
+      castDoubleSlam(player);
+      break;
+    case "ukitake:ying_yang":
+      castYingYang(player);
+      break;
+    case "ukitake:stagnation":
+      castStagnation(player);
+      break;
+    case "ukitake:absorb":
+      castAbsorb(player);
+      break;
+    case "tosen:nake":
+      castNake(player);
+      break;
+    case "tosen:benihiko":
+      castBenihiko(player);
+      break;
+    case "tosen:hado_88":
+      castHado88(player);
+      break;
+    case "tosen:silent_cut":
+      castSilentCut(player);
+      break;
+    case "tosen:palacio_de_las_espadas":
+      castPalacioDeLasEspadas(player);
+      break;
+    case "tosen:ecolocalizacion":
+      castEcolocalizacion(player);
+      break;
+    case "tosen:cero":
+      castTosenCero(player);
+      break;
+    case "tosen:los_nueve_aspectos":
+      castLosNueveAspectos(player);
+      break;
   }
 });
 
@@ -2657,12 +3790,15 @@ world.afterEvents.itemUse.subscribe((ev) => {
    Skills do Ichigo
    --------------------------------------------------------- */
 
-function tryUseSkill(player, itemId) {
+function tryUseSkill(player, itemId, overrideDuration) {
   const now = system.currentTick;
   const key = cdKeyForSkill(itemId);
   let duration = SKILL_COOLDOWN_TICKS[itemId];
 
   const character = getActiveCharacter(player);
+  if (character?.id === "ulquiorra" && isTrueForm(player) && itemId === "ulquiorra:enigma") {
+    duration = Math.floor(duration / 2);
+  }
   const mask = character?.awakening?.hollowMask;
   if (mask && isMasked(player) && mask.cooldownHalvedItems.includes(itemId)) {
     duration = Math.floor(duration / 2);
@@ -2680,18 +3816,30 @@ function tryUseSkill(player, itemId) {
     return false;
   }
   setCooldown(player, key, now);
+  // cooldown menor que o da tabela (Hadō #73 sem encantamento): adianta o carimbo
+  if (overrideDuration !== undefined && overrideDuration < duration) {
+    setCooldown(player, key, now - (duration - overrideDuration));
+    duration = overrideDuration;
+  }
   if (!isAwakened(player)) {
     addAwakening(player, 5);
   }
 
   const skillName = SKILL_NAMES[itemId] ?? itemId;
-  system.runTimeout(() => {
+  const notifyReady = () => {
     try {
+      // cooldown congelado (Hitsugaya): espera o que falta antes de avisar
+      if (onCooldown(player, key, duration, system.currentTick)) {
+        const last = tickOf(player, key) ?? system.currentTick;
+        system.runTimeout(notifyReady, Math.max(1, duration - (system.currentTick - last)));
+        return;
+      }
       player.sendMessage(`§a${skillName} §frecarregou e já pode ser usada de novo!`);
     } catch (e) {
       // player pode ter saido do mundo, ignora
     }
-  }, duration);
+  };
+  system.runTimeout(notifyReady, duration);
 
   return true;
 }
@@ -2858,6 +4006,7 @@ function fireCrescentWave(player, options) {
     particle = "minecraft:crit_particle",
     burst = "minecraft:large_explosion",
     rows = 12,
+    bypassesIntocable = false,
     // corte deitado: o arco abre pros lados em vez de pra cima e pra baixo
     horizontal = false,
   } = options;
@@ -2918,7 +4067,9 @@ function fireCrescentWave(player, options) {
         showRespiraGuard(entity); // a onda passa por ele sem encostar
         continue;
       }
-      dealDamage(entity, damage * dmgMultiplier(player), player);
+      dealDamage(entity, damage * dmgMultiplier(player), player, {
+        bypassesIntocable,
+      });
     }
 
     travelled += speed;
@@ -2999,7 +4150,7 @@ function castDoubleGetsuga(player) {
       radius: 1.8,
       thickness: 0.9,
       range: 20,
-      damage: DAMAGE.tenshou,
+      damage: DAMAGE.doubleGetsuga,
     });
 
   wave();
@@ -3138,42 +4289,29 @@ function castByakuyaBloodshed(player) {
   }
 }
 
-function castSakuraCoating(player) {
-  if (!tryUseSkill(player, "byakuya:coating")) return;
-  const now = system.currentTick;
-  player.setDynamicProperty(DP.coatingEnd, now + COATING_DURATION_TICKS);
-
-  world.sendMessage(
-    `§d${player.name} §7ativou §5Sakura's Coating§7! §d(+20% de dano por 30s)`
-  );
-  player.dimension.playSound("random.levelup", player.location, {
-    volume: 1,
-    pitch: 1.4,
-  });
-
-  let elapsed = 0;
-  const auraInterval = system.runInterval(() => {
-    if (!isCoated(player)) {
-      system.clearRun(auraInterval);
-      return;
-    }
-    const loc = player.location;
-    for (let i = 0; i < 5; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const p = {
-        x: loc.x + Math.cos(angle) * 0.6,
-        y: loc.y + Math.random() * 1.8,
-        z: loc.z + Math.sin(angle) * 0.6,
-      };
-      try {
-        player.dimension.spawnParticle("sakura:leaf", p);
-      } catch (e) {}
-    }
-    elapsed += 10;
-    if (elapsed >= COATING_DURATION_TICKS) {
-      system.clearRun(auraInterval);
-    }
-  }, 10);
+function castSakuraDistraction(player) {
+  if (!tryUseSkill(player, "byakuya:sakura_distraction")) return;
+  const target = targetInView(player, 30);
+  if (!target || (target.typeId !== "minecraft:player" && target.typeId !== "multiversal:training_dummy")) {
+    player.sendMessage("§7A Sakura's Distraction precisa mirar em um player ou no Boneco de Teste.");
+    return;
+  }
+  const dim = player.dimension;
+  world.sendMessage(`§d${player.name} §7usou §5Sakura's Distraction§7 em §f${nameOf(target)}§7!`);
+  try { target.addEffect("blindness", 200, { amplifier: 0, showParticles: false }); } catch (e) {}
+  let elapsed=0;
+  const interval=system.runInterval(()=>{
+    try {
+      const c=target.location;
+      for(let i=0;i<55;i++){
+        const a=Math.random()*Math.PI*2, d=Math.sqrt(Math.random())*4.5;
+        dim.spawnParticle("sakura:leaf",{x:c.x+Math.cos(a)*d,y:c.y+0.2+Math.random()*2.3,z:c.z+Math.sin(a)*d});
+      }
+      target.addEffect("blindness",30,{amplifier:0,showParticles:false});
+    } catch(e){ system.clearRun(interval); return; }
+    elapsed+=10;
+    if(elapsed>=200) system.clearRun(interval);
+  },10);
 }
 
 /* ---------------------------------------------------------
@@ -3250,19 +4388,14 @@ function castKenpachiStomp(player) {
 function nearestPlayer(player, maxDistance, origin = player.location) {
   let best;
   let bestDistance = Infinity;
-
-  for (const other of player.dimension.getPlayers({ location: origin, maxDistance })) {
+  for (const other of player.dimension.getEntities({ location: origin, maxDistance })) {
     if (other.id === player.id) continue;
-    const dx = other.location.x - origin.x;
-    const dy = other.location.y - origin.y;
-    const dz = other.location.z - origin.z;
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = other;
-    }
+    if (other.typeId !== "minecraft:player" && other.typeId !== "multiversal:training_dummy") continue;
+    if (!other.getComponent("minecraft:health")) continue;
+    const dx = other.location.x-origin.x, dy=other.location.y-origin.y, dz=other.location.z-origin.z;
+    const distance=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    if(distance<bestDistance){bestDistance=distance;best=other;}
   }
-
   return best;
 }
 
@@ -3379,6 +4512,7 @@ function castHellsCut(player) {
     range: HELLS_CUT_RANGE,
     damage,
     particle: desperate ? "minecraft:blood_particle" : "minecraft:crit_particle",
+    bypassesIntocable: true,
   });
 }
 
@@ -3423,6 +4557,49 @@ function entitiesInFrontBox(player, box) {
   return found;
 }
 
+const activeMayuriPoisons = new Map();
+
+function applyMayuriPoison(target, source, durationSeconds, damagePerSecond) {
+  if (!target || !target.getComponent("minecraft:health")) return;
+  const now=system.currentTick;
+  const old=activeMayuriPoisons.get(target.id);
+  const end=now+durationSeconds*20;
+  if(!old || end>old.endTick || damagePerSecond>old.damagePerSecond){
+    activeMayuriPoisons.set(target.id,{entity:target,source,endTick:end,damagePerSecond});
+  } else old.endTick=end;
+}
+
+function isMayuriParalyzed(entity) {
+  try { return entity.typeId === "minecraft:player" && !!entity.getDynamicProperty(DP.mayuriParalysis); } catch(e){ return false; }
+}
+
+function removeMutilationsAffecting(player) {
+  for(let i=activeMutilations.length-1;i>=0;i--){
+    const entry=activeMutilations[i];
+    if(entry.ownerId===player.id || entry.victim?.id===player.id) liftMutilation(i);
+  }
+  player.setDynamicProperty(DP.frozenEnd,0);
+  try{player.removeEffect("darkness");player.removeEffect("slowness");}catch(e){}
+}
+
+function castMayuriRegenerate(player) {
+  if(!tryUseSkill(player,"mayuri:regenerate")) return;
+  removeMutilationsAffecting(player);
+  const hp=player.getComponent("minecraft:health");
+  if(hp){ const scale=healthScaleOf(player); hp.setCurrentValue(Math.min(hp.effectiveMax,hp.currentValue+200/scale)); }
+  world.sendMessage(`§5${player.name} §7usou §dRegenerate§7 e recuperou 200 de vida!`);
+}
+
+function castMayuriEnvenenar(player) {
+  const target=targetInView(player,15);
+  if(!target || target.typeId!=="minecraft:player"){ player.sendMessage("§7Mire em um player para usar Envenenar."); return; }
+  const c=getActiveCharacter(target);
+  if(!c || c.id!=="szayelaporro" || !isAwakened(target)){ player.sendMessage("§7Envenenar só pode marcar um Szayelaporro em Ressurreição."); return; }
+  if(!tryUseSkill(player,"mayuri:envenenar")) return;
+  target.setDynamicProperty("mv:mayuri_poison_gabriel",true);
+  player.sendMessage(`§5${target.name} §7foi marcado com Envenenar. O próximo Gabriel será condenado.`);
+}
+
 function castPoisonSlash(player) {
   if (!tryUseSkill(player, "mayuri:poison_slash")) return;
   const dim = player.dimension;
@@ -3451,12 +4628,7 @@ function castPoisonSlash(player) {
   const finalDamage = DAMAGE.poisonSlash * dmgMultiplier(player);
   for (const entity of entitiesInFrontBox(player, POISON_SLASH)) {
     dealDamage(entity, finalDamage, player);
-    try {
-      entity.addEffect("slowness", POISON_SLASH.slownessTicks, {
-        amplifier: POISON_SLASH.slownessAmplifier,
-        showParticles: true,
-      });
-    } catch (e) {}
+    applyMayuriPoison(entity, player, 5, 10);
   }
 }
 
@@ -3491,11 +4663,8 @@ function spawnPoisonCloud(player, cfg) {
       if (entity.id === player.id) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       try {
-        if (cfg.poisonAmplifier !== undefined) {
-          entity.addEffect("poison", cfg.refreshTicks, {
-            amplifier: cfg.poisonAmplifier,
-            showParticles: true,
-          });
+        if (cfg.mayuriPoison) {
+          applyMayuriPoison(entity, player, cfg.mayuriPoison.durationSeconds, cfg.mayuriPoison.damagePerSecond);
         }
         if (cfg.slownessAmplifier !== undefined) {
           entity.addEffect("slowness", cfg.refreshTicks, {
@@ -3578,6 +4747,18 @@ function tryTriggerSuperAttack(player, character) {
       return tryTriggerByakuyaSuper(player, character);
     case "konjiki":
       return tryTriggerKonjiki(player, character);
+    case "gin":
+      return tryTriggerKamishini(player);
+    case "shunsui":
+      return tryTriggerKaramatsu(player);
+    case "soifon":
+      return tryTriggerJakuho(player);
+    case "rukia":
+      return tryTriggerHado(player);
+    case "ukitake":
+      return tryTriggerHansha(player);
+    case "tosen":
+      return tryTriggerEnma(player);
   }
   return false;
 }
@@ -3797,16 +4978,19 @@ function announceBattleCry(player, form) {
     pitch: form.cryPitch ?? 1.3,
   });
 
-  const loc = player.location;
-  for (let i = 0; i < 40; i++) {
-    const angle = (i / 40) * Math.PI * 2;
-    try {
-      player.dimension.spawnParticle(form.cryParticle ?? "grimmjow:cero", {
-        x: loc.x + Math.cos(angle) * 2.2,
-        y: loc.y + 0.2 + (i % 8) * 0.35,
-        z: loc.z + Math.sin(angle) * 2.2,
-      });
-    } catch (e) {}
+  // Algumas formas têm partículas de liberação; o Vasto Lorde não tem aura.
+  if (form.cryParticle) {
+    const loc = player.location;
+    for (let i = 0; i < 40; i++) {
+      const angle = (i / 40) * Math.PI * 2;
+      try {
+        player.dimension.spawnParticle(form.cryParticle, {
+          x: loc.x + Math.cos(angle) * 2.2,
+          y: loc.y + 0.2 + (i % 8) * 0.35,
+          z: loc.z + Math.sin(angle) * 2.2,
+        });
+      } catch (e) {}
+    }
   }
 }
 
@@ -4014,6 +5198,211 @@ function castDisparo(player) {
 }
 
 /* ---------------------------------------------------------
+   Aaroniero Arruruerie
+   --------------------------------------------------------- */
+
+const AARONIERO_SIGNATURES = {
+  grimmjow: { item: "grimmjow:desgarra", name: "Desgarra de la Pantera", kind: "sweep", damage: 100 },
+  szayelaporro: { item: "szayel:ascendent_cut", name: "Ascendent Cut", kind: "wave", damage: 50 },
+  nnoitra: { item: "nnoitra:avance_fatal", name: "Avance Fatal", kind: "dash", damage: 200 },
+  ulquiorra: { item: "ulquiorra:cero_oscuras", name: "Cero Oscuras", kind: "cero", damage: 1400 },
+  harribel: { item: "harribel:tsunami", name: "Tsunami", kind: "tsunami", damage: 750 },
+  barragan: { item: "barragan:el_rei_oco", name: "El Rei Oco", kind: "reioco", damage: 40 },
+  starkk: { item: "starkk:kamarada", name: "Kamarada", kind: "kamarada", damage: 200 },
+  yammy: { item: "yammy:quebramundos", name: "Quebramundos", kind: "quebramundos", damage: 1000 },
+};
+
+function getAaronieroAbsorbed(player) {
+  try {
+    const raw = player.getDynamicProperty(DP.aaronieroAbsorbed);
+    if (typeof raw === "string") {
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    }
+  } catch (e) {}
+  return [];
+}
+
+function setAaronieroAbsorbed(player, arr) {
+  player.setDynamicProperty(DP.aaronieroAbsorbed, JSON.stringify(arr.slice(0, 3)));
+}
+
+function clearAaronieroAbsorbed(player) {
+  setAaronieroAbsorbed(player, []);
+}
+
+function getAaronieroDevouredCount(player) {
+  try {
+    const n = player.getDynamicProperty(DP.aaronieroDevouredCount);
+    return typeof n === "number" && n > 0 ? Math.floor(n) : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function setAaronieroDevouredCount(player, n) {
+  player.setDynamicProperty(DP.aaronieroDevouredCount, Math.max(0, Math.floor(n)));
+}
+
+function clearAaronieroDevoured(player) {
+  clearAaronieroAbsorbed(player);
+  setAaronieroDevouredCount(player, 0);
+}
+
+function isEspadaPlayer(entity) {
+  if (!entity || entity.typeId !== "minecraft:player") return false;
+  const id = entity.getDynamicProperty(DP.character);
+  return !!AARONIERO_SIGNATURES[id];
+}
+
+function currentConfiguredMaxHealth(entity) {
+  const c = getActiveCharacter(entity);
+  const form = activeFormOf(entity, c);
+  return form?.health ?? c?.health ?? 20;
+}
+
+function absorbEspada(player, target) {
+  const targetId = target.getDynamicProperty(DP.character);
+  const signature = AARONIERO_SIGNATURES[targetId];
+  if (!signature) return false;
+
+  const max = currentConfiguredMaxHealth(target);
+  if (virtualHealth(target) >= max * 0.25) return false;
+
+  const absorbed = getAaronieroAbsorbed(player);
+  const entry = { source: targetId, item: signature.item, name: signature.name, kind: signature.kind, damage: signature.damage };
+  if (absorbed.length >= 3) absorbed.shift();
+  absorbed.push(entry);
+  setAaronieroAbsorbed(player, absorbed);
+  setAaronieroDevouredCount(player, getAaronieroDevouredCount(player) + 1);
+
+  try { target.kill(); } catch (e) {}
+  applyCharacterEffects(
+    player,
+    isAwakened(player) ? getActiveCharacter(player).awakening.health : getActiveCharacter(player).health,
+    isAwakened(player) ? (activeFormOf(player)?.speedAmplifier ?? BASE_SPEED_AMPLIFIER) : BASE_SPEED_AMPLIFIER,
+    isAwakened(player) ? ("regenAmplifier" in activeFormOf(player) ? activeFormOf(player).regenAmplifier : REGEN_AMPLIFIER) : REGEN_AMPLIFIER,
+    isAwakened(player) ? activeFormOf(player)?.extraEffects : undefined
+  );
+  player.sendMessage(`§5Glotonería absorveu §d${signature.name}§5 de ${target.name}.`);
+  player.sendMessage(`§7Habilidades absorvidas: ${getAaronieroAbsorbed(player).map(x => x.name).join(", ")}`);
+  return true;
+}
+
+function castAaronieroCeroMetalico(player) {
+  if (!tryUseSkill(player, "aaroniero:cero_metalico")) return;
+  world.sendMessage(`§5${player.name} §7usou §dCero Metálico§7!`);
+  fireEnergySphere(player, { radius: 1.5, range: 30, speed: 1.5, damage: DAMAGE.ceroMetalico, particle: "barragan:cero_rojo", shellParticles: 18 });
+}
+
+function castAaronieroNejibana(player) {
+  if (!tryUseSkill(player, "aaroniero:nejibana")) return;
+  world.sendMessage(`§5${player.name} §7usou §3Nejibana§7!`);
+  performDashStrike(player, { distance: 14, steps: 14, damage: DAMAGE.nejibana, particle: "harribel:agua", burst: "harribel:agua" });
+}
+
+function castAaronieroDevorar(player) {
+  const target = nearestPlayer(player, 12);
+  if (!target) { player.sendMessage("§7Nenhum alvo próximo para Devorar."); return; }
+  if (!tryUseSkill(player, "aaroniero:devorar")) return;
+  if (isEspadaPlayer(target) && absorbEspada(player, target)) {
+    try { player.dimension.spawnParticle("mayuri:poison_fog", target.location); } catch (e) {}
+    return;
+  }
+  dealDamage(target, DAMAGE.devorar * dmgMultiplier(player), player);
+}
+
+function castAaronieroMascara(player) {
+  if (!tryUseSkill(player, "aaroniero:mascara_kaien")) return;
+  player.setDynamicProperty(DP.aaronieroMaskEnd, system.currentTick + 240);
+  setPermanentEffect(player, "speed", 2);
+  player.sendMessage("§3Máscara do Kaien ativa: velocidade e +15% de dano por 12s!");
+  try { player.dimension.spawnParticle("harribel:agua", player.location); } catch (e) {}
+}
+
+function castAaronieroTentaculos(player) {
+  if (!tryUseSkill(player, "aaroniero:tentaculos")) return;
+  const dim = player.dimension;
+  const center = player.location;
+  world.sendMessage(`§5§l${player.name}: TENTÁCULOS!`);
+  let hit = 0;
+  const timer = system.runInterval(() => {
+    if (hit >= 4) { system.clearRun(timer); return; }
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.random() * 9;
+      try { dim.spawnParticle("mayuri:poison_fog", {x:center.x+Math.cos(a)*r,y:center.y+1,z:center.z+Math.sin(a)*r}); } catch(e){}
+    }
+    damageNearbyEntities(player, center, 9, DAMAGE.tentaculos);
+    hit++;
+  }, 4);
+}
+
+function castAaronieroTridente(player) {
+  const target = nearestPlayer(player, 15);
+  if (!target) { player.sendMessage("§7Nenhum alvo próximo para o Tridente de Kaien."); return; }
+  if (!tryUseSkill(player, "aaroniero:tridente_kaien")) return;
+  dealDamage(target, DAMAGE.tridenteKaien * dmgMultiplier(player), player);
+  const anchor = {x: target.location.x, y: target.location.y, z: target.location.z};
+  let ticks = 0;
+  const timer = system.runInterval(() => {
+    ticks += 2;
+    try {
+      target.addEffect("slowness", 10, {amplifier:255, showParticles:false});
+      target.teleport(anchor, {keepVelocity:false});
+      target.dimension.spawnParticle("harribel:agua", {x:anchor.x,y:anchor.y+1,z:anchor.z});
+    } catch(e) { system.clearRun(timer); return; }
+    if (ticks >= 60) system.clearRun(timer);
+  }, 2);
+}
+
+function castAaronieroCeroGloton(player) {
+  if (!tryUseSkill(player, "aaroniero:cero_metalico_gloton")) return;
+  const count = getAaronieroDevouredCount(player);
+  const damage = Math.min(335, DAMAGE.ceroMetalicoGloton + count * 15);
+  world.sendMessage(`§5§l${player.name}: CERO METÁLICO GLOTÓN! §7(${damage})`);
+  fireEnergySphere(player, {radius:2.2, range:35, speed:1.25, damage, particle:"barragan:cero_rojo", shellParticles:30});
+}
+
+function castAaronieroBanquete(player) {
+  if (!tryUseSkill(player, "aaroniero:banquete")) return;
+  const count = getAaronieroAbsorbed(player).length;
+  const center = player.location;
+  world.sendMessage(`§5§l${player.name}: BANQUETE! §7Consumidos: ${count}`);
+  for (let i=0;i<80;i++) {
+    const a=Math.random()*Math.PI*2, r=12*Math.sqrt(Math.random());
+    try { player.dimension.spawnParticle("mayuri:poison_fog", {x:center.x+Math.cos(a)*r,y:center.y+Math.random()*3,z:center.z+Math.sin(a)*r}); } catch(e){}
+  }
+  damageNearbyEntities(player, center, 12, DAMAGE.banquete);
+  const hp=player.getComponent("minecraft:health");
+  if(hp){ const scale=healthScaleOf(player); hp.setCurrentValue(Math.min(hp.effectiveMax, hp.currentValue + 100/scale)); }
+  clearAaronieroDevoured(player);
+  const c=getActiveCharacter(player);
+  if(c){ const f=activeFormOf(player,c); applyCharacterEffects(player, f?.health ?? c.health, f?.speedAmplifier ?? BASE_SPEED_AMPLIFIER, "regenAmplifier" in (f??{}) ? f.regenAmplifier : REGEN_AMPLIFIER, f?.extraEffects); }
+}
+
+function castAaronieroGlotoneria(player) {
+  const absorbed = getAaronieroAbsorbed(player);
+  if (!absorbed.length) { player.sendMessage("§7Glotonería: nenhuma habilidade absorvida."); return; }
+  if (!tryUseSkill(player, "aaroniero:glotoneria")) return;
+  const idx = player.getDynamicProperty("mv:aaroniero_selected") ?? 0;
+  const entry = absorbed[Math.max(0, Math.min(absorbed.length-1, Number(idx)))];
+  const next = (Number(idx) + 1) % absorbed.length;
+  player.setDynamicProperty("mv:aaroniero_selected", next);
+  const d = entry.damage * 0.7;
+  world.sendMessage(`§5${player.name} usou §d${entry.name}§5 absorvido! §7(70% do dano)`);
+  switch(entry.kind) {
+    case "sweep": drawSweep(player, DESGARRA, "grimmjow:cero", false); for(const e of entitiesInFrontBox(player, DESGARRA)) dealDamage(e,d,player); break;
+    case "wave": fireCrescentWave(player,{radius:ASCENDENT_CUT.radius,thickness:ASCENDENT_CUT.thickness,range:ASCENDENT_CUT.range,speed:ASCENDENT_CUT.speed,damage:d,particle:"szayel:esporo",burst:"szayel:esporo"}); break;
+    case "dash": performDashStrike(player,{distance:AVANCE_FATAL.maxDistancePerTick*AVANCE_FATAL.dashTicks,steps:AVANCE_FATAL.dashTicks,damage:d,particle:"nnoitra:corte",burst:null}); break;
+    case "cero": fireEnergySphere(player,{radius:CERO_OSCURAS.radius,range:CERO_OSCURAS.range,speed:CERO_OSCURAS.speed,damage:d,particle:"ulquiorra:oscuras",shellParticles:40}); break;
+    case "tsunami": performDashStrike(player,{distance:20,steps:10,damage:d,particle:"harribel:agua",burst:"harribel:agua"}); break;
+    case "reioco": for(let i=0;i<8;i++){const a=(i/8)*Math.PI*2; fireEnergySphere(player,{radius:EL_REI_OCO.radius,range:EL_REI_OCO.range,speed:EL_REI_OCO.speed,damage:d,particle:"barragan:cero_rojo",shellParticles:8,direction:{x:Math.cos(a),y:0,z:Math.sin(a)}});} break;
+    case "kamarada": { const cfg={...KAMARADA,count:3,damage:()=>d}; for(let i=0;i<cfg.count;i++) summonHomingBeast(player,i,cfg); break; }
+    case "quebramundos": damageNearbyEntities(player,player.location,QUEBRAMUNDOS.blastRadius,d); break;
+  }
+}
+
+/* ---------------------------------------------------------
    Skills do Ulquiorra Cifer
    --------------------------------------------------------- */
 
@@ -4150,8 +5539,9 @@ function castNihil(player) {
   drawSweep(player, NIHIL, "ulquiorra:oscuras", true);
 
   for (const entity of entitiesInFrontBox(player, NIHIL)) {
-    // porcentagem da vida ATUAL do alvo, medida na vida virtual dele
-    const toll = virtualHealth(entity) * NIHIL.healthFraction;
+    // Segunda Etapa aumenta o Nihil de 30% para 40% da vida atual.
+    const fraction = isTrueForm(player) ? 0.4 : NIHIL.healthFraction;
+    const toll = virtualHealth(entity) * fraction;
     if (toll > 0) dealDamage(entity, toll, player);
   }
 }
@@ -4227,7 +5617,6 @@ function castCeroOscuras(player) {
     pitch: 0.3,
   });
 
-  // mesmo projetil do Gran Rey Cero, 4x o raio e 4x o dano
   fireEnergySphere(player, {
     radius: CERO_OSCURAS.radius,
     range: CERO_OSCURAS.range,
@@ -4236,6 +5625,34 @@ function castCeroOscuras(player) {
     particle: "ulquiorra:oscuras",
     shellParticles: CERO_OSCURAS.shellParticles,
   });
+}
+
+function castCeroOscurasTriplo(player) {
+  if (!tryUseSkill(player, "ulquiorra:cero_oscuras_triplo")) return;
+
+  const dim = player.dimension;
+  const dir = forwardDirection(player);
+  const perp = { x: -dir.z, z: dir.x };
+  const origin = player.location;
+  world.sendMessage(`§2§l${player.name}: CERO OSCURAS TRIPLO!`);
+  dim.playSound("mob.wither.death", origin, { volume: 2.2, pitch: 0.25 });
+
+  const offsets = [-3.2, 0, 3.2];
+  for (const lateral of offsets) {
+    fireEnergySphere(player, {
+      radius: 6.5,
+      range: 34,
+      speed: 1.25,
+      damage: DAMAGE.ceroOscurasTriplo,
+      particle: "ulquiorra:oscuras",
+      shellParticles: 48,
+      origin: {
+        x: origin.x + perp.x * lateral,
+        y: origin.y,
+        z: origin.z + perp.z * lateral,
+      },
+    });
+  }
 }
 
 function explodeLanza(player, center) {
@@ -4267,6 +5684,65 @@ function explodeLanza(player, center) {
   }
 
   damageNearbyEntities(player, center, LANZA.blastRadius, DAMAGE.lanza);
+}
+
+function explodeLanzaSecondStage(player, center) {
+  const dim = player.dimension;
+
+  // A Lanza da Segunda Etapa mantém a grande explosão da Lanza original;
+  // os raios são um efeito adicional, não um substituto da explosão.
+  try {
+    dim.playSound("mob.wither.death", center, { volume: 2.2, pitch: 0.2 });
+    for (let ring = 1; ring <= 8; ring++) {
+      const rr = 26 * ring / 8;
+      const pts = 18 + ring * 6;
+      for (let i=0;i<pts;i++) {
+        const a=(i/pts)*Math.PI*2;
+        dim.spawnParticle("ulquiorra:oscuras", {x:center.x+Math.cos(a)*rr,y:center.y+0.4,z:center.z+Math.sin(a)*rr});
+      }
+    }
+  } catch (e) {}
+  const secondBlastRadius = 26;
+  damageNearbyEntities(player, center, secondBlastRadius, 1200);
+
+  const count = 24;
+  const radius = 26;
+  let strike = 0;
+
+  world.sendMessage(`§2§l${player.name}: os raios da Lanza cercam a área!`);
+
+  const interval = system.runInterval(() => {
+    if (strike >= count) {
+      system.clearRun(interval);
+      return;
+    }
+
+    const angle = (strike / count) * Math.PI * 2 + 0.15;
+    const dist = radius * (0.35 + Math.random() * 0.65);
+    const point = {
+      x: center.x + Math.cos(angle) * dist,
+      y: center.y,
+      z: center.z + Math.sin(angle) * dist,
+    };
+
+    // coluna de partículas para simular um raio caindo naquele ponto
+    for (let h = 0; h < 8; h++) {
+      try {
+        dim.spawnParticle("ulquiorra:lightning", {
+          x: point.x + (Math.random() - 0.5) * 0.35,
+          y: point.y + h * 1.1,
+          z: point.z + (Math.random() - 0.5) * 0.35,
+        });
+      } catch (e) {}
+    }
+    try {
+      dim.playSound("mob.wither.shoot", point, { volume: 0.7, pitch: 1.8 });
+      dim.spawnParticle("minecraft:large_explosion", { x: point.x, y: point.y + 0.2, z: point.z });
+    } catch (e) {}
+
+    damageNearbyEntities(player, point, 2.2, 40);
+    strike++;
+  }, 4);
 }
 
 function castLanza(player) {
@@ -4310,7 +5786,11 @@ function castLanza(player) {
     travelled += LANZA.speed;
     if (struck || travelled >= LANZA.range) {
       system.clearRun(interval);
-      explodeLanza(player, tip);
+      if (isTrueForm(player)) {
+        explodeLanzaSecondStage(player, tip);
+      } else {
+        explodeLanza(player, tip);
+      }
     }
   }, 1);
 }
@@ -5165,7 +6645,7 @@ function targetInView(player, range) {
 
 function nameOf(entity) {
   try {
-    return entity.typeId === "minecraft:player" ? entity.name : entity.typeId;
+    return entity.typeId === "minecraft:player" ? entity.name : entity.typeId === "multiversal:training_dummy" ? "Boneco de Teste" : entity.typeId;
   } catch (e) {
     return "alguém";
   }
@@ -6088,6 +7568,10 @@ function isDownOrGone(entity) {
 // skill. Vale pros dois lados, e por isso e um estado e nao um efeito.
 function isFrozen(entity) {
   try {
+    // paralisado pelo Piercing Shinso do Gin
+    if ((ginParalyzed.get(entity.id) ?? 0) > system.currentTick) return true;
+    for (const duel of soiNigekiDuels.values()) { if (duel.target?.id === entity.id) return true; }
+    if (soiNigekiDuels.has(entity.id)) return true;
     return (
       system.currentTick < readTickDeadline(entity, DP.frozenEnd, TEATRO.freezeTicks)
     );
@@ -6393,6 +7877,15 @@ function tryGabrielRebirth(player) {
   // renasce cheio: a forma desperta tem teto proprio
   const form = isAwakened(player) ? character.awakening : undefined;
   healToMax(player, cutHealthFor(player, form?.health ?? character.health));
+
+  if (player.getDynamicProperty("mv:mayuri_poison_gabriel")) {
+    player.setDynamicProperty("mv:mayuri_poison_gabriel", false);
+    player.setDynamicProperty(DP.mayuriParalysis, true);
+    player.setDynamicProperty(DP.mayuriParalysisX, player.location.x);
+    player.setDynamicProperty(DP.mayuriParalysisY, player.location.y);
+    player.setDynamicProperty(DP.mayuriParalysisZ, player.location.z);
+    player.sendMessage("Porque eu não morro logo?isso demora tanto...que dor...");
+  }
 
   world.sendMessage(
     `§d§l${player.name} renasceu de dentro do hospedeiro! §r§7(Gabriel)`
@@ -6933,14 +8426,7 @@ function ascendToTrueForm(player, character, form) {
         pitch: 0.4,
       });
     }
-    for (let i = 0; i < 40; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      player.dimension.spawnParticle("vizard:cero", {
-        x: player.location.x + Math.cos(angle) * (Math.random() * 4),
-        y: player.location.y + Math.random() * 4,
-        z: player.location.z + Math.sin(angle) * (Math.random() * 4),
-      });
-    }
+
   } catch (e) {}
 
   world.sendMessage(`§4§l${player.name} virou ${trueForm.name}!`);
@@ -7085,20 +8571,28 @@ function activateKageyoshi(player, character) {
       } catch (e) {}
     }
 
-    // dano de sangramento pra quem estiver na area (recalculado a cada segundo)
     const entities = dim.getEntities({ location: center, maxDistance: cfg.radius });
     for (const entity of entities) {
       if (entity.id === player.id) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       dealDamage(entity, cfg.dotPerSecond * dmgMultiplier(player), player);
+      try { entity.addEffect("slowness", 40, { amplifier: cfg.slownessAmplifier ?? 1, showParticles: false }); } catch(e) {}
     }
 
     elapsed++;
     if (elapsed >= cfg.durationSeconds) {
       system.clearRun(interval);
+      removeZonesOwnedBy(player.id);
       player.sendMessage("§7Senbonzakura Kageyoshi terminou.");
     }
   }, 20);
+
+  activeZones.push({
+    ownerId: player.id, kind: "kageyoshi", center, radius: cfg.radius, dimension: dim,
+    intervalId: interval, trapped: new Set(), blocksSkills: false, blocksOwnerSkills: false,
+    blocksDash: true, traps: false, blocksRegen: false,
+    blockMessage: "§dVocê está dentro do Kageyoshi: o dash está bloqueado.",
+  });
 }
 
 function drawSenkeiBarrier(dim, center, radius) {
@@ -7229,12 +8723,5266 @@ function finishByakuyaSuper(player) {
   );
 }
 
+const INTocable = {
+  durationTicks: 200, // 10s
+};
+
+const MUERTE_MULTIPLE = {
+  attacks: 20,
+  gapTicks: 1,
+  searchRadius: 7,
+};
+
+const AVANCE_FATAL = {
+  searchRadius: 35,
+  dashTicks: 5,
+  maxDistancePerTick: 6,
+  hitRadius: 4.5,
+};
+
+const METEORITO_DE_HIERRO = {
+  searchRadius: 40,
+  launchHeight: 14,
+  descentTicks: 5,
+  impactRadius: 5,
+};
+
+// brilho defensivo usado enquanto Declaración del Intocable está ativa
+function showIntocableGuard(entity) {
+  const loc = entity.location;
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    try {
+      entity.dimension.spawnParticle("minecraft:crit_particle", {
+        x: loc.x + Math.cos(angle) * 1.1,
+        y: loc.y + 0.9 + (i % 3) * 0.35,
+        z: loc.z + Math.sin(angle) * 1.1,
+      });
+    } catch (e) {}
+  }
+}
+
+function isIntocableActive(entity) {
+  return isIntocable(entity);
+}
+
+// Encerra a Declaración del Intocable. `broken` = quebrada pelo Zaraki.
+function endIntocable(entity, broken = false) {
+  let wasActive = false;
+  try {
+    wasActive = isIntocable(entity);
+    entity.setDynamicProperty(DP.intocableEnd, 0);
+  } catch (e) {}
+  if (!wasActive) return;
+  try {
+    entity.removeEffect("resistance");
+  } catch (e) {}
+  if (broken) {
+    try {
+      world.sendMessage("§c§lA defesa do Nnoitra foi quebrada!");
+      entity.dimension.playSound("random.anvil_break", entity.location, {
+        volume: 1.2,
+        pitch: 1.2,
+      });
+    } catch (e) {}
+  }
+}
+
+/* ---------------------------------------------------------
+   Nnoitra Gilga
+   --------------------------------------------------------- */
+
+// Individualidade + Hierro. Tudo que o addon causa passa por dealDamage, que
+// chama isto: 90% sempre, e 70% em cima disso enquanto o Hierro durar (os dois
+// se multiplicam: com o Hierro ligado ele recebe 63% do dano bruto).
+function isHierro(entity) {
+  try {
+    return (
+      system.currentTick < readTickDeadline(entity, DP.hierroEnd, HIERRO.durationTicks)
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+function damageTakenMultiplierOf(entity) {
+  try {
+    if (entity.typeId !== "minecraft:player") return 1;
+    const character = getActiveCharacter(entity);
+    let multiplier = character?.damageTakenMultiplier ?? 1;
+    const form = activeFormOf(entity, character);
+    if (form?.awakeningDamageTakenMultiplier) {
+      multiplier *= form.awakeningDamageTakenMultiplier;
+    }
+    if (isHierro(entity)) multiplier *= HIERRO.damageTakenMultiplier;
+    return multiplier;
+  } catch (e) {
+    return 1;
+  }
+}
+
+
+function castMuerteMultiple(player) {
+  const target = nearestTarget(player, MUERTE_MULTIPLE.searchRadius);
+  if (!target) {
+    player.sendMessage("§7Não há ninguém por perto para a Muerte Múltiple.");
+    return;
+  }
+  if (!tryUseSkill(player, "nnoitra:muerte_multiple")) return;
+
+  world.sendMessage(`§8${player.name} §7usou §fMuerte Múltiple§7!`);
+  player.dimension.playSound("item.trident.throw", player.location, {
+    volume: 1.2,
+    pitch: 0.8,
+  });
+
+  let attacks = 0;
+  const hitCooldown = new Map();
+
+  const strike = () => {
+    attacks++;
+    try {
+      // remira no alvo mais próximo a cada golpe
+      const victim = nearestTarget(player, MUERTE_MULTIPLE.searchRadius);
+      if (victim) {
+        const now = system.currentTick;
+        if (now - (hitCooldown.get(victim.id) ?? -1000) >= 1) {
+          hitCooldown.set(victim.id, now);
+          const loc = victim.location;
+          for (let i = 0; i < 5; i++) {
+            const angle = (i / 5) * Math.PI * 2;
+            try {
+              player.dimension.spawnParticle("nnoitra:corte", {
+                x: loc.x + Math.cos(angle) * 0.9,
+                y: loc.y + 0.4 + Math.random() * 1.4,
+                z: loc.z + Math.sin(angle) * 0.9,
+              });
+            } catch (e) {}
+          }
+          dealDamage(victim, DAMAGE.muerteMultipleHit * dmgMultiplier(player), player);
+        }
+      }
+    } catch (e) {}
+
+    if (attacks < MUERTE_MULTIPLE.attacks) {
+      system.runTimeout(strike, MUERTE_MULTIPLE.gapTicks);
+    }
+  };
+
+  strike();
+}
+
+function castAvanceFatal(player) {
+  const target = nearestPlayer(player, AVANCE_FATAL.searchRadius);
+  if (!target) {
+    player.sendMessage("§7Não há player por perto para o Avance Fatal.");
+    return;
+  }
+  if (!tryUseSkill(player, "nnoitra:avance_fatal")) return;
+
+  world.sendMessage(`§8${player.name} §f§lAVANCE FATAL!`);
+  try {
+    player.dimension.playSound("mob.wither.shoot", player.location, {
+      volume: 1.4,
+      pitch: 1.15,
+    });
+  } catch (e) {}
+
+  let ticks = 0;
+  const interval = system.runInterval(() => {
+    ticks++;
+    try {
+      const to = target.location;
+      const from = player.location;
+      const dir = directionToward(from, {
+        x: to.x,
+        y: to.y,
+        z: to.z,
+      });
+      const distance = Math.sqrt(
+        (to.x - from.x) ** 2 +
+        (to.y - from.y) ** 2 +
+        (to.z - from.z) ** 2
+      );
+
+      const step = Math.min(AVANCE_FATAL.maxDistancePerTick, Math.max(0, distance - 1.8));
+      player.teleport(
+        {
+          x: from.x + dir.x * step,
+          y: from.y + dir.y * step,
+          z: from.z + dir.z * step,
+        },
+        { keepVelocity: false, facingLocation: to }
+      );
+
+      for (let cut = 0; cut < 4; cut++) {
+        const side = (cut - 1.5) * 0.45;
+        try {
+          player.dimension.spawnParticle("nnoitra:corte", {
+            x: player.location.x + side,
+            y: player.location.y + 0.7 + cut * 0.25,
+            z: player.location.z + 1.2,
+          });
+        } catch (e) {}
+      }
+
+      if (distance <= AVANCE_FATAL.hitRadius || ticks >= AVANCE_FATAL.dashTicks) {
+        if (distance <= AVANCE_FATAL.hitRadius + 1) {
+          dealDamage(target, DAMAGE.avanceFatal * dmgMultiplier(player), player);
+        }
+        system.clearRun(interval);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 1);
+}
+
+function castMeteoritoDeHierro(player) {
+  const target = nearestPlayer(player, METEORITO_DE_HIERRO.searchRadius);
+  if (!target) {
+    player.sendMessage("§7Não há player por perto para o Meteorito de Hierro.");
+    return;
+  }
+  if (!tryUseSkill(player, "nnoitra:meteorito_de_hierro")) return;
+
+  world.sendMessage(`§8${player.name} §f§lMETEORITO DE HIERRO!`);
+  const start = player.location;
+  let phase = 0;
+  let ticks = 0;
+
+  // subida imediata
+  try {
+    player.teleport(
+      { x: start.x, y: start.y + METEORITO_DE_HIERRO.launchHeight, z: start.z },
+      { keepVelocity: false }
+    );
+  } catch (e) {}
+
+  const interval = system.runInterval(() => {
+    ticks++;
+    try {
+      const targetLoc = target.location;
+      const current = player.location;
+
+      // durante a queda, o ponto de impacto acompanha o alvo
+      const impact = {
+        x: targetLoc.x,
+        y: targetLoc.y + 0.2,
+        z: targetLoc.z,
+      };
+
+      if (ticks <= METEORITO_DE_HIERRO.descentTicks) {
+        const t = ticks / METEORITO_DE_HIERRO.descentTicks;
+        // queda acelerada: começa controlada e termina muito rápida
+        const eased = t * t;
+        player.teleport(
+          {
+            x: current.x + (impact.x - current.x) * 0.75,
+            y: start.y + METEORITO_DE_HIERRO.launchHeight * (1 - eased),
+            z: current.z + (impact.z - current.z) * 0.75,
+          },
+          { keepVelocity: false, facingLocation: impact }
+        );
+
+        for (let i = 0; i < 5; i++) {
+          try {
+            player.dimension.spawnParticle("minecraft:large_explosion", {
+              x: player.location.x + (Math.random() - 0.5) * 1.4,
+              y: player.location.y,
+              z: player.location.z + (Math.random() - 0.5) * 1.4,
+            });
+          } catch (e) {}
+        }
+      } else {
+        player.teleport(
+          { x: impact.x, y: impact.y, z: impact.z },
+          { keepVelocity: false, facingLocation: targetLoc }
+        );
+
+        // Explosão apenas visual: partículas, sem quebrar blocos.
+        for (let ring = 0; ring < 3; ring++) {
+          for (let i = 0; i < 18; i++) {
+            const angle = (i / 18) * Math.PI * 2;
+            const radius = METEORITO_DE_HIERRO.impactRadius * ((ring + 1) / 3);
+            try {
+              player.dimension.spawnParticle("minecraft:large_explosion", {
+                x: impact.x + Math.cos(angle) * radius,
+                y: impact.y + 0.15 + ring * 0.25,
+                z: impact.z + Math.sin(angle) * radius,
+              });
+            } catch (e) {}
+          }
+        }
+
+        system.clearRun(interval);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 1);
+}
+
+function castDeclaracionDelIntocable(player) {
+  if (!tryUseSkill(player, "nnoitra:declaracion_del_intocable")) return;
+
+  player.setDynamicProperty(
+    DP.intocableEnd,
+    system.currentTick + INTocable.durationTicks
+  );
+  // IMUNIDADE DE VERDADE: o dealDamage so barra o dano do addon. Dano normal
+  // (soco, mob, fogo, queda...) passava. Resistance no maximo zera todo dano
+  // comum durante os 10s.
+  try {
+    player.addEffect("resistance", INTocable.durationTicks + 5, {
+      amplifier: 255,
+      showParticles: false,
+    });
+  } catch (e) {}
+  world.sendMessage("§6Minha defesa é impenetrável!");
+
+  const interval = system.runInterval(() => {
+    try {
+      if (!isIntocableActive(player)) {
+        system.clearRun(interval);
+        return;
+      }
+      showIntocableGuard(player);
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 4);
+}
+
+function castDuroSlash(player) {
+  if (!tryUseSkill(player, "nnoitra:duro_slash")) return;
+
+  world.sendMessage(`§8${player.name}: §f§lDURO SLASH! §r§7(passa pela guarda)`);
+  try {
+    player.dimension.playSound("random.anvil_land", player.location, {
+      volume: 1.2,
+      pitch: 1.5,
+    });
+  } catch (e) {}
+
+  // corte deitado: tres fileiras de faisca na largura toda do golpe
+  const dim = player.dimension;
+  const dir = forwardDirection(player);
+  const perp = { x: -dir.z, z: dir.x };
+  const origin = player.location;
+  const half = DURO_SLASH.width / 2;
+  for (const height of [0.7, 1.1, 1.5]) {
+    for (let i = 0; i <= 14; i++) {
+      const lateral = -half + (i / 14) * DURO_SLASH.width;
+      // as pontas ficam um pouco mais atras: o corte desenha um arco
+      const along = DURO_SLASH.forward * 0.65 - Math.abs(lateral) * 0.25;
+      try {
+        dim.spawnParticle(i % 2 === 0 ? "nnoitra:corte" : "minecraft:crit_particle", {
+          x: origin.x + dir.x * along + perp.x * lateral,
+          y: origin.y + height,
+          z: origin.z + dir.z * along + perp.z * lateral,
+        });
+      } catch (e) {}
+    }
+  }
+
+  const finalDamage = DAMAGE.duroSlash * dmgMultiplier(player);
+  for (const victim of entitiesInFrontBox(player, DURO_SLASH)) {
+    // segundo golpe da addon que passa direto pela guarda (o outro e a Royal Cleave)
+    dealDamage(victim, finalDamage, player, { breaksBlock: true });
+  }
+}
+
+/* --- lamina dupla: Spinning Blade e Beyblade ------------------------ */
+
+const TWO_PI = Math.PI * 2;
+
+// a - b normalizado pra [-PI, PI)
+function angleDiff(a, b) {
+  let d = (a - b) % TWO_PI;
+  if (d >= Math.PI) d -= TWO_PI;
+  if (d < -Math.PI) d += TWO_PI;
+  return d;
+}
+
+// `angle` e pra onde o braco A aponta agora; `sweep` e quanto a lamina girou
+// desde o tick passado (radianos). O alvo e cortado se algum dos dois bracos
+// passou por ele NESTE tick. Olhar so o angulo atual deixaria passar quem
+// estivesse "entre" dois ticks: a ponta anda mais de 2 blocos por tick.
+function doubleBladeReaches(center, angle, sweep, entity) {
+  const loc = entity.location;
+  const dy = loc.y - center.y;
+  if (dy < -DOUBLE_BLADE.reachBelow || dy > DOUBLE_BLADE.reachAbove) return false;
+
+  const dx = loc.x - center.x;
+  const dz = loc.z - center.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist > DOUBLE_BLADE.radius + 0.5) return false;
+  if (dist < 0.4) return true; // em cima do eixo, qualquer braco encosta
+
+  const facing = Math.atan2(dz, dx);
+  // folga angular: a largura do corpo vista dessa distancia
+  const slack = Math.atan2(0.6, dist);
+  for (let arm = 0; arm < 2; arm++) {
+    const passed = angleDiff(angle + arm * Math.PI, facing);
+    if (passed >= -slack && passed <= sweep + slack) return true;
+  }
+  return false;
+}
+
+function spawnBladePoint(dim, center, angle, distance, particle) {
+  try {
+    dim.spawnParticle(particle, {
+      x: center.x + Math.cos(angle) * distance,
+      y: center.y + 1.2,
+      z: center.z + Math.sin(angle) * distance,
+    });
+  } catch (e) {}
+}
+
+function drawDoubleBlade(dim, center, angle, sweep) {
+  const bladeStart = DOUBLE_BLADE.radius - 1.5;
+  for (let arm = 0; arm < 2; arm++) {
+    const base = angle + arm * Math.PI;
+    // cabo: do centro ate onde comeca a lamina
+    for (let i = 1; i <= 5; i++) {
+      spawnBladePoint(dim, center, base, bladeStart * (i / 5), "minecraft:crit_particle");
+    }
+    // lamina: os ultimos blocos, com um rastro atras
+    for (let trail = 0; trail < 2; trail++) {
+      for (let i = 0; i < 4; i++) {
+        spawnBladePoint(
+          dim,
+          center,
+          base - sweep * 0.5 * trail,
+          bladeStart + 1.5 * (i / 3),
+          "nnoitra:corte"
+        );
+      }
+    }
+  }
+}
+
+function showBladeSpark(entity) {
+  try {
+    const loc = entity.location;
+    for (let i = 0; i < 4; i++) {
+      entity.dimension.spawnParticle("nnoitra:corte", {
+        x: loc.x + (Math.random() - 0.5) * 0.9,
+        y: loc.y + 0.6 + Math.random() * 1.0,
+        z: loc.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+  } catch (e) {}
+}
+
+// Corta quem a lamina alcancou neste tick. `lastHit` guarda o tick do ultimo
+// corte por alvo: a lamina passa varias vezes por segundo, e sem isso o "X por
+// hit" sairia todo tick.
+function bladeCutTargets(player, center, angle, sweep, damage, hitInterval, lastHit, ranged) {
+  const now = system.currentTick;
+  const finalDamage = damage * dmgMultiplier(player);
+
+  for (const entity of player.dimension.getEntities({
+    location: center,
+    maxDistance: DOUBLE_BLADE.radius + 3,
+  })) {
+    if (entity.id === player.id) continue;
+    if (!entity.getComponent("minecraft:health")) continue;
+    if (now - (lastHit.get(entity.id) ?? -1000) < hitInterval) continue;
+    if (!doubleBladeReaches(center, angle, sweep, entity)) continue;
+
+    lastHit.set(entity.id, now);
+    // a Respira do Barragan come ataque de longo alcance: so a Beyblade, que e
+    // arremessada, cai nessa regra. A Spinning Blade e corpo a corpo.
+    if (ranged && isRespiring(entity)) {
+      showRespiraGuard(entity);
+      continue;
+    }
+    dealDamage(entity, finalDamage, player);
+    showBladeSpark(entity);
+  }
+}
+
+function castSpinningBlade(player) {
+  if (!tryUseSkill(player, "nnoitra:spinning_blade")) return;
+
+  world.sendMessage(`§8${player.name} §7girou a lâmina: §fSpinning Blade§7!`);
+  try {
+    player.dimension.playSound("item.trident.throw", player.location, {
+      volume: 1.3,
+      pitch: 0.6,
+    });
+  } catch (e) {}
+
+  const sweep = (SPINNING_BLADE.degreesPerTick * Math.PI) / 180;
+  const lastHit = new Map();
+  const dir = forwardDirection(player);
+  let angle = Math.atan2(dir.z, dir.x);
+  let elapsed = 0;
+
+  const interval = system.runInterval(() => {
+    elapsed++;
+    try {
+      const hp = player.getComponent("minecraft:health");
+      // morreu ou trocou de personagem: a lamina some junto
+      if (!hp || hp.currentValue <= 0 || getActiveCharacter(player)?.id !== "nnoitra") {
+        system.clearRun(interval);
+        return;
+      }
+
+      // a lamina acompanha o Nnoitra: ele pode andar e usar outras skills
+      const center = player.location;
+      angle += sweep;
+      drawDoubleBlade(player.dimension, center, angle, sweep);
+      bladeCutTargets(
+        player,
+        center,
+        angle,
+        sweep,
+        DAMAGE.spinningBladeHit,
+        SPINNING_BLADE.hitIntervalTicks,
+        lastHit,
+        false
+      );
+    } catch (e) {
+      // player saiu do mundo no meio do giro
+      system.clearRun(interval);
+      return;
+    }
+
+    if (elapsed >= SPINNING_BLADE.durationTicks) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7A Spinning Blade parou de girar.");
+      } catch (e) {}
+    }
+  }, 1);
+}
+
+function castBeyblade(player) {
+  if (!tryUseSkill(player, "nnoitra:beyblade")) return;
+
+  world.sendMessage(`§8${player.name}: §f§lBEYBLADE!`);
+  try {
+    player.dimension.playSound("item.trident.throw", player.location, {
+      volume: 1.4,
+      pitch: 1.1,
+    });
+  } catch (e) {}
+
+  const dir = forwardDirection(player);
+  const origin = player.location;
+  const sweep = (BEYBLADE.degreesPerTick * Math.PI) / 180;
+  const lastHit = new Map();
+  let angle = Math.atan2(dir.z, dir.x);
+  let travelled = BEYBLADE.startDistance;
+
+  const interval = system.runInterval(() => {
+    try {
+      const center = {
+        x: origin.x + dir.x * travelled,
+        y: origin.y,
+        z: origin.z + dir.z * travelled,
+      };
+      angle += sweep;
+      drawDoubleBlade(player.dimension, center, angle, sweep);
+      bladeCutTargets(
+        player,
+        center,
+        angle,
+        sweep,
+        DAMAGE.beybladeHit,
+        BEYBLADE.hitIntervalTicks,
+        lastHit,
+        true
+      );
+    } catch (e) {
+      // player saiu do mundo com a lamina no ar
+      system.clearRun(interval);
+      return;
+    }
+
+    travelled += BEYBLADE.speed;
+    if (travelled >= BEYBLADE.range) system.clearRun(interval);
+  }, 1);
+}
+
+function castHierro(player) {
+  if (!tryUseSkill(player, "nnoitra:hierro")) return;
+
+  player.setDynamicProperty(DP.hierroEnd, system.currentTick + HIERRO.durationTicks);
+
+  world.sendMessage(`§8${player.name} §7endureceu a pele: §fHierro§7!`);
+  try {
+    player.dimension.playSound("random.anvil_land", player.location, {
+      volume: 1.4,
+      pitch: 0.8,
+    });
+  } catch (e) {}
+
+  // aura de ferro em volta dele enquanto durar
+  const interval = system.runInterval(() => {
+    try {
+      if (!isHierro(player)) {
+        system.clearRun(interval);
+        player.sendMessage("§7O Hierro se desfez.");
+        return;
+      }
+      const loc = player.location;
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        player.dimension.spawnParticle(
+          i % 2 === 0 ? "minecraft:crit_particle" : "nnoitra:corte",
+          {
+            x: loc.x + Math.cos(angle) * 0.7,
+            y: loc.y + 0.2 + Math.random() * 1.7,
+            z: loc.z + Math.sin(angle) * 0.7,
+          }
+        );
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 4);
+}
+
+/* ---------------------------------------------------------
+   Gin Ichimaru (Tier 6) - Shinso, a lamina retratil
+   Tudo aqui e desenhado com particula: a lamina e uma linha de "gin:lamina"
+   da mao do Gin ate a ponta, redesenhada a cada tick. Ela estende e se
+   retrai de verdade (o comprimento cresce e encolhe tick a tick).
+   --------------------------------------------------------- */
+
+const EXTENDED_BLADE = {
+  range: 20,
+  extendTicks: 4, // 5 blocos por tick
+  holdTicks: 3,
+  retractTicks: 4,
+  hitRadius: 1.1, // espessura de acerto da lamina
+  maxBreaks: 40, // teto de blocos quebrados por uso
+};
+const SPIRAL = {
+  radius: 8, // comprimento da lamina girando - nao foi especificado
+  durationTicks: 100, // 5s - nao foi especificado
+  extendTicks: 4,
+  retractTicks: 4,
+  degreesPerTick: 30, // uma volta a cada 12 ticks
+  hitIntervalTicks: 10, // o mesmo alvo leva "100 por hit" de novo depois disso
+  bob: 0.5, // a lamina sobe e desce enquanto gira
+};
+// Pursuing Blade e Piercing Shinso usam o mesmo motor: a ponta anda em RETAS e a
+// cada "perna" ela mira de novo no alvo mais proximo. Se o rumo muda, a lamina
+// dobra ali (uma junta na cadeia) - viradas secas, nunca curva.
+const GIN_PATH_DEFAULTS = {
+  pathfind: true, // contorna blocos; sem caminho, quebra os blocos no meio
+  // 1a busca: o caminho MAIS CURTO. 2a (so se a 1a estourar o limite): aceita um
+  // caminho um pouco maior numa area bem mais larga. So depois das duas falharem
+  // a lamina quebra bloco.
+  pathMargin: 12, // folga da area de busca em volta do trecho ponta-alvo
+  pathNodeLimit: 2500, // teto da busca (trava o lag em terreno grande)
+  pathFallbackMargin: 40,
+  pathFallbackNodeLimit: 10000,
+  pathFallbackWeight: 1.6, // >1 = acha um caminho bem mais rapido, mas nao o menor
+  replanTicks: 8, // de quanto em quanto tempo refaz o caminho se o alvo se mexe
+  maxBreaks: 40, // teto de blocos quebrados por ataque
+};
+const PURSUING_BLADE = {
+  searchRadius: 40,
+  speed: 2.4, // blocos por tick
+  legTicks: 4,
+  hitRadius: 1.3,
+  maxLength: 70,
+  maxTicks: 100,
+  holdTicks: 0,
+  retractTicks: 6, // recolhe rapido: 0,3s
+  retractMinSpeed: 1.5,
+  drawEvery: 1,
+  drawBudget: 32,
+  ...GIN_PATH_DEFAULTS,
+};
+const PIERCING_SHINSO = {
+  searchRadius: 40,
+  speed: 2.8,
+  legTicks: 3,
+  hitRadius: 1.3,
+  maxLength: 120,
+  maxTicks: 200, // 10s no maximo
+  // a paralisia dura ate a lamina terminar de voltar: depois do ultimo acerto a
+  // lamina fica esticada (todo mundo espetado) por 1s e so entao recolhe
+  holdTicks: 20,
+  retractTicks: 8,
+  retractMinSpeed: 1.5,
+  maxTargets: 20,
+  drawEvery: 2,
+  drawBudget: 40,
+  ...GIN_PATH_DEFAULTS,
+};
+const KAMISHINI = {
+  range: 200, // 10x o Extended Blade (20). Na pratica vai ate onde houver chunk carregado
+  extendTicks: 6, // ~33 blocos por tick
+  holdTicks: 14,
+  retractTicks: 8,
+  hitRadius: 1.6, // "encostou, morreu"
+  damageFraction: 0.5, // tier igual ou maior: metade da vida maxima
+  drawEvery: 2,
+};
+const GIN_TURN_COS = Math.cos((10 * Math.PI) / 180); // menos que 10 graus nao vira junta
+const GIN_PARALYSIS_SAFETY_TICKS = 40; // a paralisia expira sozinha se o loop do ataque morrer
+
+function ginHandOf(player) {
+  const l = player.location;
+  return { x: l.x, y: l.y + 1.15, z: l.z };
+}
+
+// ponto que o player esta mirando, a `dist` blocos do olho
+function ginAimPoint(player, dist) {
+  const h = player.getHeadLocation();
+  const v = player.getViewDirection();
+  return { x: h.x + v.x * dist, y: h.y + v.y * dist, z: h.z + v.z * dist };
+}
+
+function ginDist(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function ginUnit(from, to) {
+  const d = ginDist(from, to) || 1;
+  return { x: (to.x - from.x) / d, y: (to.y - from.y) / d, z: (to.z - from.z) / d };
+}
+
+// meio do tronco: e pra la que a lamina mira
+function ginBodyOf(entity) {
+  const l = entity.location;
+  return { x: l.x, y: l.y + 0.9, z: l.z };
+}
+
+// distancia do ponto p ao segmento a-b e em que ponto do segmento (0..1) fica o mais proximo
+function ginSegmentReach(p, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const abz = b.z - a.z;
+  const len2 = abx * abx + aby * aby + abz * abz;
+  let t = 0;
+  if (len2 > 1e-9) {
+    t = ((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / len2;
+    t = Math.max(0, Math.min(1, t));
+  }
+  const dx = p.x - (a.x + abx * t);
+  const dy = p.y - (a.y + aby * t);
+  const dz = p.z - (a.z + abz * t);
+  return { dist: Math.sqrt(dx * dx + dy * dy + dz * dz), t };
+}
+
+// o corpo tem altura: testa pes, tronco e cabeca e fica com o mais perto
+function ginBodyReach(entity, a, b) {
+  const l = entity.location;
+  let best = { dist: Infinity, t: 1 };
+  for (const h of [0.3, 0.95, 1.6]) {
+    const r = ginSegmentReach({ x: l.x, y: l.y + h, z: l.z }, a, b);
+    if (r.dist < best.dist) best = r;
+  }
+  return best;
+}
+
+// quem a lamina (segmento a-b, com espessura `radius`) encosta, na ordem em que
+// ela passa por eles
+function ginEntitiesOnSegment(player, a, b, radius, ignore) {
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+  const search = ginDist(a, b) / 2 + radius + 2.5;
+  const found = [];
+  for (const entity of player.dimension.getEntities({ location: mid, maxDistance: search })) {
+    if (entity.id === player.id) continue;
+    if (ignore && ignore.has(entity.id)) continue;
+    if (!entity.getComponent("minecraft:health")) continue;
+    if (isDownOrGone(entity)) continue;
+    const reach = ginBodyReach(entity, a, b);
+    if (reach.dist > radius) continue;
+    found.push({ entity, t: reach.t });
+  }
+  found.sort((x, y) => x.t - y.t);
+  return found.map((f) => f.entity);
+}
+
+// entidade viva mais proxima de `from` que ainda nao foi cortada
+function ginNearestTarget(player, from, radius, exclude) {
+  let best;
+  let bestDist = Infinity;
+  for (const entity of player.dimension.getEntities({ location: from, maxDistance: radius })) {
+    if (entity.id === player.id) continue;
+    if (exclude && exclude.has(entity.id)) continue;
+    if (!entity.getComponent("minecraft:health")) continue;
+    if (isDownOrGone(entity)) continue;
+    const d = ginDist(from, ginBodyOf(entity));
+    if (d < bestDist) {
+      bestDist = d;
+      best = entity;
+    }
+  }
+  return best;
+}
+
+// Desenha a lamina ao longo de uma linha quebrada. O espacamento cresce se a
+// lamina fica comprida, entao o gasto de particula por desenho tem teto (`budget`).
+function ginDrawBlade(dim, points, budget, mainParticle = "gin:lamina", tipParticle = "gin:ponta") {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += ginDist(points[i - 1], points[i]);
+  if (total < 0.05) return;
+
+  const spacing = Math.max(0.6, total / budget);
+  let next = 0;
+  let walked = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const seg = ginDist(a, b);
+    if (seg < 1e-6) continue;
+    while (next <= walked + seg) {
+      const t = (next - walked) / seg;
+      try {
+        dim.spawnParticle(mainParticle, {
+          x: a.x + (b.x - a.x) * t,
+          y: a.y + (b.y - a.y) * t,
+          z: a.z + (b.z - a.z) * t,
+        });
+      } catch (e) {
+        return;
+      }
+      next += spacing;
+    }
+    walked += seg;
+  }
+  try {
+    dim.spawnParticle(tipParticle, points[points.length - 1]);
+  } catch (e) {}
+}
+
+function showGinSpark(entity) {
+  try {
+    const l = entity.location;
+    for (let i = 0; i < 4; i++) {
+      entity.dimension.spawnParticle(i % 2 === 0 ? "minecraft:crit_particle" : "gin:ponta", {
+        x: l.x + (Math.random() - 0.5) * 0.9,
+        y: l.y + 0.5 + Math.random() * 1.1,
+        z: l.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+  } catch (e) {}
+}
+
+// Corta o alvo. `ranged` = ataque de longo alcance: a Respira do Barragan come
+// esse tipo de golpe (so a Spiral, que gira colada no Gin, e corpo a corpo).
+// Devolve true se o golpe entrou.
+function ginStrike(player, entity, damage, ranged) {
+  if (ranged && isRespiring(entity)) {
+    showRespiraGuard(entity);
+    return false;
+  }
+  dealDamage(entity, damage * dmgMultiplier(player), player);
+  showGinSpark(entity);
+  return true;
+}
+
+function ginPlaySound(player, sound, volume, pitch) {
+  try {
+    player.dimension.playSound(sound, player.location, { volume, pitch });
+  } catch (e) {}
+}
+
+function ginStillAlive(player) {
+  return !isDownOrGone(player) && getActiveCharacter(player)?.id === "gin";
+}
+
+/* Paralisia do Piercing Shinso: fica no mapa `ginParalyzed` (id -> tick limite),
+   que o isFrozen() tambem le. Com isso o paralisado nao usa skill, nao bate e
+   nao da dash pelas MESMAS travas que ja existem. O tick limite e curto e o
+   ataque renova: se o loop morrer por qualquer motivo, a paralisia acaba sozinha. */
+function ginParalyze(entity) {
+  ginParalyzed.set(entity.id, system.currentTick + GIN_PARALYSIS_SAFETY_TICKS);
+  ginHoldParalysis(entity);
+  try {
+    if (entity.typeId === "minecraft:player") {
+      entity.sendMessage("§7O Shinso te atravessou: §fparalisado§7 até o fim do ataque!");
+    }
+  } catch (e) {}
+}
+
+function ginHoldParalysis(entity) {
+  ginParalyzed.set(entity.id, system.currentTick + GIN_PARALYSIS_SAFETY_TICKS);
+  try {
+    entity.addEffect("slowness", 10, { amplifier: 255, showParticles: false });
+    entity.addEffect("jump_boost", 10, { amplifier: 128, showParticles: false });
+  } catch (e) {}
+}
+
+function ginRelease(entity) {
+  ginParalyzed.delete(entity.id);
+  // nao tira a lentidao de quem ainda esta preso por outra coisa (Teatro)
+  if (isFrozen(entity)) return;
+  try {
+    entity.removeEffect("slowness");
+    entity.removeEffect("jump_boost");
+  } catch (e) {}
+}
+
+/* ---------- Extended Blade ---------- */
+
+function castExtendedBlade(player) {
+  if (!tryUseSkill(player, "gin:extended_blade")) return;
+
+  world.sendMessage(`§7${player.name}: §f§lExtended Blade`);
+  ginPlaySound(player, "item.trident.throw", 1.2, 1.7);
+
+  const cfg = EXTENDED_BLADE;
+  const dim = player.dimension;
+  const dir = ginUnit(ginHandOf(player), ginAimPoint(player, cfg.range));
+  const hit = new Set();
+  const blockCache = new Map();
+  const attackTicks = cfg.extendTicks + cfg.holdTicks;
+  const total = attackTicks + cfg.retractTicks;
+  let cap = cfg.range; // alcance real: encurta se bater em bloco que nao quebra
+  let reachedLen = 0; // ate onde a lamina ja abriu caminho
+  let broken = 0;
+  let tick = 0;
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (!ginStillAlive(player)) {
+        system.clearRun(interval);
+        return;
+      }
+
+      let length;
+      if (tick <= cfg.extendTicks) length = (cfg.range * tick) / cfg.extendTicks;
+      else if (tick <= attackTicks) length = cfg.range;
+      else length = cfg.range * Math.max(0, 1 - (tick - attackTicks) / cfg.retractTicks);
+
+      const hand = ginHandOf(player);
+      const at = (d) => ({ x: hand.x + dir.x * d, y: hand.y + dir.y * d, z: hand.z + dir.z * d });
+
+      // enquanto estende, quebra os blocos que a ponta encosta
+      if (tick <= cfg.extendTicks && reachedLen < cap) {
+        const want = Math.min(length, cap);
+        const res = ginBreakBlocks(dim, blockCache, at(reachedLen), at(want), cfg.maxBreaks - broken);
+        broken += res.count;
+        if (res.blocked) cap = reachedLen + res.reach; // bloco que nao quebra: a lamina para ali
+        reachedLen = Math.min(want, cap);
+      }
+      length = Math.min(length, cap);
+
+      if (length > 0.2) {
+        const tip = at(length);
+        ginDrawBlade(dim, [hand, tip], 34);
+
+        // so corta enquanto estende e segura; encolhendo ela nao acerta mais ninguem
+        if (tick <= attackTicks) {
+          for (const entity of ginEntitiesOnSegment(player, hand, tip, cfg.hitRadius, hit)) {
+            hit.add(entity.id);
+            ginStrike(player, entity, DAMAGE.ginExtendedBlade, true);
+          }
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    if (tick >= total) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Spiral ---------- */
+
+// `passed` e quanto a lamina ja andou depois de passar pelo alvo neste tick: o
+// alvo e cortado se ela passou por ele ENTRE o tick passado e este (a ponta anda
+// mais de 4 blocos por tick, olhar so o angulo atual deixaria gente passar).
+function ginSpiralCut(player, center, angle, sweep, length, bladeY, lastHit) {
+  const now = system.currentTick;
+  for (const entity of player.dimension.getEntities({
+    location: center,
+    maxDistance: length + 3,
+  })) {
+    if (entity.id === player.id) continue;
+    if (!entity.getComponent("minecraft:health")) continue;
+    if (now - (lastHit.get(entity.id) ?? -1000) < SPIRAL.hitIntervalTicks) continue;
+
+    const loc = entity.location;
+    if (bladeY < loc.y - 0.3 || bladeY > loc.y + 2.0) continue;
+
+    const dx = loc.x - center.x;
+    const dz = loc.z - center.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > length + 0.5) continue;
+    if (dist >= 0.4) {
+      const facing = Math.atan2(dz, dx);
+      const slack = Math.atan2(0.6, dist); // largura do corpo vista dessa distancia
+      const passed = angleDiff(angle, facing);
+      if (passed < -slack || passed > sweep + slack) continue;
+    }
+
+    lastHit.set(entity.id, now);
+    ginStrike(player, entity, DAMAGE.ginSpiralHit, false);
+  }
+}
+
+function castSpiral(player) {
+  if (!tryUseSkill(player, "gin:spiral")) return;
+
+  world.sendMessage(`§7${player.name}: §f§lSpiral`);
+  ginPlaySound(player, "item.trident.throw", 1.3, 0.9);
+
+  const cfg = SPIRAL;
+  const dim = player.dimension;
+  const sweep = (cfg.degreesPerTick * Math.PI) / 180;
+  const lastHit = new Map();
+  const view = forwardDirection(player);
+  let angle = Math.atan2(view.z, view.x);
+  let tick = 0;
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (!ginStillAlive(player)) {
+        system.clearRun(interval);
+        return;
+      }
+
+      let length = cfg.radius;
+      if (tick <= cfg.extendTicks) length = (cfg.radius * tick) / cfg.extendTicks;
+      else if (tick > cfg.durationTicks - cfg.retractTicks) {
+        length = (cfg.radius * Math.max(0, cfg.durationTicks - tick)) / cfg.retractTicks;
+      }
+
+      if (length > 0.2) {
+        angle += sweep;
+        // a lamina acompanha o Gin: ele pode andar e usar outras skills
+        const hand = ginHandOf(player);
+        const y = hand.y + Math.sin(tick * 0.4) * cfg.bob;
+        const tipAt = (a) => ({
+          x: hand.x + Math.cos(a) * length,
+          y,
+          z: hand.z + Math.sin(a) * length,
+        });
+
+        ginDrawBlade(dim, [hand, tipAt(angle)], 16);
+        // rastro: a mesma lamina meio passo atras, mais rala
+        ginDrawBlade(dim, [hand, tipAt(angle - sweep * 0.5)], 6);
+
+        ginSpiralCut(player, hand, angle, sweep, length, y, lastHit);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    if (tick >= cfg.durationTicks) {
+      system.clearRun(interval);
+      try {
+        player.sendMessage("§7A Spiral parou de girar.");
+      } catch (e) {}
+    }
+  }, 1);
+}
+
+/* ---------- Pursuing Blade e Piercing Shinso (mesmo motor) ---------- */
+
+/* ---------- Caminho da lamina em volta dos blocos (Pursuing Blade e Piercing Shinso) ---------- */
+
+// blocos que a lamina nao consegue quebrar
+const GIN_UNBREAKABLE = new Set([
+  "minecraft:bedrock",
+  "minecraft:barrier",
+  "minecraft:command_block",
+  "minecraft:chain_command_block",
+  "minecraft:repeating_command_block",
+  "minecraft:structure_block",
+  "minecraft:structure_void",
+  "minecraft:jigsaw",
+  "minecraft:border_block",
+  "minecraft:allow",
+  "minecraft:deny",
+  "minecraft:light_block",
+  "minecraft:end_portal",
+  "minecraft:end_portal_frame",
+  "minecraft:end_gateway",
+  "minecraft:portal",
+  "minecraft:reinforced_deepslate",
+]);
+
+// Info do bloco na celula (com cache por ataque). Chunk descarregado conta como
+// parede que nao da pra quebrar.
+function ginBlockInfo(dim, cache, x, y, z) {
+  const key = x + "," + y + "," + z;
+  let info = cache.get(key);
+  if (info) return info;
+  try {
+    const block = dim.getBlock({ x, y, z });
+    if (!block) {
+      info = { passable: false, breakable: false };
+    } else {
+      info = {
+        passable: block.isAir || block.isLiquid || block.isSolid === false,
+        breakable: !GIN_UNBREAKABLE.has(block.typeId),
+      };
+    }
+  } catch (e) {
+    info = { passable: false, breakable: false };
+  }
+  cache.set(key, info);
+  return info;
+}
+
+// a linha reta a-b passa so por espaco livre? (as celulas da ponta e do inicio
+// nao contam: a mao pode estar colada na parede e o alvo pode estar num degrau)
+function ginClear(dim, cache, a, b) {
+  const len = ginDist(a, b);
+  const steps = Math.max(1, Math.ceil(len / 0.4));
+  const sx = Math.floor(a.x);
+  const sy = Math.floor(a.y);
+  const sz = Math.floor(a.z);
+  const gx = Math.floor(b.x);
+  const gy = Math.floor(b.y);
+  const gz = Math.floor(b.z);
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = Math.floor(a.x + (b.x - a.x) * t);
+    const y = Math.floor(a.y + (b.y - a.y) * t);
+    const z = Math.floor(a.z + (b.z - a.z) * t);
+    if ((x === sx && y === sy && z === sz) || (x === gx && y === gy && z === gz)) continue;
+    if (!ginBlockInfo(dim, cache, x, y, z).passable) return false;
+  }
+  return true;
+}
+
+function ginPathLength(points) {
+  let sum = 0;
+  for (let i = 1; i < points.length; i++) sum += ginDist(points[i - 1], points[i]);
+  return sum;
+}
+
+const GIN_NEIGHBORS = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+];
+
+/* Menor caminho ate o alvo por espaco livre (A* em celulas, andando so pelas
+   faces). Depois "puxa o fio": tira as celulas do meio sempre que da pra ir reto,
+   sobrando so as dobras necessarias - viradas secas em retas, sem curva.
+   Devolve a lista de pontos (o ultimo e o alvo) ou null se nao ha caminho. */
+function ginFindPath(dim, cache, from, to, cfg, margin, nodeLimit, weight) {
+  const sx = Math.floor(from.x);
+  const sy = Math.floor(from.y);
+  const sz = Math.floor(from.z);
+  const gx = Math.floor(to.x);
+  const gy = Math.floor(to.y);
+  const gz = Math.floor(to.z);
+  const minX = Math.min(sx, gx) - margin;
+  const maxX = Math.max(sx, gx) + margin;
+  const minY = Math.min(sy, gy) - Math.ceil(margin / 2);
+  const maxY = Math.max(sy, gy) + Math.ceil(margin / 2);
+  const minZ = Math.min(sz, gz) - margin;
+  const maxZ = Math.max(sz, gz) + margin;
+  const W = maxX - minX + 1;
+  const H = maxY - minY + 1;
+  const keyOf = (x, y, z) => ((x - minX) * H + (y - minY)) * (maxZ - minZ + 1) + (z - minZ);
+
+  // manhattan: e a distancia exata em espaco livre andando so pelas faces (com a
+  // euclidiana a busca abre uma bolha enorme e estoura o limite em paredes grandes)
+  const heuristic = (x, y, z) => (Math.abs(x - gx) + Math.abs(y - gy) + Math.abs(z - gz)) * weight;
+  const heap = []; // [f, x, y, z]
+  const push = (node) => {
+    heap.push(node);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (heap[p][0] <= heap[i][0]) break;
+      [heap[p], heap[i]] = [heap[i], heap[p]];
+      i = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === i) break;
+        [heap[m], heap[i]] = [heap[i], heap[m]];
+        i = m;
+      }
+    }
+    return top;
+  };
+
+  const cost = new Map();
+  const parent = new Map();
+  const startKey = keyOf(sx, sy, sz);
+  cost.set(startKey, 0);
+  push([heuristic(sx, sy, sz), sx, sy, sz]);
+
+  let expanded = 0;
+  let found = false;
+  const closed = new Set();
+  while (heap.length && expanded < nodeLimit) {
+    const [, x, y, z] = pop();
+    const k = keyOf(x, y, z);
+    if (closed.has(k)) continue;
+    closed.add(k);
+    expanded++;
+    if (x === gx && y === gy && z === gz) {
+      found = true;
+      break;
+    }
+    const g = cost.get(k);
+    for (const [dx, dy, dz] of GIN_NEIGHBORS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const nz = z + dz;
+      if (nx < minX || nx > maxX || ny < minY || ny > maxY || nz < minZ || nz > maxZ) continue;
+      const nk = keyOf(nx, ny, nz);
+      if (closed.has(nk)) continue;
+      const isGoal = nx === gx && ny === gy && nz === gz;
+      if (!isGoal && !ginBlockInfo(dim, cache, nx, ny, nz).passable) continue;
+      const ng = g + 1;
+      if (cost.has(nk) && cost.get(nk) <= ng) continue;
+      cost.set(nk, ng);
+      parent.set(nk, k);
+      push([ng + heuristic(nx, ny, nz), nx, ny, nz]);
+    }
+  }
+  if (!found) return null;
+
+  // volta pelos pais montando as celulas (do alvo ate o inicio)
+  const cells = [];
+  let cx = gx;
+  let cy = gy;
+  let cz = gz;
+  let ck = keyOf(cx, cy, cz);
+  const decode = (key) => {
+    const D = maxZ - minZ + 1;
+    const z = (key % D) + minZ;
+    const rest = Math.floor(key / D);
+    const y = (rest % H) + minY;
+    const x = Math.floor(rest / H) + minX;
+    return [x, y, z];
+  };
+  while (ck !== startKey) {
+    cells.push([cx, cy, cz]);
+    ck = parent.get(ck);
+    [cx, cy, cz] = decode(ck);
+  }
+  cells.reverse();
+
+  const pts = [{ ...from }];
+  for (let i = 0; i < cells.length - 1; i++) {
+    pts.push({ x: cells[i][0] + 0.5, y: cells[i][1] + 0.5, z: cells[i][2] + 0.5 });
+  }
+  pts.push({ ...to });
+
+  const out = [];
+  let i = 0;
+  while (i < pts.length - 1) {
+    let j = pts.length - 1;
+    while (j > i + 1 && !ginClear(dim, cache, pts[i], pts[j])) j--;
+    out.push(pts[j]);
+    i = j;
+  }
+  if (ginPathLength([from, ...out]) > cfg.maxLength * 0.9) return null; // nem a lamina inteira da conta
+  return out;
+}
+
+// caminho livre em duas tentativas (ver GIN_PATH_DEFAULTS); null = nao ha, quebra
+function ginPlanPath(dim, cache, from, to, cfg) {
+  return (
+    ginFindPath(dim, cache, from, to, cfg, cfg.pathMargin, cfg.pathNodeLimit, 1) ??
+    ginFindPath(
+      dim,
+      cache,
+      from,
+      to,
+      cfg,
+      cfg.pathFallbackMargin,
+      cfg.pathFallbackNodeLimit,
+      cfg.pathFallbackWeight
+    )
+  );
+}
+
+// Quebra (com drop) os blocos que a linha a-b atravessa. Devolve quantos quebrou
+// e se bateu em algo que nao quebra ou estourou o limite do ataque.
+function ginBreakBlocks(dim, cache, a, b, allowed) {
+  const len = ginDist(a, b);
+  const steps = Math.max(1, Math.ceil(len / 0.4));
+  const seen = new Set();
+  let count = 0;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = Math.floor(a.x + (b.x - a.x) * t);
+    const y = Math.floor(a.y + (b.y - a.y) * t);
+    const z = Math.floor(a.z + (b.z - a.z) * t);
+    const key = x + "," + y + "," + z;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const info = ginBlockInfo(dim, cache, x, y, z);
+    if (info.passable) continue;
+    if (!info.breakable || count >= allowed) return { count, blocked: true, reach: t * len };
+    let broken = false;
+    try {
+      const res = dim.runCommand(`setblock ${x} ${y} ${z} air [] destroy`);
+      broken = !res || res.successCount > 0;
+    } catch (e) {}
+    if (!broken) {
+      try {
+        dim.getBlock({ x, y, z }).setType("minecraft:air");
+        broken = true;
+      } catch (e) {}
+    }
+    if (!broken) return { count, blocked: true, reach: t * len };
+    cache.set(key, { passable: true, breakable: true });
+    count++;
+  }
+  return { count, blocked: false, reach: len };
+}
+
+// options.pierce = atravessa e segue pro proximo; senao para no primeiro acerto
+function launchSeekingBlade(player, cfg, options) {
+  const dim = player.dimension;
+  const hitSet = new Set();
+  const victims = [];
+  const blockCache = new Map();
+  const hand0 = ginHandOf(player);
+  // cadeia da lamina: [ancora na mao, juntas..., ponta]. A ancora acompanha o Gin.
+  const chain = [{ ...hand0 }, { ...hand0 }];
+  let dir;
+  let target;
+  let legLeft = 0;
+  let mode = "seek";
+  let hits = 0;
+  let tick = 0;
+  let retractStep = 0; // blocos por tick, calculado quando a lamina comeca a voltar
+  let retractHold = -1; // ticks parada esticada antes de recolher (-1 = ainda nao comecou)
+  let route = null; // pontos de um caminho que contorna os blocos
+  let breach = false; // sem caminho livre: abre os blocos no meio
+  let replanLeft = 0;
+  let broken = 0;
+  let lastPlanTick = -100;
+
+  const finish = () => {
+    for (const victim of victims) ginRelease(victim);
+    victims.length = 0;
+  };
+
+  const chainLength = () => ginPathLength(chain);
+
+  // vira pra `to`. Se o rumo mudou de verdade, a lamina dobra (junta) na ponta.
+  const steer = (to) => {
+    const tip = chain[chain.length - 1];
+    const next = ginUnit(tip, to);
+    if (dir && dir.x * next.x + dir.y * next.y + dir.z * next.z < GIN_TURN_COS) {
+      chain.push({ ...tip });
+    }
+    dir = next;
+  };
+
+  const reaim = () => {
+    const tip = chain[chain.length - 1];
+    target = ginNearestTarget(player, tip, cfg.searchRadius, hitSet);
+    if (!target) return false;
+    const goal = ginBodyOf(target);
+    const keepBreaching = breach && tick - lastPlanTick < 80; // nao refaz a busca inutil toda hora
+    route = null;
+    breach = false;
+    if (!cfg.pathfind || ginClear(dim, blockCache, tip, goal)) {
+      steer(goal);
+    } else {
+      const path = keepBreaching ? null : ginPlanPath(dim, blockCache, tip, goal, cfg);
+      lastPlanTick = keepBreaching ? lastPlanTick : tick;
+      if (path) {
+        route = path;
+        steer(route[0]);
+      } else {
+        breach = true;
+        steer(goal);
+      }
+    }
+    legLeft = cfg.legTicks;
+    replanLeft = cfg.replanTicks;
+    return true;
+  };
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (!ginStillAlive(player)) {
+        system.clearRun(interval);
+        finish();
+        return;
+      }
+
+      chain[0] = ginHandOf(player);
+      if (tick % 10 === 0) blockCache.clear(); // os blocos mudam
+
+      if (mode === "seek") {
+        const tip = chain[chain.length - 1];
+        const routing = !!(route && route.length);
+        const targetGone = !target || isDownOrGone(target) || hitSet.has(target.id);
+        const closeToTarget =
+          !routing &&
+          !breach &&
+          target &&
+          !targetGone &&
+          ginDist(tip, ginBodyOf(target)) < cfg.speed * 2;
+        const stale = routing || breach ? replanLeft <= 0 : legLeft <= 0;
+
+        if (!dir || targetGone || closeToTarget || stale) {
+          if (!reaim()) mode = "retract";
+        }
+
+        if (mode === "seek") {
+          const from = { ...chain[chain.length - 1] };
+          let stepLen = cfg.speed;
+          let reached = false;
+          if (route && route.length) {
+            const d = ginDist(from, route[0]);
+            if (d <= stepLen) {
+              stepLen = d; // nao passa da dobra
+              reached = true;
+            }
+          }
+          const to = {
+            x: from.x + dir.x * stepLen,
+            y: from.y + dir.y * stepLen,
+            z: from.z + dir.z * stepLen,
+          };
+
+          if (breach) {
+            const res = ginBreakBlocks(dim, blockCache, from, to, cfg.maxBreaks - broken);
+            broken += res.count;
+            if (res.blocked) mode = "retract"; // bloco que nao quebra (ou limite): volta
+          }
+
+          if (mode === "seek") {
+            chain[chain.length - 1] = to;
+            legLeft--;
+            replanLeft--;
+
+            for (const entity of ginEntitiesOnSegment(player, from, to, cfg.hitRadius, hitSet)) {
+              hitSet.add(entity.id);
+              const landed = ginStrike(player, entity, options.damage, true);
+
+              if (!options.pierce) {
+                mode = "retract"; // Pursuing Blade: acertou (ou foi barrada), volta
+                break;
+              }
+              if (landed) {
+                hits++;
+                if (!isIntocable(entity)) {
+                  ginParalyze(entity);
+                  victims.push(entity);
+                }
+                if (hits >= cfg.maxTargets) {
+                  mode = "retract";
+                  break;
+                }
+              }
+              legLeft = 0; // atravessou: ja mira no proximo
+              route = null;
+              breach = false;
+            }
+
+            if (mode === "seek" && reached && route) {
+              route.shift();
+              if (route.length) steer(route[0]);
+              else {
+                route = null;
+                legLeft = 0;
+              }
+            }
+
+            if (mode === "seek" && (tick >= cfg.maxTicks || chainLength() > cfg.maxLength)) {
+              mode = "retract";
+            }
+          }
+        }
+      }
+
+      if (mode === "retract" && retractHold < 0) retractHold = cfg.holdTicks;
+      if (mode === "retract" && retractHold > 0) {
+        retractHold--;
+      } else if (mode === "retract") {
+        // a ponta volta pelo mesmo caminho, desfazendo cada dobra
+        if (retractStep === 0) {
+          retractStep = Math.max(cfg.retractMinSpeed, chainLength() / cfg.retractTicks);
+        }
+        let remaining = retractStep;
+        while (remaining > 0 && chain.length > 1) {
+          const tip = chain[chain.length - 1];
+          const prev = chain[chain.length - 2];
+          const seg = ginDist(prev, tip);
+          if (seg <= remaining) {
+            remaining -= seg;
+            chain.pop();
+          } else {
+            const k = remaining / seg;
+            tip.x += (prev.x - tip.x) * k;
+            tip.y += (prev.y - tip.y) * k;
+            tip.z += (prev.z - tip.z) * k;
+            remaining = 0;
+          }
+        }
+      }
+
+      if (chain.length > 1 && (tick % cfg.drawEvery === 0 || mode === "retract")) {
+        ginDrawBlade(dim, chain, cfg.drawBudget);
+      }
+
+      // segura os paralisados e solta quem caiu
+      if (victims.length && tick % 4 === 0) {
+        for (let i = victims.length - 1; i >= 0; i--) {
+          if (isDownOrGone(victims[i])) {
+            ginRelease(victims[i]);
+            victims.splice(i, 1);
+          } else {
+            ginHoldParalysis(victims[i]);
+          }
+        }
+      }
+
+      if (mode === "retract" && chain.length <= 1) {
+        system.clearRun(interval);
+        finish();
+        if (options.pierce) {
+          try {
+            player.sendMessage("§7O Shinso se retraiu.");
+          } catch (e) {}
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      finish();
+    }
+  }, 1);
+}
+
+function castPursuingBlade(player) {
+  const hand = ginHandOf(player);
+  if (!ginNearestTarget(player, hand, PURSUING_BLADE.searchRadius)) {
+    player.sendMessage("§7Não tem ninguém por perto pra perseguir.");
+    return;
+  }
+  if (!tryUseSkill(player, "gin:pursuing_blade")) return;
+
+  world.sendMessage(`§7${player.name}: §f§lPursuing Blade`);
+  ginPlaySound(player, "item.trident.throw", 1.3, 1.4);
+  launchSeekingBlade(player, PURSUING_BLADE, { damage: DAMAGE.ginPursuingBlade, pierce: false });
+}
+
+function castPiercingShinso(player) {
+  const hand = ginHandOf(player);
+  if (!ginNearestTarget(player, hand, PIERCING_SHINSO.searchRadius)) {
+    player.sendMessage("§7Não tem ninguém por perto pra atravessar.");
+    return;
+  }
+  if (!tryUseSkill(player, "gin:piercing_shinso")) return;
+
+  world.sendMessage(`§7${player.name}: §f§lPiercing Shinso`);
+  ginPlaySound(player, "item.trident.throw", 1.5, 1.1);
+  launchSeekingBlade(player, PIERCING_SHINSO, { damage: DAMAGE.ginPiercingShinso, pierce: true });
+}
+
+/* ---------- Bankai: Kamishini no Yari (super, gatilho: agachar + m1 com o medidor em 100%) ---------- */
+
+// desenha a lanca: bem densa perto do Gin e cada vez mais rala longe, pra
+// 200 blocos nao estourarem o limite de particulas
+function ginDrawSpear(dim, hand, dir, length) {
+  let d = 0;
+  while (d <= length) {
+    try {
+      dim.spawnParticle("gin:yari", {
+        x: hand.x + dir.x * d,
+        y: hand.y + dir.y * d,
+        z: hand.z + dir.z * d,
+      });
+    } catch (e) {
+      return;
+    }
+    d += d < 30 ? 0.9 : d < 80 ? 2 : 3.5;
+  }
+  try {
+    dim.spawnParticle("gin:ponta", {
+      x: hand.x + dir.x * length,
+      y: hand.y + dir.y * length,
+      z: hand.z + dir.z * length,
+    });
+  } catch (e) {}
+}
+
+// Quem encosta na lamina: entidade morre; player de tier MENOR que o do Gin
+// morre; tier igual ou maior toma metade da vida maxima em dano.
+function ginKamishiniStrike(player, entity) {
+  if (isRespiring(entity)) {
+    showRespiraGuard(entity);
+    return;
+  }
+  if (isIntocable(entity)) {
+    try {
+      showIntocableGuard(entity);
+    } catch (e) {}
+    return;
+  }
+
+  if (entity.typeId === "minecraft:player" && tierOfPlayer(entity) >= tierOfPlayer(player)) {
+    const hp = entity.getComponent("minecraft:health");
+    const maxVirtual = (hp?.effectiveMax ?? 20) * healthScaleOf(entity);
+    dealDamage(entity, maxVirtual * KAMISHINI.damageFraction, player, { breaksBlock: true });
+    showGinSpark(entity);
+    return;
+  }
+
+  showGinSpark(entity);
+  try {
+    entity.kill();
+  } catch (e) {}
+}
+
+function activateKamishini(player) {
+  const cfg = KAMISHINI;
+  world.sendMessage(`§f§lBANKAI: KAMISHINI NO YARI! §r§7${player.name}: §fIkorose, Shinsō.`);
+  ginPlaySound(player, "item.trident.throw", 2, 0.6);
+
+  const dim = player.dimension;
+  const dir = ginUnit(ginHandOf(player), ginAimPoint(player, cfg.range));
+  const hit = new Set();
+  const attackTicks = cfg.extendTicks + cfg.holdTicks;
+  const total = attackTicks + cfg.retractTicks;
+  let tick = 0;
+  let testedUpTo = 0; // ate onde a lamina ja foi testada (na extensao so testa o trecho novo)
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (!ginStillAlive(player)) {
+        system.clearRun(interval);
+        return;
+      }
+
+      let length;
+      if (tick <= cfg.extendTicks) length = (cfg.range * tick) / cfg.extendTicks;
+      else if (tick <= attackTicks) length = cfg.range;
+      else length = cfg.range * Math.max(0, 1 - (tick - attackTicks) / cfg.retractTicks);
+
+      if (length > 0.2) {
+        const hand = ginHandOf(player);
+        const at = (d) => ({ x: hand.x + dir.x * d, y: hand.y + dir.y * d, z: hand.z + dir.z * d });
+
+        if (tick % cfg.drawEvery === 0 || tick === 1) ginDrawSpear(dim, hand, dir, length);
+
+        if (tick <= attackTicks) {
+          let from = 0;
+          let to = length;
+          if (tick <= cfg.extendTicks) from = testedUpTo; // so o trecho novo
+          else if (tick % 3 !== 0) to = 0; // segurando: o blade inteiro, de 3 em 3 ticks
+          if (to > from) {
+            const a = at(from);
+            const b = at(to);
+            for (const entity of ginEntitiesOnSegment(player, a, b, cfg.hitRadius, hit)) {
+              hit.add(entity.id);
+              ginKamishiniStrike(player, entity);
+            }
+            testedUpTo = Math.max(testedUpTo, to);
+          }
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+
+    if (tick >= total) system.clearRun(interval);
+  }, 1);
+}
+
+function tryTriggerKamishini(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+
+  player.setDynamicProperty(DP.awakening, 0);
+  activateKamishini(player);
+  return true;
+}
+
+/* ---------------------------------------------------------
+   Toshiro Hitsugaya (Tier 4) - Hyōrinmaru / Daiguren Hyōrinmaru
+   --------------------------------------------------------- */
+
+const HITSUGAYA = {
+  cdFreezeTicks: 60, // 3s: congelamento de cooldown do Ryūsenka e do Guncho Tsurara
+  ryusenka: { range: 6, radius: 1.5, slowAmplifier: 2, slowTicks: 60 },
+  sennen: { range: 40, height: 4, durationTicks: 200 }, // prende por 10s
+  guncho: { waves: 3, perWave: 5, waveGapTicks: 3, speed: 2.4, lifeTicks: 24, radius: 0.9, spread: 0.06 },
+  tenso: { durationTicks: 400, slowAmplifier: 1, dashCooldownMultiplier: 2 }, // chuva de 20s
+  breath: { length: 30, halfWidth: 12, growTicks: 10, cdFreezeTicks: 200, restoreTicks: 600 },
+  iceAge: { radius: 12, growTicks: 8, paralysisTicks: 100, noDashTicks: 300, restoreTicks: 600 },
+  barrier: { walls: 4, durationTicks: 160, radius: 2 }, // 4 paredes, cada uma segura 1 golpe
+  explosion: { radius: 40, reach: 3, yRange: 24, maxBursts: 60 },
+  freezeSurface: { up: 3, down: 4 }, // quanto acima/abaixo do player procura o chao pra congelar
+};
+
+const cdFrozen = new Map(); // id -> { end, ticks } cooldowns parados
+const iceBarriers = new Map(); // id -> { end, walls: [bool x4] }
+let hitsugayaRain; // { until, ownerId }
+
+// blocos que a magia de gelo nunca troca (tem inventario/estado que se perderia)
+const ICE_KEEP =
+  /chest|barrel|shulker|furnace|smoker|hopper|dropper|dispenser|spawner|_bed$|sign|door|command|banner|beacon|brewing|lectern|jukebox|sculk|structure|portal|frame/;
+
+function isHitsugayaPlayer(entity) {
+  try {
+    return entity.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === "hitsugaya";
+  } catch (e) {
+    return false;
+  }
+}
+
+function hitsuFlat(player) {
+  const v = player.getViewDirection();
+  const h = Math.hypot(v.x, v.z) || 1;
+  return { x: v.x / h, z: v.z / h };
+}
+
+/* ---------- blocos de gelo (com registro pra devolver depois) ---------- */
+
+// todo gelo (e la) feito pelas skills fica registrado em "ledgers" com o bloco
+// original. O Ice Explosion apaga o gelo lendo esses registros.
+const iceRegistry = new Set();
+function iceTrack(ledger) {
+  iceRegistry.add(ledger);
+  return ledger;
+}
+const ICE_TRAIL = iceTrack([]); // gelo da individualidade (agua por onde o Bankai anda)
+
+function iceCanReplace(block) {
+  if (!block) return false;
+  if (GIN_UNBREAKABLE.has(block.typeId)) return false;
+  return !ICE_KEEP.test(block.typeId);
+}
+
+function iceSet(ledger, dim, x, y, z, type) {
+  try {
+    const block = dim.getBlock({ x, y, z });
+    if (!iceCanReplace(block) || block.typeId === type) return false;
+    ledger.push({ dim, x, y, z, was: block.permutation });
+    block.setType(type);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function iceRestoreEntry(e) {
+  if (e.done) return;
+  e.done = true;
+  try {
+    const block = e.dim.getBlock({ x: e.x, y: e.y, z: e.z });
+    if (block) block.setPermutation(e.was);
+  } catch (err) {}
+}
+
+function iceRestore(ledger) {
+  for (let i = ledger.length - 1; i >= 0; i--) iceRestoreEntry(ledger[i]);
+  ledger.length = 0;
+  iceRegistry.delete(ledger);
+}
+
+// congela o primeiro bloco de verdade (agua ou solido) que achar de cima pra baixo
+function iceFreezeColumn(dim, ledger, x, z, yTop, yBottom, forceType) {
+  for (let y = yTop; y >= yBottom; y--) {
+    let block;
+    try {
+      block = dim.getBlock({ x, y, z });
+    } catch (e) {
+      return false;
+    }
+    if (!block || block.isAir) continue;
+    if (!block.isLiquid && block.isSolid === false) continue; // mato, flor: passa direto
+    if (forceType) return iceSet(ledger, dim, x, y, z, forceType);
+    if (block.typeId === "minecraft:packed_ice" || block.typeId === "minecraft:ice") return false;
+    return iceSet(ledger, dim, x, y, z, block.isLiquid ? "minecraft:ice" : "minecraft:packed_ice");
+  }
+  return false;
+}
+
+/* ---------- efeitos de status ---------- */
+
+function showIceSpark(entity) {
+  try {
+    const l = entity.location;
+    for (let i = 0; i < 4; i++) {
+      entity.dimension.spawnParticle(i % 2 === 0 ? "hitsugaya:gelo" : "hitsugaya:neve", {
+        x: l.x + (Math.random() - 0.5) * 0.9,
+        y: l.y + 0.4 + Math.random() * 1.2,
+        z: l.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+  } catch (e) {}
+}
+
+// Pausa os cooldowns de skill do player. Sem stack: enquanto um congelamento esta
+// ativo, outro do mesmo tamanho (ou menor) e ignorado; so um MAIOR (o do Dragon's
+// Breath, 10s) toma o lugar.
+function freezeCooldowns(entity, ticks) {
+  try {
+    if (entity.typeId !== "minecraft:player") return;
+    const now = system.currentTick;
+    const cur = cdFrozen.get(entity.id);
+    if (cur && cur.end > now && ticks <= cur.ticks) return;
+    cdFrozen.set(entity.id, { end: now + ticks, ticks });
+    entity.sendMessage(`§b❄ Seus cooldowns foram congelados por ${Math.round(ticks / 20)}s!`);
+  } catch (e) {}
+}
+
+// a cada 4 ticks empurra o carimbo de cada cooldown em andamento: ele fica parado
+// (inclusive skill usada durante o congelamento) e retoma quando acaba
+system.runInterval(() => {
+  const now = system.currentTick;
+  for (const player of world.getPlayers()) {
+    const state = cdFrozen.get(player.id);
+    if (!state) continue;
+    if (now >= state.end) {
+      cdFrozen.delete(player.id);
+      try {
+        player.sendMessage("§7Seus cooldowns voltaram a correr.");
+      } catch (e) {}
+      continue;
+    }
+    for (const itemId in SKILL_COOLDOWN_TICKS) {
+      const key = cdKeyForSkill(itemId);
+      const stamp = tickOf(player, key);
+      if (stamp === undefined || stamp > now) continue;
+      if (now - stamp >= SKILL_COOLDOWN_TICKS[itemId]) continue; // nao estava em cooldown
+      player.setDynamicProperty(key, Math.min(stamp + 4, now));
+    }
+  }
+}, 4);
+
+// paralisia por tempo fixo, pelas mesmas travas do isFrozen()
+function paralyzeFor(entity, ticks, message) {
+  const end = system.currentTick + ticks;
+  ginParalyzed.set(entity.id, Math.max(ginParalyzed.get(entity.id) ?? 0, end));
+  ginHoldParalysis(entity);
+  ginParalyzed.set(entity.id, Math.max(ginParalyzed.get(entity.id) ?? 0, end));
+  try {
+    if (entity.typeId === "minecraft:player") entity.sendMessage(message ?? "§b❄ Você está congelado e paralisado!");
+  } catch (e) {}
+  const interval = system.runInterval(() => {
+    if (isDownOrGone(entity) || system.currentTick >= end) {
+      system.clearRun(interval);
+      ginRelease(entity);
+      return;
+    }
+    ginHoldParalysis(entity);
+    ginParalyzed.set(entity.id, Math.max(ginParalyzed.get(entity.id) ?? 0, end));
+  }, 4);
+}
+
+// golpe de gelo: dano, e (opcional) lentidao e congelamento de cooldown
+function hitsuStrike(player, entity, damage, opts) {
+  if (opts.ranged !== false && isRespiring(entity)) {
+    showRespiraGuard(entity);
+    return false;
+  }
+  dealDamage(entity, damage * dmgMultiplier(player), player);
+  showIceSpark(entity);
+  if (isIntocable(entity)) return false;
+  if (opts.freezeTicks) freezeCooldowns(entity, opts.freezeTicks);
+  if (opts.slowAmplifier != null) {
+    try {
+      entity.addEffect("slowness", opts.slowTicks, { amplifier: opts.slowAmplifier, showParticles: false });
+    } catch (e) {}
+  }
+  return true;
+}
+
+/* ---------- Ryūsenka ---------- */
+
+function castRyusenka(player) {
+  if (!tryUseSkill(player, "hitsugaya:ryusenka")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lRyūsenka`);
+  ginPlaySound(player, "random.glass", 1.3, 0.6);
+
+  const cfg = HITSUGAYA.ryusenka;
+  const dim = player.dimension;
+  const hand = ginHandOf(player);
+  const dir = ginUnit(hand, ginAimPoint(player, cfg.range));
+  const tip = { x: hand.x + dir.x * cfg.range, y: hand.y + dir.y * cfg.range, z: hand.z + dir.z * cfg.range };
+
+  // o gelo brota da mao ate a ponta em 3 ticks
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const reach = Math.min(1, tick / 3);
+      const end = {
+        x: hand.x + (tip.x - hand.x) * reach,
+        y: hand.y + (tip.y - hand.y) * reach,
+        z: hand.z + (tip.z - hand.z) * reach,
+      };
+      for (let d = 0; d <= ginDist(hand, end); d += 0.5) {
+        dim.spawnParticle("hitsugaya:gelo", {
+          x: hand.x + dir.x * d,
+          y: hand.y + dir.y * d,
+          z: hand.z + dir.z * d,
+        });
+      }
+    } catch (e) {}
+    if (tick >= 6) system.clearRun(interval);
+  }, 1);
+
+  for (const entity of ginEntitiesOnSegment(player, hand, tip, cfg.radius, null)) {
+    hitsuStrike(player, entity, DAMAGE.ryusenka, {
+      ranged: false,
+      freezeTicks: HITSUGAYA.cdFreezeTicks,
+      slowAmplifier: cfg.slowAmplifier,
+      slowTicks: cfg.slowTicks,
+    });
+  }
+}
+
+/* ---------- Sennen Hyōrō: jaula de pilares de gelo ---------- */
+
+function castSennenHyoro(player) {
+  const cfg = HITSUGAYA.sennen;
+  const target = targetInView(player, cfg.range);
+  if (!target) {
+    player.sendMessage("§7Mire em alguém pra prender.");
+    return;
+  }
+  if (!tryUseSkill(player, "hitsugaya:sennen_hyoro")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lSennen Hyōrō §7(${nameOf(target)})`);
+  ginPlaySound(player, "random.glass", 1.5, 0.5);
+
+  const dim = target.dimension;
+  const bx = Math.floor(target.location.x);
+  const by = Math.floor(target.location.y);
+  const bz = Math.floor(target.location.z);
+  const ledger = iceTrack([]);
+  const ICE = "minecraft:packed_ice";
+
+  // centraliza o alvo na celula: com o corpo cruzando duas celulas os pilares
+  // nasceriam dentro dele
+  try {
+    target.teleport({ x: bx + 0.5, y: target.location.y, z: bz + 0.5 }, { keepVelocity: false });
+  } catch (e) {}
+
+  const placeCell = (x, y, z) => {
+    if (!ginBlockInfo(dim, new Map(), x, y, z).passable) return; // ja e parede
+    iceSet(ledger, dim, x, y, z, ICE);
+  };
+  const ringLayer = (y) => {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        placeCell(bx + dx, y, bz + dz);
+      }
+    }
+    try {
+      for (let i = 0; i < 6; i++) {
+        dim.spawnParticle("hitsugaya:neve", {
+          x: bx + 0.5 + (Math.random() - 0.5) * 3,
+          y: y + 0.5,
+          z: bz + 0.5 + (Math.random() - 0.5) * 3,
+        });
+      }
+    } catch (e) {}
+  };
+
+  // os pilares sobem camada por camada, e no fim fecha o teto (e o chao)
+  for (let h = 0; h < cfg.height; h++) {
+    system.runTimeout(() => ringLayer(by + h), h * 2);
+  }
+  system.runTimeout(() => {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        placeCell(bx + dx, by + cfg.height, bz + dz);
+        placeCell(bx + dx, by - 1, bz + dz);
+      }
+    }
+  }, cfg.height * 2);
+
+  system.runTimeout(() => {
+    iceRestore(ledger);
+    try {
+      world.sendMessage(`§7A jaula de gelo se desfez e soltou §b${nameOf(target)}§7.`);
+    } catch (e) {}
+  }, cfg.durationTicks);
+}
+
+/* ---------- Guncho Tsurara: chuva de estacas ---------- */
+
+function launchIceShard(player, dir, cache) {
+  const cfg = HITSUGAYA.guncho;
+  const dim = player.dimension;
+  const head = player.getHeadLocation();
+  let pos = { x: head.x + dir.x * 0.8, y: head.y - 0.2 + dir.y * 0.8, z: head.z + dir.z * 0.8 };
+  let life = 0;
+
+  const interval = system.runInterval(() => {
+    life++;
+    try {
+      const from = { ...pos };
+      const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
+
+      // bateu em bloco: estilhaca
+      if (!ginBlockInfo(dim, cache, Math.floor(to.x), Math.floor(to.y), Math.floor(to.z)).passable) {
+        dim.spawnParticle("hitsugaya:neve", from);
+        system.clearRun(interval);
+        return;
+      }
+
+      const [first] = ginEntitiesOnSegment(player, from, to, cfg.radius, null);
+      if (first) {
+        hitsuStrike(player, first, DAMAGE.gunchoTsurara, { freezeTicks: HITSUGAYA.cdFreezeTicks });
+        system.clearRun(interval);
+        return;
+      }
+
+      pos = to;
+      dim.spawnParticle("hitsugaya:gelo", to);
+      dim.spawnParticle("hitsugaya:gelo", { x: to.x - dir.x * 0.9, y: to.y - dir.y * 0.9, z: to.z - dir.z * 0.9 });
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (life >= cfg.lifeTicks) system.clearRun(interval);
+  }, 1);
+}
+
+function castGunchoTsurara(player) {
+  if (!tryUseSkill(player, "hitsugaya:guncho_tsurara")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lGuncho Tsurara`);
+  ginPlaySound(player, "random.glass", 1.5, 1.3);
+
+  const cfg = HITSUGAYA.guncho;
+  const cache = new Map();
+  for (let w = 0; w < cfg.waves; w++) {
+    system.runTimeout(() => {
+      try {
+        if (isDownOrGone(player)) return;
+        const view = player.getViewDirection();
+        for (let i = 0; i < cfg.perWave; i++) {
+          const d = {
+            x: view.x + (Math.random() - 0.5) * 2 * cfg.spread * 1.5,
+            y: view.y + (Math.random() - 0.5) * 2 * cfg.spread,
+            z: view.z + (Math.random() - 0.5) * 2 * cfg.spread * 1.5,
+          };
+          const len = Math.hypot(d.x, d.y, d.z) || 1;
+          launchIceShard(player, { x: d.x / len, y: d.y / len, z: d.z / len }, cache);
+        }
+      } catch (e) {}
+    }, w * cfg.waveGapTicks);
+  }
+}
+
+/* ---------- Tensō Jūrin: chuva ---------- */
+
+function dashCooldownFor(player) {
+  if (hitsugayaRain && system.currentTick < hitsugayaRain.until && !isHitsugayaPlayer(player)) {
+    return DASH_COOLDOWN_TICKS * HITSUGAYA.tenso.dashCooldownMultiplier;
+  }
+  return DASH_COOLDOWN_TICKS;
+}
+
+function castTensoJurin(player) {
+  if (!tryUseSkill(player, "hitsugaya:tenso_jurin")) return;
+
+  const cfg = HITSUGAYA.tenso;
+  world.sendMessage(`§b${player.name}: §f§lTensō Jūrin §7- começou a chover!`);
+  ginPlaySound(player, "ambient.weather.thunder", 1, 1.2);
+  try {
+    player.dimension.runCommand(`weather rain ${cfg.durationTicks}`);
+  } catch (e) {}
+
+  const until = system.currentTick + cfg.durationTicks;
+  hitsugayaRain = { until, ownerId: player.id, dim: player.dimension };
+}
+
+// enquanto chove: TODO ser vivo da dimensao (player, mob...) que nao e player de
+// Hitsugaya fica com lentidao 2, ate a chuva acabar
+system.runInterval(() => {
+  if (!hitsugayaRain) return;
+  if (system.currentTick >= hitsugayaRain.until) {
+    hitsugayaRain = undefined;
+    return;
+  }
+  try {
+    for (const entity of hitsugayaRain.dim.getEntities({})) {
+      if (isHitsugayaPlayer(entity)) continue;
+      if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+      entity.addEffect("slowness", 20, { amplifier: HITSUGAYA.tenso.slowAmplifier, showParticles: false });
+    }
+  } catch (e) {}
+}, 5);
+
+/* ---------- Bankai: Dragon's Breath ---------- */
+
+// colunas (x,z) de um raio de gelo ordenadas por distancia, pra ele "crescer"
+function castDragonsBreath(player) {
+  if (!tryUseSkill(player, "hitsugaya:dragons_breath")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lDragon's Breath`);
+  ginPlaySound(player, "mob.enderdragon.growl", 1.5, 1.5);
+
+  const cfg = HITSUGAYA.breath;
+  const dim = player.dimension;
+  const o = player.location;
+  const f = hitsuFlat(player);
+  const r = { x: -f.z, z: f.x };
+  const columns = [];
+  const seen = new Set();
+  for (let a = 1; a <= cfg.length; a++) {
+    const w = (cfg.halfWidth * a) / cfg.length;
+    for (let b = -Math.floor(w); b <= Math.floor(w); b++) {
+      const x = Math.floor(o.x + f.x * a + r.x * b);
+      const z = Math.floor(o.z + f.z * a + r.z * b);
+      const key = x + "," + z;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      columns.push({ x, z, a });
+    }
+  }
+
+  const ledger = iceTrack([]);
+  const hit = new Set();
+  const yTop = Math.floor(o.y) + HITSUGAYA.freezeSurface.up;
+  const yBottom = Math.floor(o.y) - HITSUGAYA.freezeSurface.down;
+  let idx = 0;
+  let tick = 0;
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const front = (cfg.length * tick) / cfg.growTicks;
+      while (idx < columns.length && columns[idx].a <= front) {
+        const c = columns[idx];
+        iceFreezeColumn(dim, ledger, c.x, c.z, yTop, yBottom);
+        if (idx % 4 === 0) {
+          dim.spawnParticle("hitsugaya:neve", { x: c.x + 0.5, y: o.y + 0.6 + Math.random(), z: c.z + 0.5 });
+        }
+        idx++;
+      }
+
+      for (const entity of dim.getEntities({ location: o, maxDistance: front + 3 })) {
+        if (entity.id === player.id || hit.has(entity.id)) continue;
+        if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+        const dx = entity.location.x - o.x;
+        const dz = entity.location.z - o.z;
+        const a = dx * f.x + dz * f.z;
+        const b = dx * r.x + dz * r.z;
+        if (a < 0 || a > front) continue;
+        if (Math.abs(b) > (cfg.halfWidth * Math.max(a, 1)) / cfg.length + 0.8) continue;
+        if (Math.abs(entity.location.y - o.y) > 6) continue;
+        hit.add(entity.id);
+        hitsuStrike(player, entity, DAMAGE.dragonsBreath, { freezeTicks: cfg.cdFreezeTicks });
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      system.runTimeout(() => iceRestore(ledger), cfg.restoreTicks);
+      return;
+    }
+    if (tick >= cfg.growTicks) {
+      system.clearRun(interval);
+      system.runTimeout(() => iceRestore(ledger), cfg.restoreTicks);
+    }
+  }, 1);
+}
+
+/* ---------- Bankai: Ice Age ---------- */
+
+function castIceAge(player) {
+  if (!tryUseSkill(player, "hitsugaya:ice_age")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lIce Age`);
+  ginPlaySound(player, "random.glass", 2, 0.5);
+
+  const cfg = HITSUGAYA.iceAge;
+  const dim = player.dimension;
+  const o = player.location;
+  const columns = [];
+  for (let dx = -cfg.radius; dx <= cfg.radius; dx++) {
+    for (let dz = -cfg.radius; dz <= cfg.radius; dz++) {
+      const d = Math.hypot(dx, dz);
+      if (d <= cfg.radius) columns.push({ x: Math.floor(o.x) + dx, z: Math.floor(o.z) + dz, d });
+    }
+  }
+  columns.sort((a, b) => a.d - b.d);
+
+  // quem esta na area congela na hora
+  for (const entity of dim.getEntities({ location: o, maxDistance: cfg.radius })) {
+    if (entity.id === player.id) continue;
+    if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+    paralyzeFor(entity, cfg.paralysisTicks);
+    showIceSpark(entity);
+    if (entity.typeId === "minecraft:player") {
+      setCooldown(entity, DP.noDash, system.currentTick);
+      try {
+        entity.sendMessage("§b❄ Você ficou sem dash por 15s!");
+      } catch (e) {}
+    }
+  }
+
+  const ledger = iceTrack([]);
+  const yTop = Math.floor(o.y) + HITSUGAYA.freezeSurface.up;
+  const yBottom = Math.floor(o.y) - HITSUGAYA.freezeSurface.down;
+  let idx = 0;
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const front = (cfg.radius * tick) / cfg.growTicks;
+      while (idx < columns.length && columns[idx].d <= front) {
+        const c = columns[idx];
+        iceFreezeColumn(dim, ledger, c.x, c.z, yTop, yBottom);
+        if (idx % 5 === 0) {
+          dim.spawnParticle("hitsugaya:neve", { x: c.x + 0.5, y: o.y + 0.5 + Math.random() * 1.5, z: c.z + 0.5 });
+        }
+        idx++;
+      }
+    } catch (e) {
+      tick = cfg.growTicks;
+    }
+    if (tick >= cfg.growTicks) {
+      system.clearRun(interval);
+      system.runTimeout(() => iceRestore(ledger), cfg.restoreTicks);
+    }
+  }, 1);
+}
+
+/* ---------- Bankai: Ice Barrier ---------- */
+
+const BARRIER_DIRS = [
+  { x: 1, z: 0 },
+  { x: 0, z: 1 },
+  { x: -1, z: 0 },
+  { x: 0, z: -1 },
+];
+
+// chamada pelo dealDamage: uma parede segura um golpe inteiro (qualquer dano)
+function absorbIceBarrier(target, source) {
+  const barrier = iceBarriers.get(target.id);
+  if (!barrier) return false;
+  if (system.currentTick >= barrier.end) {
+    iceBarriers.delete(target.id);
+    return false;
+  }
+
+  // a parede que quebra e a que esta virada pra quem bateu
+  let pick = barrier.walls.findIndex(Boolean);
+  try {
+    if (source && source.location) {
+      const ang = Math.atan2(source.location.z - target.location.z, source.location.x - target.location.x);
+      let best = Infinity;
+      BARRIER_DIRS.forEach((d, i) => {
+        if (!barrier.walls[i]) return;
+        const diff = Math.abs(angleDiff(ang, Math.atan2(d.z, d.x)));
+        if (diff < best) {
+          best = diff;
+          pick = i;
+        }
+      });
+    }
+  } catch (e) {}
+  if (pick < 0) return false;
+
+  barrier.walls[pick] = false;
+  try {
+    const d = BARRIER_DIRS[pick];
+    const l = target.location;
+    for (let i = 0; i < 10; i++) {
+      target.dimension.spawnParticle("hitsugaya:gelo", {
+        x: l.x + d.x * HITSUGAYA.barrier.radius + (Math.random() - 0.5) * 2,
+        y: l.y + 0.3 + Math.random() * 2.2,
+        z: l.z + d.z * HITSUGAYA.barrier.radius + (Math.random() - 0.5) * 2,
+      });
+    }
+    target.dimension.playSound("random.glass", l, { volume: 1.2, pitch: 0.8 });
+  } catch (e) {}
+  if (!barrier.walls.some(Boolean)) {
+    iceBarriers.delete(target.id);
+    try {
+      if (target.typeId === "minecraft:player") target.sendMessage("§7O Ice Barrier se quebrou por completo.");
+    } catch (e) {}
+  }
+  return true;
+}
+
+function castIceBarrier(player) {
+  if (!tryUseSkill(player, "hitsugaya:ice_barrier")) return;
+
+  const cfg = HITSUGAYA.barrier;
+  world.sendMessage(`§b${player.name}: §f§lIce Barrier`);
+  ginPlaySound(player, "random.glass", 1.5, 0.7);
+
+  const end = system.currentTick + cfg.durationTicks;
+  const barrier = { end, walls: BARRIER_DIRS.map(() => true) };
+  iceBarriers.set(player.id, barrier);
+
+  const interval = system.runInterval(() => {
+    try {
+      if (iceBarriers.get(player.id) !== barrier || system.currentTick >= end || isDownOrGone(player)) {
+        system.clearRun(interval);
+        if (iceBarriers.get(player.id) === barrier) iceBarriers.delete(player.id);
+        return;
+      }
+      const l = player.location;
+      BARRIER_DIRS.forEach((d, i) => {
+        if (!barrier.walls[i]) return;
+        // painel de 3 de largura por 3 de altura, a `radius` blocos do player
+        for (let s = -1; s <= 1; s++) {
+          for (let h = 0; h < 3; h++) {
+            player.dimension.spawnParticle("hitsugaya:gelo", {
+              x: l.x + d.x * cfg.radius + -d.z * s * 0.9,
+              y: l.y + 0.3 + h * 0.9,
+              z: l.z + d.z * cfg.radius + d.x * s * 0.9,
+            });
+          }
+        }
+      });
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 4);
+}
+
+/* ---------- Bankai: Ice Explosion ---------- */
+
+// O gelo que as skills do Hitsugaya fizeram (e o da individualidade) na area explode
+// e some (volta ao bloco que era: chao, agua...). Quem esta colado no gelo leva o dano.
+function castIceExplosion(player) {
+  if (!tryUseSkill(player, "hitsugaya:ice_explosion")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lIce Explosion`);
+  ginPlaySound(player, "random.explode", 2, 0.7);
+
+  const cfg = HITSUGAYA.explosion;
+  const dim = player.dimension;
+  const o = player.location;
+
+  const found = [];
+  for (const ledger of iceRegistry) {
+    for (const e of ledger) {
+      if (e.done || e.dim !== dim) continue;
+      if (Math.hypot(e.x + 0.5 - o.x, e.z + 0.5 - o.z) > cfg.radius) continue;
+      if (Math.abs(e.y - o.y) > cfg.yRange) continue;
+      found.push(e);
+    }
+  }
+  const cells = new Set(found.map((e) => e.x + "," + e.y + "," + e.z));
+  const touchesIce = (entity) => {
+    const bx = Math.floor(entity.location.x);
+    const by = Math.floor(entity.location.y);
+    const bz = Math.floor(entity.location.z);
+    const r = cfg.reach;
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dz = -r; dz <= r; dz++) {
+          if (cells.has(bx + dx + "," + (by + dy) + "," + (bz + dz))) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  // quem esta no gelo (ou encostado nele) explode; player de Harribel no meio da
+  // area explode de qualquer jeito
+  for (const entity of dim.getEntities({ location: o, maxDistance: cfg.radius })) {
+    if (entity.id === player.id) continue;
+    if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+    const harribel = entity.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === "harribel";
+    if (!harribel && !touchesIce(entity)) continue;
+    hitsuStrike(player, entity, DAMAGE.iceExplosion, { ranged: false });
+    try {
+      dim.spawnParticle("hitsugaya:explosao", { x: entity.location.x, y: entity.location.y + 1, z: entity.location.z });
+    } catch (e) {}
+  }
+
+  // o gelo vai explodindo e sumindo em fatias (com um estouro visual a cada tantos)
+  const slices = 6;
+  const perSlice = Math.max(1, Math.ceil(found.length / slices));
+  const stride = Math.max(1, Math.floor(found.length / cfg.maxBursts));
+  let idx = 0;
+  let bursts = 0;
+  const interval = system.runInterval(() => {
+    try {
+      for (let n = 0; n < perSlice && idx < found.length; n++, idx++) {
+        const e = found[idx];
+        if (idx % stride === 0 && bursts < cfg.maxBursts) {
+          bursts++;
+          dim.spawnParticle("hitsugaya:explosao", { x: e.x + 0.5, y: e.y + 0.7, z: e.z + 0.5 });
+          if (bursts % 6 === 0) dim.playSound("random.explode", { x: e.x, y: e.y, z: e.z }, { volume: 0.8, pitch: 1 });
+        }
+        iceRestoreEntry(e);
+      }
+    } catch (err) {
+      system.clearRun(interval);
+      return;
+    }
+    if (idx >= found.length) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Individualidade do Bankai: asas, cauda e agua que congela ---------- */
+
+system.runInterval(() => {
+  const now = system.currentTick;
+  for (const player of world.getPlayers()) {
+    try {
+      if (!isHitsugayaPlayer(player) || !isAwakened(player)) continue;
+      const dim = player.dimension;
+      const l = player.location;
+
+      // a agua por onde ele anda vira gelo (ate 2 blocos ao redor e 1 abaixo)
+      const bx = Math.floor(l.x);
+      const by = Math.floor(l.y);
+      const bz = Math.floor(l.z);
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dz = -2; dz <= 2; dz++) {
+          if (dx * dx + dz * dz > 5) continue;
+          for (let dy = -1; dy <= 0; dy++) {
+            const block = dim.getBlock({ x: bx + dx, y: by + dy, z: bz + dz });
+            if (block && block.isLiquid && block.typeId.includes("water")) {
+              iceSet(ICE_TRAIL, dim, bx + dx, by + dy, bz + dz, "minecraft:ice");
+            }
+          }
+        }
+      }
+
+      if (ICE_TRAIL.length > 3000) ICE_TRAIL.splice(0, 500); // so os mais recentes ficam explodiveis
+      if (now % 6 !== 0) continue;
+      const yaw = (player.getRotation().y * Math.PI) / 180;
+      const back = { x: Math.sin(yaw), z: -Math.cos(yaw) }; // costas do player
+      const side = { x: Math.cos(yaw), z: Math.sin(yaw) };
+      const shoulder = { x: l.x + back.x * 0.35, y: l.y + 1.35, z: l.z + back.z * 0.35 };
+      const flap = Math.sin(now * 0.12) * 0.18;
+
+      // duas asas de tres penas
+      for (const s of [-1, 1]) {
+        [0.35, 0.8, 1.25].forEach((angle, i) => {
+          const a = angle + flap;
+          const len = 2.4 - i * 0.5;
+          for (let k = 1; k <= 4; k++) {
+            const d = (len * k) / 4;
+            dim.spawnParticle("hitsugaya:gelo", {
+              x: shoulder.x + side.x * s * Math.sin(a) * d + back.x * d * 0.35,
+              y: shoulder.y + Math.cos(a) * d,
+              z: shoulder.z + side.z * s * Math.sin(a) * d + back.z * d * 0.35,
+            });
+          }
+        });
+      }
+
+      // cauda ondulando pra tras
+      const waist = { x: l.x + back.x * 0.3, y: l.y + 0.9, z: l.z + back.z * 0.3 };
+      for (let k = 1; k <= 8; k++) {
+        const wave = Math.sin(k * 0.6 + now * 0.1);
+        dim.spawnParticle("hitsugaya:gelo", {
+          x: waist.x + back.x * k * 0.4 + side.x * wave * 0.3,
+          y: waist.y - k * 0.06 + Math.sin(k * 0.5 + now * 0.08) * 0.2,
+          z: waist.z + back.z * k * 0.4 + side.z * wave * 0.3,
+        });
+      }
+    } catch (e) {}
+  }
+}, 2);
+
+function showShunsuiSpark(entity) {
+  try {
+    const l = entity.location;
+    for (let i = 0; i < 4; i++) {
+      entity.dimension.spawnParticle(i % 2 === 0 ? "shunsui:corte" : "shunsui:sombra", {
+        x: l.x + (Math.random() - 0.5) * 0.9,
+        y: l.y + 0.4 + Math.random() * 1.2,
+        z: l.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+  } catch (e) {}
+}
+
+/* ---------------------------------------------------------
+   Shunsui Kyoraku (Tier 5) - Katen Kyokotsu
+   Takaoni, Irooni e Jokenpo sao "jogos": enquanto um esta rolando, o Shunsui
+   nao usa outra skill.
+   --------------------------------------------------------- */
+
+const SHUNSUI = {
+  kageoni: { range: 30, slashes: 2, gapTicks: 4, behind: [1.6, 2.4, 1.0] },
+  takaoni: { half: 12.5, warnTicks: 100 }, // area de 25x25, 5s pra subir
+  irooni: { arena: 20, tile: 5, affectRadius: 50, warnTicks: 100 }, // 5s pra ir na cor
+  jokenpo: {
+    range: 40,
+    answerTicks: 400, // 20s pra escolher em cada rodada
+    maxRounds: 15,
+    penaltyCooldownTicks: 100, // perdedor: +5s em todas as skills
+    vulnerableTicks: 200, // e 10s tomando mais dano
+    vulnerableMultiplier: 1.5,
+  },
+};
+
+const shunsuiInGame = new Set(); // ids de quem esta no meio de um jogo
+const vulnerableUntil = new Map(); // id -> tick (Jokenpo: perdedor toma 50% a mais)
+
+// chamada pelo dealDamage
+function vulnerabilityMultiplierOf(entity) {
+  const end = vulnerableUntil.get(entity.id);
+  if (end === undefined) return 1;
+  if (system.currentTick >= end) {
+    vulnerableUntil.delete(entity.id);
+    return 1;
+  }
+  return SHUNSUI.jokenpo.vulnerableMultiplier;
+}
+
+function shunsuiGate(player) {
+  if (shunsuiInGame.has(player.id)) {
+    player.sendMessage("§7Termine o jogo atual antes de usar outra skill.");
+    return false;
+  }
+  return true;
+}
+
+// soma `ticks` ao que falta de cooldown de cada skill do personagem (a que estava
+// livre passa a ter `ticks` de cooldown). O carimbo nao passa do cooldown cheio.
+function extendCooldowns(entity, ticks) {
+  try {
+    if (entity.typeId !== "minecraft:player") return;
+    const character = getActiveCharacter(entity);
+    if (!character) return;
+    const now = system.currentTick;
+    const ids = [
+      ...Object.values(character.items ?? {}),
+      ...Object.values(character.awakening?.items ?? {}),
+    ];
+    for (const itemId of new Set(ids)) {
+      const duration = SKILL_COOLDOWN_TICKS[itemId];
+      if (!duration) continue;
+      const key = cdKeyForSkill(itemId);
+      const stamp = tickOf(entity, key);
+      const remaining = stamp !== undefined && stamp <= now ? Math.max(0, duration - (now - stamp)) : 0;
+      const next = Math.min(duration, remaining + ticks);
+      entity.setDynamicProperty(key, now - (duration - next));
+    }
+  } catch (e) {}
+}
+
+function shunsuiTitle(player, title, subtitle) {
+  try {
+    player.onScreenDisplay.setTitle(title, {
+      subtitle,
+      fadeInDuration: 3,
+      stayDuration: 60,
+      fadeOutDuration: 6,
+    });
+  } catch (e) {}
+}
+
+/* ---------- Kageoni ---------- */
+
+function castKageoni(player) {
+  if (!shunsuiGate(player)) return;
+  const cfg = SHUNSUI.kageoni;
+  const target = targetInView(player, cfg.range);
+  if (!target) {
+    player.sendMessage("§7Mire em alguém pra aparecer nas costas.");
+    return;
+  }
+  if (!tryUseSkill(player, "shunsui:kageoni")) return;
+
+  world.sendMessage(`§c${player.name}: §f§lKageoni §7(${nameOf(target)})`);
+  const dim = player.dimension;
+  const from = player.location;
+  const t = target.location;
+
+  // ponto livre nas costas do alvo (o lado pra onde ele NAO olha). Sem espaco atras
+  // (parede), tenta as laterais e por ultimo a frente.
+  const view = target.getViewDirection();
+  const h = Math.hypot(view.x, view.z) || 1;
+  const back = { x: -view.x / h, z: -view.z / h };
+  const dirs = [
+    back,
+    { x: -back.z, z: back.x },
+    { x: back.z, z: -back.x },
+    { x: -back.x, z: -back.z },
+  ];
+  const cache = new Map();
+  const free = (x, z) => {
+    const fx = Math.floor(x);
+    const fy = Math.floor(t.y);
+    const fz = Math.floor(z);
+    return ginBlockInfo(dim, cache, fx, fy, fz).passable && ginBlockInfo(dim, cache, fx, fy + 1, fz).passable;
+  };
+  let dest;
+  for (const dir of dirs) {
+    for (const d of cfg.behind) {
+      if (free(t.x + dir.x * d, t.z + dir.z * d)) {
+        dest = { x: t.x + dir.x * d, y: t.y, z: t.z + dir.z * d };
+        break;
+      }
+    }
+    if (dest) break;
+  }
+  dest = dest ?? { x: t.x + back.x * cfg.behind[0], y: t.y, z: t.z + back.z * cfg.behind[0] };
+
+  try {
+    dim.spawnParticle("shunsui:sombra", { x: from.x, y: from.y + 1, z: from.z });
+    player.teleport(dest, { facingLocation: { x: t.x, y: t.y + 1.2, z: t.z } });
+    dim.spawnParticle("shunsui:sombra", { x: dest.x, y: dest.y + 1, z: dest.z });
+  } catch (e) {}
+  ginPlaySound(player, "mob.enderman.teleport", 1, 1.4);
+
+  // duplo corte em X: cada diagonal e um corte (metade do dano em cada)
+  const perHit = (DAMAGE.kageoni / cfg.slashes) * dmgMultiplier(player);
+  for (let i = 0; i < cfg.slashes; i++) {
+    system.runTimeout(() => {
+      try {
+        if (isDownOrGone(target)) return;
+        const c = target.location;
+        const side = i % 2 === 0 ? 1 : -1;
+        const dx = dest.x - c.x;
+        const dz = dest.z - c.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const rx = -dz / len; // perpendicular a linha player-alvo
+        const rz = dx / len;
+        for (let k = -1.4; k <= 1.4; k += 0.2) {
+          dim.spawnParticle("shunsui:corte", {
+            x: c.x + rx * k * side,
+            y: c.y + 1 + k * 0.9,
+            z: c.z + rz * k * side,
+          });
+        }
+        dealDamage(target, perHit, player);
+        showShunsuiSpark(target);
+      } catch (e) {}
+    }, i * cfg.gapTicks + 1);
+  }
+}
+
+/* ---------- Takaoni ---------- */
+
+function castTakaoni(player) {
+  if (!shunsuiGate(player)) return;
+  if (!tryUseSkill(player, "shunsui:takaoni")) return;
+
+  const cfg = SHUNSUI.takaoni;
+  const dim = player.dimension;
+  const c = { x: player.location.x, y: player.location.y, z: player.location.z };
+  shunsuiInGame.add(player.id);
+  world.sendMessage(
+    `§c${player.name}: §f§lTakaoni §7- quem estiver mais alto se safa, o resto leva ${DAMAGE.takaoni}! (${cfg.warnTicks / 20}s)`
+  );
+
+  const inArea = (entity) =>
+    Math.abs(entity.location.x - c.x) <= cfg.half && Math.abs(entity.location.z - c.z) <= cfg.half;
+
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      // contorno da area, pra todo mundo ver os limites
+      if (tick % 10 === 1) {
+        for (let d = -cfg.half; d <= cfg.half; d += 2.5) {
+          for (const [x, z] of [
+            [c.x + d, c.z - cfg.half],
+            [c.x + d, c.z + cfg.half],
+            [c.x - cfg.half, c.z + d],
+            [c.x + cfg.half, c.z + d],
+          ]) {
+            dim.spawnParticle("shunsui:sombra", { x, y: c.y + 0.4, z });
+          }
+        }
+      }
+      if (tick % 20 === 0 && tick < cfg.warnTicks) {
+        const left = Math.round((cfg.warnTicks - tick) / 20);
+        for (const p of dim.getPlayers({ location: c, maxDistance: cfg.half * 2 })) {
+          if (inArea(p)) p.onScreenDisplay.setActionBar(`§cTakaoni: §fsuba! §e${left}s`);
+        }
+      }
+    } catch (e) {}
+
+    if (tick < cfg.warnTicks) return;
+    system.clearRun(interval);
+
+    try {
+      const inside = [];
+      for (const entity of dim.getEntities({ location: c, maxDistance: cfg.half * 2 + 60 })) {
+        if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+        if (inArea(entity)) inside.push(entity);
+      }
+      // o(s) mais alto(s) se safa(m); Shunsui entra na conta como qualquer um
+      const top = inside.reduce((best, e) => Math.max(best, e.location.y), -Infinity);
+      const bottom = inside.reduce((best, e) => Math.min(best, e.location.y), Infinity);
+      // todo mundo na mesma altura (com pelo menos 2 em cena): ninguem esta "mais alto", todos levam
+      const allSameHeight = inside.length >= 2 && top - bottom <= 0.05;
+      let hitCount = 0;
+      for (const entity of inside) {
+        if (!allSameHeight && entity.location.y >= top - 0.05) {
+          entity.dimension.spawnParticle("shunsui:sombra", { x: entity.location.x, y: entity.location.y + 2.2, z: entity.location.z });
+          continue;
+        }
+        dealDamage(entity, DAMAGE.takaoni, isDownOrGone(player) ? undefined : player);
+        showShunsuiSpark(entity);
+        hitCount++;
+      }
+      world.sendMessage(`§7Takaoni acabou: §f${hitCount}§7 levaram o golpe.`);
+    } catch (e) {}
+    shunsuiInGame.delete(player.id);
+  }, 1);
+}
+
+/* ---------- Irooni ---------- */
+
+const IROONI_COLORS = [
+  { name: "AZUL", code: "§9", block: "minecraft:blue_wool" },
+  { name: "VERMELHA", code: "§c", block: "minecraft:red_wool" },
+  { name: "PRETA", code: "§8", block: "minecraft:black_wool" },
+  { name: "BRANCA", code: "§f", block: "minecraft:white_wool" },
+];
+
+function castIrooni(player) {
+  if (!shunsuiGate(player)) return;
+  if (!tryUseSkill(player, "shunsui:irooni")) return;
+
+  const cfg = SHUNSUI.irooni;
+  const dim = player.dimension;
+  const o = player.location;
+  shunsuiInGame.add(player.id);
+  world.sendMessage(`§c${player.name}: §f§lIrooni §7- cada um vai pra lã da sua cor! (${cfg.warnTicks / 20}s)`);
+
+  // arena de 20x20 em quadrados de 5x5 (4x4 = 16), 4 de cada cor, embaralhados
+  const tiles = cfg.arena / cfg.tile;
+  const palette = [];
+  for (let i = 0; i < tiles * tiles; i++) palette.push(i % IROONI_COLORS.length);
+  for (let i = palette.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [palette[i], palette[j]] = [palette[j], palette[i]];
+  }
+  const ledger = iceTrack([]);
+  const x0 = Math.floor(o.x) - cfg.arena / 2;
+  const z0 = Math.floor(o.z) - cfg.arena / 2;
+  const yTop = Math.floor(o.y) + 3;
+  const yBottom = Math.floor(o.y) - 4;
+  for (let dx = 0; dx < cfg.arena; dx++) {
+    for (let dz = 0; dz < cfg.arena; dz++) {
+      const color = IROONI_COLORS[palette[Math.floor(dz / cfg.tile) * tiles + Math.floor(dx / cfg.tile)]];
+      iceFreezeColumn(dim, ledger, x0 + dx, z0 + dz, yTop, yBottom, color.block);
+    }
+  }
+
+  // sorteia uma cor pra cada player na area de 50 blocos (Shunsui incluso)
+  const assigned = new Map();
+  const players = dim.getPlayers({ location: o, maxDistance: cfg.affectRadius });
+  for (const p of players) {
+    if (isDownOrGone(p)) continue;
+    const color = IROONI_COLORS[Math.floor(Math.random() * IROONI_COLORS.length)];
+    assigned.set(p.id, { player: p, color });
+    shunsuiTitle(p, `${color.code}§l${color.name}`, `§7Fique na lã ${color.name.toLowerCase()} em ${cfg.warnTicks / 20}s!`);
+    p.sendMessage(`§eSua cor: ${color.code}§lLÃ ${color.name}`);
+  }
+
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (tick % 20 === 0 && tick < cfg.warnTicks) {
+        const left = Math.round((cfg.warnTicks - tick) / 20);
+        for (const { player: p, color } of assigned.values()) {
+          if (!isDownOrGone(p)) p.onScreenDisplay.setActionBar(`${color.code}§l${color.name} §e${left}s`);
+        }
+      }
+    } catch (e) {}
+    if (tick < cfg.warnTicks) return;
+    system.clearRun(interval);
+
+    let punished = 0;
+    for (const { player: p, color } of assigned.values()) {
+      try {
+        if (isDownOrGone(p)) continue;
+        const l = p.location;
+        const under = p.dimension.getBlock({
+          x: Math.floor(l.x),
+          y: Math.floor(l.y - 0.1),
+          z: Math.floor(l.z),
+        });
+        if (under?.typeId === color.block) continue;
+        dealDamage(p, DAMAGE.irooni, isDownOrGone(player) ? undefined : player);
+        showShunsuiSpark(p);
+        punished++;
+      } catch (e) {}
+    }
+    // acabou o jogo: as la somem e voltam a ser o bloco que estava ali
+    iceRestore(ledger);
+    world.sendMessage(`§7Irooni acabou: §f${punished}§7 na cor errada.`);
+    shunsuiInGame.delete(player.id);
+  }, 1);
+}
+
+/* ---------- Jokenpo ---------- */
+
+const JOKENPO = ["Pedra", "Papel", "Tesoura"];
+
+// 1 = a vence, -1 = b vence, 0 = empate (0 pedra, 1 papel, 2 tesoura)
+function jokenpoResult(a, b) {
+  if (a === b) return 0;
+  return (a - b + 3) % 3 === 1 ? 1 : -1;
+}
+
+function sleepTicks(ticks) {
+  return new Promise((resolve) => system.runTimeout(resolve, ticks));
+}
+
+// Abre o menu e espera a escolha. Fechou o menu ou estava ocupado? abre de novo.
+// Estourou o tempo? null (perde por WO).
+async function askJokenpo(player, foe, deadline) {
+  const form = new ActionFormData()
+    .title("§l§6Jokenpô")
+    .body(`§7Você contra §e${foe.name}§7\nEscolha:`)
+    .button("§lPedra")
+    .button("§lPapel")
+    .button("§lTesoura");
+  while (system.currentTick < deadline) {
+    if (isDownOrGone(player)) return null;
+    const left = deadline - system.currentTick;
+    let res;
+    try {
+      res = await Promise.race([form.show(player), sleepTicks(left).then(() => ({ timeout: true }))]);
+    } catch (e) {
+      return null;
+    }
+    if (res?.timeout) return null;
+    if (res && !res.canceled && res.selection !== undefined) return res.selection;
+    await sleepTicks(10);
+  }
+  return null;
+}
+
+async function runJokenpo(caster, target) {
+  const cfg = SHUNSUI.jokenpo;
+  try {
+    for (let round = 1; round <= cfg.maxRounds; round++) {
+      const deadline = system.currentTick + cfg.answerTicks;
+      const [a, b] = await Promise.all([
+        askJokenpo(caster, target, deadline),
+        askJokenpo(target, caster, deadline),
+      ]);
+
+      if (a === null && b === null) {
+        world.sendMessage("§7Jokenpô cancelado: ninguém escolheu.");
+        return;
+      }
+      let result;
+      if (a === null) result = -1;
+      else if (b === null) result = 1;
+      else result = jokenpoResult(a, b);
+
+      world.sendMessage(
+        `§6[Jokenpô] §e${caster.name} §f${a === null ? "(nada)" : JOKENPO[a]} §7x §f${b === null ? "(nada)" : JOKENPO[b]} §e${target.name}`
+      );
+      if (result === 0) {
+        world.sendMessage("§6[Jokenpô] §7Empate! Outra rodada.");
+        continue;
+      }
+
+      const loser = result > 0 ? target : caster;
+      const winner = result > 0 ? caster : target;
+      world.sendMessage(`§6[Jokenpô] §a${winner.name} §fvenceu! §c${loser.name}§f perdeu.`);
+      try {
+        extendCooldowns(loser, cfg.penaltyCooldownTicks);
+        vulnerableUntil.set(loser.id, system.currentTick + cfg.vulnerableTicks);
+        loser.sendMessage(
+          `§cVocê perdeu: +${cfg.penaltyCooldownTicks / 20}s de cooldown em todas as skills e ${Math.round((cfg.vulnerableMultiplier - 1) * 100)}% mais dano por ${cfg.vulnerableTicks / 20}s!`
+        );
+        showShunsuiSpark(loser);
+      } catch (e) {}
+      return;
+    }
+    world.sendMessage("§7Jokenpô encerrado: rodadas demais sem vencedor.");
+  } finally {
+    shunsuiInGame.delete(caster.id);
+  }
+}
+
+function castJokenpo(player) {
+  if (!shunsuiGate(player)) return;
+  const cfg = SHUNSUI.jokenpo;
+  const target = targetInView(player, cfg.range);
+  if (!target || target.typeId !== "minecraft:player") {
+    player.sendMessage("§7Mire em um player pra jogar Jokenpô.");
+    return;
+  }
+  if (!tryUseSkill(player, "shunsui:jokenpo")) return;
+
+  shunsuiInGame.add(player.id);
+  world.sendMessage(`§6${player.name}: §f§lJokenpô §7contra §e${target.name}§7!`);
+  runJokenpo(player, target);
+}
+
+/* ---------- Awk-Bankai: Karamatsu Shinjū (super, gatilho: agachar + m1 com o medidor em 100%) ---------- */
+
+const KARAMATSU = {
+  radius: 50,
+  // ticks entre a fala de cada ato e o efeito dele
+  speechToEffect: [60, 40, 60, 40],
+  actGapTicks: 100, // a troca de atos demora 5s
+  healthFraction: 0.5, // 1o ato
+  bleed: { damage: 50, times: 5 }, // 2o ato: 50 por segundo, por 5s
+  sameTierDamage: 800, // 4o ato: tier igual leva isso, tier menor morre
+  afterKillTicks: 40, // depois do fim da peça a agua ainda fica um pouco
+  // 3o ato: cada player da peca fica dentro de uma caixa de agua
+  boxHalf: 2, // 5x5
+  boxBelow: 1,
+  boxAbove: 3, // e 5 de altura
+  leakMargin: 6, // a agua corrente que escorre da caixa e limpa nessa folga
+  cleanupPasses: 2,
+};
+const KARAMATSU_LINES = [
+  "“Quando duas pessoas se envolvem nessa tragédia, os ferimentos de uma acabam sendo compartilhados pela outra.”",
+  "“As feridas continuam se acumulando, e o corpo começa a perder sangue, como se a própria doença da tragédia estivesse consumindo você.”",
+  "“Agora, somos arrastados para o fundo de um sofrimento sem fim, como se estivéssemos afundando em um oceano de tristeza.”",
+  "“E, finalmente, chega o último ato. Depois de todo esse sofrimento, resta apenas o fim da peça.”",
+];
+const KARAMATSU_ACTS = ["Primeiro Ato", "Segundo Ato", "Terceiro Ato", "Quarto Ato"];
+
+// quem esta dentro da peca nao toma dano de ninguem (so da propria peca)
+const karamatsuProtected = new Set();
+
+// empurra pra fora da area quem tem tier maior que o do Shunsui
+function karamatsuPushOut(player, center, cfg, dim) {
+  const l = player.location;
+  const dx = l.x - center.x;
+  const dz = l.z - center.z;
+  const d = Math.hypot(dx, dz);
+  if (d >= cfg.radius) return;
+  const ux = d < 0.01 ? 1 : dx / d;
+  const uz = d < 0.01 ? 0 : dz / d;
+  const x = center.x + ux * (cfg.radius + 3);
+  const z = center.z + uz * (cfg.radius + 3);
+  const cache = new Map();
+  for (let up = 0; up <= 12; up++) {
+    const fy = Math.floor(l.y) + up;
+    if (
+      ginBlockInfo(dim, cache, Math.floor(x), fy, Math.floor(z)).passable &&
+      ginBlockInfo(dim, cache, Math.floor(x), fy + 1, Math.floor(z)).passable
+    ) {
+      try {
+        player.teleport({ x, y: fy, z });
+        player.sendMessage("§7A peça está em cena: quem tem tier maior não entra na área.");
+      } catch (e) {}
+      return;
+    }
+  }
+}
+
+async function runKaramatsu(shun) {
+  const cfg = KARAMATSU;
+  const dim = shun.dimension;
+  const center = { x: shun.location.x, y: shun.location.y, z: shun.location.z };
+  const myTier = tierOfPlayer(shun);
+  const inArea = (e) => Math.hypot(e.location.x - center.x, e.location.z - center.z) <= cfg.radius;
+  const alive = (e) => {
+    try {
+      return !isDownOrGone(e);
+    } catch (err) {
+      return false;
+    }
+  };
+
+  // quem participa: todo ser vivo da area, menos player de tier MAIOR (esse fica de fora)
+  const affected = [];
+  for (const entity of dim.getEntities({ location: center, maxDistance: cfg.radius })) {
+    if (!entity.getComponent("minecraft:health") || !alive(entity)) continue;
+    if (entity.typeId === "minecraft:player" && tierOfPlayer(entity) > myTier) continue;
+    affected.push(entity);
+  }
+  if (!affected.includes(shun)) affected.push(shun);
+
+  shunsuiInGame.add(shun.id);
+  for (const e of affected) karamatsuProtected.add(e.id);
+  const floodCells = []; // celulas que viraram agua (so as que eram ar)
+  const boxes = [];
+
+  world.sendMessage(`§4§lKaramatsu Shinjū §r§7- a peça começou! §f(${affected.length} em cena)`);
+
+  // segura os espectadores no lugar e mantem os de tier maior fora da area
+  const guard = system.runInterval(() => {
+    try {
+      for (const e of affected) {
+        if (e !== shun && alive(e)) ginHoldParalysis(e);
+      }
+      for (const p of dim.getPlayers({ location: center, maxDistance: cfg.radius + 5 })) {
+        if (p.id !== shun.id && tierOfPlayer(p) > myTier && !affected.includes(p)) {
+          karamatsuPushOut(p, center, cfg, dim);
+        }
+      }
+    } catch (e) {}
+  }, 10);
+
+  const say = (act) => {
+    world.sendMessage(`§c<${shun.name}> §f${KARAMATSU_LINES[act]}`);
+    for (const e of affected) {
+      if (e.typeId === "minecraft:player" && alive(e)) shunsuiTitle(e, `§4§l${KARAMATSU_ACTS[act]}`, "§7Karamatsu Shinjū");
+    }
+  };
+
+  try {
+    // ---- 1o ato: todos ficam com 50% de vida ----
+    say(0);
+    await sleepTicks(cfg.speechToEffect[0]);
+    if (!alive(shun)) return;
+    for (const e of affected) {
+      if (!alive(e)) continue;
+      const hp = e.getComponent("minecraft:health");
+      const half = hp.effectiveMax * cfg.healthFraction;
+      if (hp.currentValue > half) hp.setCurrentValue(half);
+      try {
+        dim.spawnParticle("shunsui:sombra", { x: e.location.x, y: e.location.y + 1, z: e.location.z });
+      } catch (err) {}
+    }
+    await sleepTicks(cfg.actGapTicks);
+    if (!alive(shun)) return;
+
+    // ---- 2o ato: 50 de dano por segundo, por 5s ----
+    say(1);
+    await sleepTicks(cfg.speechToEffect[1]);
+    for (let i = 0; i < cfg.bleed.times; i++) {
+      if (!alive(shun)) return;
+      for (const e of affected) {
+        if (!alive(e) || isIntocable(e)) continue;
+        dealDamage(e, cfg.bleed.damage, shun, { karamatsu: true, breaksBlock: true });
+        try {
+          dim.spawnParticle("shunsui:sombra", { x: e.location.x, y: e.location.y + 1.3, z: e.location.z });
+        } catch (err) {}
+      }
+      await sleepTicks(20);
+    }
+    await sleepTicks(Math.max(0, cfg.actGapTicks - 20));
+    if (!alive(shun)) return;
+
+    // ---- 3o ato: cada player da peca fica dentro de uma caixa de agua 5x5 ----
+    say(2);
+    await sleepTicks(cfg.speechToEffect[2]);
+    if (!alive(shun)) return;
+    for (const e of affected) {
+      if (e.typeId !== "minecraft:player" || !alive(e)) continue;
+      const bx = Math.floor(e.location.x);
+      const by = Math.floor(e.location.y);
+      const bz = Math.floor(e.location.z);
+      const box = {
+        xa: bx - cfg.boxHalf,
+        xb: bx + cfg.boxHalf,
+        za: bz - cfg.boxHalf,
+        zb: bz + cfg.boxHalf,
+        ya: by - cfg.boxBelow,
+        yb: by + cfg.boxAbove,
+      };
+      boxes.push(box);
+      // so troca AR por agua e anota cada celula, pra devolver exatamente
+      for (let x = box.xa; x <= box.xb; x++) {
+        for (let y = box.ya; y <= box.yb; y++) {
+          for (let z = box.za; z <= box.zb; z++) {
+            try {
+              const b = dim.getBlock({ x, y, z });
+              if (b && b.isAir) {
+                b.setType("minecraft:water");
+                floodCells.push([x, y, z]);
+              }
+            } catch (err) {}
+          }
+        }
+      }
+    }
+    shun.addEffect("water_breathing", 1200, { amplifier: 0, showParticles: false }); // so o Shunsui respira
+    await sleepTicks(cfg.actGapTicks);
+    if (!alive(shun)) return;
+
+    // ---- 4o ato: fim da peca ----
+    say(3);
+    await sleepTicks(cfg.speechToEffect[3]);
+    if (!alive(shun)) return;
+    let dead = 0;
+    for (const e of affected) {
+      if (e === shun || !alive(e) || isIntocable(e)) continue;
+      try {
+        if (e.typeId === "minecraft:player" && tierOfPlayer(e) >= myTier) {
+          // mesmo tier: nao morre, mas leva 800
+          dealDamage(e, cfg.sameTierDamage, shun, { karamatsu: true, breaksBlock: true });
+        } else {
+          e.kill();
+          dead++;
+        }
+        dim.spawnParticle("shunsui:corte", { x: e.location.x, y: e.location.y + 1, z: e.location.z });
+      } catch (err) {}
+    }
+    world.sendMessage(`§4Fim da peça. §7${dead} não resistiram.`);
+    await sleepTicks(cfg.afterKillTicks);
+  } finally {
+    system.clearRun(guard);
+    // solta todo mundo primeiro; a limpeza da agua continua em segundo plano
+    for (const e of affected) {
+      karamatsuProtected.delete(e.id);
+      try {
+        ginRelease(e);
+      } catch (err) {}
+    }
+    shunsuiInGame.delete(shun.id);
+    try {
+      shun.removeEffect("water_breathing");
+    } catch (e) {}
+    await karamatsuCleanFlood(dim, cfg, floodCells, boxes);
+  }
+}
+
+// Apaga a agua da peca: as celulas que viraram agua voltam a ser ar (uma por uma) e a
+// agua corrente que escorreu da caixa e limpa por fill na folga em volta.
+async function karamatsuCleanFlood(dim, cfg, floodCells, boxes) {
+  for (const [x, y, z] of floodCells) {
+    try {
+      const b = dim.getBlock({ x, y, z });
+      if (b && b.typeId.includes("water")) b.setType("minecraft:air");
+    } catch (e) {}
+  }
+  floodCells.length = 0;
+  const M = cfg.leakMargin;
+  for (let pass = 0; pass < cfg.cleanupPasses; pass++) {
+    for (const b of boxes) {
+      try {
+        dim.runCommand(
+          `fill ${b.xa - M} ${b.ya - 3} ${b.za - M} ${b.xb + M} ${b.yb + 2} ${b.zb + M} air [] replace flowing_water`
+        );
+      } catch (e) {}
+    }
+    if (pass < cfg.cleanupPasses - 1) await sleepTicks(40);
+  }
+}
+
+function tryTriggerKaramatsu(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+  if (shunsuiInGame.has(player.id)) return false;
+
+  player.setDynamicProperty(DP.awakening, 0);
+  runKaramatsu(player);
+  return true;
+}
+
+/* ---------------------------------------------------------
+   Soi Fon (Tier 4) - Suzumebachi / Jakuhō Raikōben
+   --------------------------------------------------------- */
+
+const SOIFON = {
+  shunpo: { distance: 20 },
+  stealthy: { ticks: 60, speedAmplifier: 4 }, // 3s, speed 5
+  shunko: { ticks: 200, speedAmplifier: 5 }, // 10s, speed 6
+  nigeki: {
+    minAwakening: 50,
+    windowTicks: 100, // 5s para acertar com a Zanpakuto
+    cooldownTicks: 1600, // 80s, iniciado ao fim da janela
+    sameTierDamage: 800,
+  },
+  jakuho: {
+    chargeTicks: 15,
+    speed: 3,
+    maxTicks: 45,
+    hitRadius: 1.3,
+    blastRadius: 25, // raio da explosao
+    growTicks: 10,
+  },
+};
+
+const soiNigekiDuels = new Map(); // id da Soi Fon -> { target, start, windowEnd, phase, frozenPositions }
+const soiSpeed = new Map(); // id -> { amp, until }
+
+function soiRestoreBaseSpeed(player) {
+  try {
+    const c = getActiveCharacter(player);
+    if (!c) return;
+    const f = activeFormOf(player, c);
+    setPermanentEffect(player, "speed", f?.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
+  } catch (e) {}
+}
+
+// buff de speed temporario: o speed base do personagem e permanente, entao ao
+// acabar o buff ele e reposto. Buff mais forte nao e rebaixado por um mais fraco.
+function soiSpeedBuff(player, amplifier, ticks) {
+  const now = system.currentTick;
+  const cur = soiSpeed.get(player.id);
+  const active = cur && cur.until > now ? cur : undefined;
+  const amp = active ? Math.max(active.amp, amplifier) : amplifier;
+  const until = Math.max(active?.until ?? 0, now + ticks);
+  soiSpeed.set(player.id, { amp, until });
+  try {
+    player.addEffect("speed", until - now, { amplifier: amp, showParticles: false });
+  } catch (e) {}
+  system.runTimeout(() => {
+    const st = soiSpeed.get(player.id);
+    if (st && st.until <= system.currentTick) {
+      soiSpeed.delete(player.id);
+      soiRestoreBaseSpeed(player);
+    }
+  }, until - now + 1);
+}
+
+// anda em linha reta ate `maxDist` blocos e para colado no primeiro bloco no caminho
+function soiDashEnd(player, dir, maxDist) {
+  const dim = player.dimension;
+  const start = player.location;
+  const cache = new Map();
+  let last = { x: start.x, y: start.y, z: start.z };
+  for (let d = 0.5; d <= maxDist; d += 0.5) {
+    const p = { x: start.x + dir.x * d, y: start.y + dir.y * d, z: start.z + dir.z * d };
+    const fx = Math.floor(p.x);
+    const fy = Math.floor(p.y);
+    const fz = Math.floor(p.z);
+    if (!ginBlockInfo(dim, cache, fx, fy, fz).passable || !ginBlockInfo(dim, cache, fx, fy + 1, fz).passable) break;
+    last = p;
+  }
+  return last;
+}
+
+function soiTrail(dim, a, b) {
+  const len = ginDist(a, b);
+  for (let d = 0; d <= len; d += 1) {
+    const t = len ? d / len : 0;
+    try {
+      dim.spawnParticle("soifon:rastro", {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + 1 + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      });
+    } catch (e) {
+      return;
+    }
+  }
+}
+
+function soiViewDir(player) {
+  const v = player.getViewDirection();
+  const y = Math.max(-0.6, Math.min(0.6, v.y));
+  const h = Math.hypot(v.x, v.z) || 1;
+  const k = Math.sqrt(Math.max(0, 1 - y * y)) / h;
+  return { x: v.x * k, y, z: v.z * k };
+}
+
+/* ---------- Shunpo ---------- */
+
+function castShunpo(player) {
+  if (!tryUseSkill(player, "soifon:shunpo")) return;
+  world.sendMessage(`§e${player.name}: §f§lShunpo`);
+  const from = { ...player.location };
+  const end = soiDashEnd(player, soiViewDir(player), SOIFON.shunpo.distance);
+  const dx = end.x - from.x, dy = end.y - from.y, dz = end.z - from.z;
+  const steps = 5;
+  let step = 0;
+  const dash = system.runInterval(() => {
+    step++;
+    try {
+      const t = step / steps;
+      const pos = { x: from.x + dx * t, y: from.y + dy * t, z: from.z + dz * t };
+      player.teleport(pos);
+      soiTrail(player.dimension, { x: from.x + dx * Math.max(0, (step - 1) / steps), y: from.y + dy * Math.max(0, (step - 1) / steps), z: from.z + dz * Math.max(0, (step - 1) / steps) }, pos);
+    } catch (e) { system.clearRun(dash); return; }
+    if (step >= steps) system.clearRun(dash);
+  }, 1);
+  ginPlaySound(player, "mob.enderman.teleport", 0.8, 1.8);
+}
+
+/* ---------- Stealthy ---------- */
+
+function castStealthy(player) {
+  if (!tryUseSkill(player, "soifon:stealthy")) return;
+  const cfg = SOIFON.stealthy;
+  world.sendMessage(`§e${player.name}: §f§lStealthy`);
+  try {
+    player.addEffect("invisibility", cfg.ticks, { amplifier: 0, showParticles: false });
+  } catch (e) {}
+  soiSpeedBuff(player, cfg.speedAmplifier, cfg.ticks);
+  ginPlaySound(player, "mob.enderman.teleport", 0.6, 1.6);
+}
+
+/* ---------- Shunko ---------- */
+
+function castShunko(player) {
+  if (!tryUseSkill(player, "soifon:shunko")) return;
+  const cfg = SOIFON.shunko;
+  world.sendMessage(`§e${player.name}: §f§lShunkō`);
+  soiSpeedBuff(player, cfg.speedAmplifier, cfg.ticks);
+  try {
+    const l = player.location;
+    for (let i = 0; i < 10; i++) {
+      player.dimension.spawnParticle("soifon:rastro", {
+        x: l.x + (Math.random() - 0.5) * 1.2,
+        y: l.y + Math.random() * 2,
+        z: l.z + (Math.random() - 0.5) * 1.2,
+      });
+    }
+  } catch (e) {}
+  ginPlaySound(player, "random.fizz", 1, 1.6);
+}
+
+/* ---------- Nigeki Kessatsu ---------- */
+
+// Nigeki tem duas etapas. Usar a habilidade abre uma janela de 5s para o
+// usuario acertar alguem com a Zanpakuto. O primeiro acerto marca o alvo.
+// Depois, usar Nigeki novamente no mesmo alvo abre outra janela de 5s; se a
+// Zanpakuto acertar o mesmo alvo, o golpe final e aplicado.
+// A marca nao expira por tempo: so desaparece se Soi Fon ou o alvo morrer/resetar.
+const soiNigekiPending = new Map(); // Soi Fon id -> { target, expiresAt, stage }
+const soiMarks = new Map(); // Soi Fon id -> { target }
+
+function soiClearNigeki(playerId) {
+  soiMarks.delete(playerId);
+  soiNigekiPending.delete(playerId);
+}
+
+function soiClearPendingOnly(playerId) {
+  soiNigekiPending.delete(playerId);
+}
+
+function soiStartNigekiWindow(player, target) {
+  const now = system.currentTick;
+  const stage = target ? 2 : 1;
+  const expiresAt = now + SOIFON.nigeki.windowTicks;
+  soiNigekiPending.set(player.id, { target: target ?? null, expiresAt, stage });
+
+  if (target) {
+    player.sendMessage("§eNigeki Kessatsu: §f5 segundos para acertar o alvo marcado com a Zanpakuto!");
+    try { target.sendMessage("§cNigeki Kessatsu: §fSoi Fon preparou o golpe final!"); } catch (e) {}
+  } else {
+    player.sendMessage("§eNigeki Kessatsu: §fVocê tem 5 segundos para marcar alguém com a Zanpakuto!");
+  }
+
+  // O cooldown de 80s começa quando a janela termina.
+  system.runTimeout(() => {
+    const pending = soiNigekiPending.get(player.id);
+    // Se a janela ainda estiver aberta, ela termina agora. Mesmo que o M1
+    // tenha acertado antes e fechado a janela, o cooldown de 80s começa aqui.
+    if (pending && pending.expiresAt === expiresAt) {
+      soiNigekiPending.delete(player.id);
+    }
+    player.setDynamicProperty(cdKeyForSkill("soifon:nigeki_kessatsu"), system.currentTick);
+    try { player.sendMessage("§7Nigeki Kessatsu entrou em cooldown por 80s."); } catch (e) {}
+  }, SOIFON.nigeki.windowTicks);
+}
+
+// Retorna true quando o M1 foi consumido pela mecanica do Nigeki, evitando o M1 normal.
+function soiHandleNigekiM1(player, target) {
+  const pending = soiNigekiPending.get(player.id);
+  if (!pending) return false;
+
+  if (system.currentTick > pending.expiresAt || isDownOrGone(target)) {
+    soiClearPendingOnly(player.id);
+    return false;
+  }
+
+  if (pending.stage === 2) {
+    // Na segunda etapa, somente o mesmo alvo marcado pode ser executado.
+    if (!pending.target || pending.target.id !== target.id) return false;
+
+    soiClearPendingOnly(player.id);
+    soiMarks.delete(player.id);
+
+    if (isIntocable(target)) {
+      try { dealDamage(target, 1, player); } catch (e) {}
+      player.setDynamicProperty(DP.awakening, 0);
+      return true;
+    }
+
+    try {
+      target.dimension.spawnParticle("soifon:marca", {
+        x: target.location.x,
+        y: target.location.y + 2.3,
+        z: target.location.z,
+      });
+    } catch (e) {}
+
+    if (target.typeId === "minecraft:player" && tierOfPlayer(target) >= tierOfPlayer(player)) {
+      dealDamage(target, SOIFON.nigeki.sameTierDamage, player, { breaksBlock: true });
+      player.sendMessage("§eNigeki Kessatsu: §fO alvo resistiu e recebeu 800 de dano.");
+    } else {
+      try { target.kill(); } catch (e) {}
+    }
+
+    // Um Nigeki concluido consome todo o Awakening.
+    player.setDynamicProperty(DP.awakening, 0);
+    return true;
+  }
+
+  // Primeira etapa: o acerto da Zanpakuto aplica a marca permanente.
+  soiNigekiPending.delete(player.id);
+  soiMarks.set(player.id, { target });
+  try {
+    target.dimension.spawnParticle("soifon:marca", {
+      x: target.location.x,
+      y: target.location.y + 2.3,
+      z: target.location.z,
+    });
+  } catch (e) {}
+  player.sendMessage("§eNigeki Kessatsu: §fAlvo marcado! Use Nigeki novamente e acerte-o com a Zanpakuto para executar.");
+  try { target.sendMessage("§cVocê foi marcado por Nigeki Kessatsu."); } catch (e) {}
+  return true;
+}
+
+function castNigekiKessatsu(player) {
+  const now = system.currentTick;
+  const key = cdKeyForSkill("soifon:nigeki_kessatsu");
+
+  // Cada ativacao exige pelo menos 50% de Awakening.
+  if (getAwakening(player) < SOIFON.nigeki.minAwakening) {
+    player.sendMessage("§cNigeki Kessatsu requer pelo menos 50% de Awakening.");
+    return;
+  }
+
+  if (soiNigekiPending.has(player.id)) {
+    player.sendMessage("§cNigeki Kessatsu: §7a janela de 5s ainda está ativa.");
+    return;
+  }
+
+  const duration = SOIFON.nigeki.cooldownTicks;
+  if (onCooldown(player, key, duration, now)) {
+    const last = tickOf(player, key) ?? now;
+    const remaining = Math.ceil((duration - (now - last)) / 20);
+    player.sendMessage(`§cNigeki Kessatsu: §7recarregando (${remaining}s).`);
+    return;
+  }
+
+  const mark = soiMarks.get(player.id);
+  const marked = mark && !isDownOrGone(mark.target) ? mark.target : undefined;
+  if (mark && !marked) soiMarks.delete(player.id);
+
+  world.sendMessage(`§e${player.name}: §f§lNigeki Kessatsu`);
+  soiStartNigekiWindow(player, marked ?? null);
+}
+
+// Limpeza das marcas permanentes quando Soi Fon ou o alvo morre/resetar.
+system.runInterval(() => {
+  for (const [id, mark] of soiMarks) {
+    try {
+      const player = [...world.getPlayers()].find(p => p.id === id);
+      if (!player || isDownOrGone(player) || isDownOrGone(mark.target)) {
+        soiClearNigeki(id);
+        continue;
+      }
+      const l = mark.target.location;
+      mark.target.dimension.spawnParticle("soifon:marca", {
+        x: l.x,
+        y: l.y + 2.4,
+        z: l.z,
+      });
+    } catch (e) {
+      soiClearNigeki(id);
+    }
+  }
+}, 1);
+
+/* ---------- Bankai: Jakuhō Raikōben (super, gatilho: agachar + m1 com o medidor em 100%) ---------- */
+
+function soiStrike(player, entity, damage) {
+  if (isRespiring(entity)) {
+    showRespiraGuard(entity);
+    return;
+  }
+  dealDamage(entity, damage * dmgMultiplier(player), player);
+  try {
+    entity.dimension.spawnParticle("soifon:explosao", { x: entity.location.x, y: entity.location.y + 1, z: entity.location.z });
+  } catch (e) {}
+}
+
+// pontos de uma esfera (espiral de Fibonacci) pra desenhar a casca da explosao
+function soiSpherePoints(count) {
+  const pts = [];
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < count; i++) {
+    const y = 1 - (2 * (i + 0.5)) / count;
+    const r = Math.sqrt(1 - y * y);
+    const a = i * golden;
+    pts.push({ x: Math.cos(a) * r, y, z: Math.sin(a) * r });
+  }
+  return pts;
+}
+
+function jakuhoExplode(player, dim, center) {
+  const cfg = SOIFON.jakuho;
+  world.sendMessage(`§6§lJAKUHŌ RAIKŌBEN §r§7- círculo de fogo!`);
+  try { dim.playSound("random.explode", center, { volume: 4, pitch: 0.7 }); } catch (e) {}
+
+  // O impacto cria um anel de fogo que cresce para fora. Cada entidade é atingida
+  // quando a borda do círculo passa por sua posição, como a Lanza del Relámpago.
+  const hitIds = new Set();
+  const shell = soiSpherePoints(18);
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const r = (cfg.blastRadius * tick) / cfg.growTicks;
+      for (let i = 0; i < 36; i++) {
+        const a = (i / 36) * Math.PI * 2;
+        const x = center.x + Math.cos(a) * r;
+        const z = center.z + Math.sin(a) * r;
+        dim.spawnParticle("soifon:missil", { x, y: center.y + 0.25, z });
+        if (i % 3 === 0) dim.spawnParticle("soifon:onda", { x, y: center.y + 0.35, z });
+      }
+      for (const entity of dim.getEntities({ location: center, maxDistance: cfg.blastRadius + 1 })) {
+        if (entity.id === player.id || hitIds.has(entity.id)) continue;
+        if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+        const dx = entity.location.x - center.x;
+        const dz = entity.location.z - center.z;
+        const dist = Math.hypot(dx, dz);
+        // acertado quando a borda chega nele; quem esta no centro (o alvo do missil) entra no 1o tick
+        if (dist <= r + 1.6) {
+          hitIds.add(entity.id);
+          soiStrike(player, entity, DAMAGE.jakuho);
+        }
+      }
+    } catch (e) { system.clearRun(interval); return; }
+    if (tick >= cfg.growTicks) system.clearRun(interval);
+  }, 1);
+}
+
+function runJakuho(player) {
+  const cfg = SOIFON.jakuho;
+  const dim = player.dimension;
+  world.sendMessage(`§6§lBANKAI: JAKUHŌ RAIKŌBEN! §r§7${player.name}`);
+  ginPlaySound(player, "beacon.activate", 2, 0.6);
+
+  let charge = 0;
+  const chargeInterval = system.runInterval(() => {
+    charge++;
+    try {
+      if (isDownOrGone(player)) {
+        system.clearRun(chargeInterval);
+        return;
+      }
+      const h = ginHandOf(player);
+      for (let i = 0; i < 4; i++) {
+        dim.spawnParticle("soifon:missil", {
+          x: h.x + (Math.random() - 0.5) * 1.6,
+          y: h.y + (Math.random() - 0.5) * 1.6,
+          z: h.z + (Math.random() - 0.5) * 1.6,
+        });
+      }
+    } catch (e) {}
+    if (charge < cfg.chargeTicks) return;
+    system.clearRun(chargeInterval);
+    if (isDownOrGone(player)) return;
+
+    // dispara: o missil segue reto na mira e explode no primeiro bloco/ser vivo (ou no fim do alcance)
+    const hand = ginHandOf(player);
+    const dir = ginUnit(hand, ginAimPoint(player, 100));
+    let pos = { x: hand.x + dir.x * 1.5, y: hand.y + dir.y * 1.5, z: hand.z + dir.z * 1.5 };
+    const cache = new Map();
+    let life = 0;
+    const missile = system.runInterval(() => {
+      life++;
+      try {
+        const from = { ...pos };
+        const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
+
+        if (!ginBlockInfo(dim, cache, Math.floor(to.x), Math.floor(to.y), Math.floor(to.z)).passable) {
+          system.clearRun(missile);
+          jakuhoExplode(player, dim, from);
+          return;
+        }
+        const [hit] = ginEntitiesOnSegment(player, from, to, cfg.hitRadius, null);
+        if (hit) {
+          system.clearRun(missile);
+          jakuhoExplode(player, dim, ginBodyOf(hit));
+          return;
+        }
+        pos = to;
+        dim.spawnParticle("soifon:missil", to);
+        dim.spawnParticle("soifon:missil", { x: to.x - dir.x * 1.2, y: to.y - dir.y * 1.2, z: to.z - dir.z * 1.2 });
+        dim.spawnParticle("soifon:rastro", { x: to.x - dir.x * 2.4, y: to.y - dir.y * 2.4, z: to.z - dir.z * 2.4 });
+        if (life >= cfg.maxTicks) {
+          system.clearRun(missile);
+          jakuhoExplode(player, dim, to);
+        }
+      } catch (e) {
+        system.clearRun(missile);
+      }
+    }, 1);
+  }, 1);
+}
+
+function tryTriggerJakuho(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+
+  player.setDynamicProperty(DP.awakening, 0);
+  runJakuho(player);
+  return true;
+}
+
+/* ---------------------------------------------------------
+   Rukia Kuchiki (Tier 2) - Sode no Shirayuki
+   Fragilizacao: o gelo dela faz o alvo tomar mais dano (todo dano) por um tempo.
+   --------------------------------------------------------- */
+
+const RUKIA = {
+  fragilityTicks: 200, // 10s (o unico tempo informado, do White Moon; vale pra todas)
+  fragilityCap: 150, // teto do total somado (%)
+  moon: { radius: 10, pct: 10, growTicks: 6, restoreTicks: 600 },
+  wave: { waves: 3, perWave: 3, gapTicks: 8, speed: 2.2, lifeTicks: 26, radius: 1.0, pct: 5, spread: 0.1 },
+  sword: { range: 10, extendTicks: 4, holdTicks: 3, retractTicks: 4, hitRadius: 1.1, pct: 20, maxBreaks: 40 },
+  hado: {
+    range: 40,
+    radius: 2.2,
+    extendTicks: 3,
+    holdTicks: 6,
+    fadeTicks: 4,
+    slowAmplifier: 2, // lentidao enquanto canalizado
+    sneakTicks: 40, // agachar 2s com a m1 na mao encanta
+    chantTimeoutTicks: 400, // o encantamento aguenta 20s
+    chantedMultiplier: 2,
+  },
+  juhaku: {
+    length: 15,
+    width: 6,
+    growTicks: 8,
+    pct: 60,
+    rootTicks: 200, // pernas presas por 10s
+    restoreTicks: 600,
+    wallRadius: 3, // gigante: muralha a 3 blocos
+    wallHeight: 6,
+  },
+};
+
+const RUKIA_M1_ID = "rukia:m1_zanpakuto";
+const HADO_CHANT = "“Trovão e gelo, converjam no firmamento; que vossa luz destrua aqueles que se opõem a mim.”";
+const HADO_NAME_LINE = "“Hadō #73: Sōren Sōkatsui!”";
+
+/* ---------- Fragilizacao ---------- */
+
+const fragility = new Map(); // id -> [{ pct, end }]
+
+function fragilityTotal(entity) {
+  const list = fragility.get(entity.id);
+  if (!list) return 0;
+  const now = system.currentTick;
+  const alive = list.filter((f) => f.end > now);
+  if (alive.length !== list.length) {
+    if (alive.length) fragility.set(entity.id, alive);
+    else fragility.delete(entity.id);
+  }
+  return Math.min(alive.reduce((sum, f) => sum + f.pct, 0), RUKIA.fragilityCap);
+}
+
+// chamada pelo dealDamage: 10% de fragilizacao = 1,10x de dano recebido
+function fragilityMultiplierOf(entity) {
+  return 1 + fragilityTotal(entity) / 100;
+}
+
+// cada aplicacao soma (com o teto) e dura `fragilityTicks` por conta propria
+function addFragility(entity, pct) {
+  const list = fragility.get(entity.id) ?? [];
+  list.push({ pct, end: system.currentTick + RUKIA.fragilityTicks });
+  fragility.set(entity.id, list);
+  try {
+    if (entity.typeId === "minecraft:player") {
+      entity.sendMessage(`§b❄ Fragilizado: §f+${fragilityTotal(entity)}% §bde dano recebido`);
+    }
+  } catch (e) {}
+}
+
+function showRukiaSpark(entity) {
+  try {
+    const l = entity.location;
+    for (let i = 0; i < 4; i++) {
+      entity.dimension.spawnParticle(i % 2 === 0 ? "rukia:gelo" : "rukia:neve", {
+        x: l.x + (Math.random() - 0.5) * 0.9,
+        y: l.y + 0.4 + Math.random() * 1.2,
+        z: l.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+  } catch (e) {}
+}
+
+// golpe de gelo da Rukia: dano + fragilizacao (Respira barra ataque a distancia)
+function rukiaStrike(player, entity, damage, pct, ranged) {
+  if (ranged && isRespiring(entity)) {
+    showRespiraGuard(entity);
+    return false;
+  }
+  dealDamage(entity, damage * dmgMultiplier(player), player);
+  showRukiaSpark(entity);
+  if (pct && !isIntocable(entity)) addFragility(entity, pct);
+  return true;
+}
+
+/* ---------- White Moon ---------- */
+
+function castWhiteMoon(player) {
+  if (!tryUseSkill(player, "rukia:white_moon")) return;
+
+  world.sendMessage(`§f${player.name}: §b§lWhite Moon`);
+  ginPlaySound(player, "random.glass", 1.5, 0.6);
+
+  const cfg = RUKIA.moon;
+  const dim = player.dimension;
+  const o = player.location;
+  const ledger = iceTrack([]);
+  const columns = [];
+  for (let dx = -cfg.radius; dx <= cfg.radius; dx++) {
+    for (let dz = -cfg.radius; dz <= cfg.radius; dz++) {
+      const d = Math.hypot(dx, dz);
+      if (d <= cfg.radius) columns.push({ x: Math.floor(o.x) + dx, z: Math.floor(o.z) + dz, d });
+    }
+  }
+  columns.sort((a, b) => a.d - b.d);
+
+  // tudo dentro do circulo congela: fragilizacao de 10%
+  for (const entity of dim.getEntities({ location: o, maxDistance: cfg.radius })) {
+    if (entity.id === player.id) continue;
+    if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+    addFragility(entity, cfg.pct);
+    showRukiaSpark(entity);
+  }
+
+  const yTop = Math.floor(o.y) + HITSUGAYA.freezeSurface.up;
+  const yBottom = Math.floor(o.y) - HITSUGAYA.freezeSurface.down;
+  let idx = 0;
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const front = (cfg.radius * tick) / cfg.growTicks;
+      while (idx < columns.length && columns[idx].d <= front) {
+        const c = columns[idx];
+        iceFreezeColumn(dim, ledger, c.x, c.z, yTop, yBottom);
+        if (idx % 5 === 0) dim.spawnParticle("rukia:neve", { x: c.x + 0.5, y: o.y + 0.5 + Math.random() * 1.2, z: c.z + 0.5 });
+        idx++;
+      }
+      // borda do circulo crescendo
+      for (let i = 0; i < 20; i++) {
+        const a = (i / 20) * Math.PI * 2;
+        dim.spawnParticle("rukia:gelo", { x: o.x + Math.cos(a) * front, y: o.y + 0.3, z: o.z + Math.sin(a) * front });
+      }
+    } catch (e) {
+      tick = cfg.growTicks;
+    }
+    if (tick >= cfg.growTicks) {
+      system.clearRun(interval);
+      system.runTimeout(() => iceRestore(ledger), cfg.restoreTicks);
+    }
+  }, 1);
+}
+
+/* ---------- White Wave ---------- */
+
+function launchFrostBolt(player, dir, cache) {
+  const cfg = RUKIA.wave;
+  const dim = player.dimension;
+  const head = player.getHeadLocation();
+  let pos = { x: head.x + dir.x * 0.8, y: head.y - 0.2 + dir.y * 0.8, z: head.z + dir.z * 0.8 };
+  let life = 0;
+
+  const interval = system.runInterval(() => {
+    life++;
+    try {
+      const from = { ...pos };
+      const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
+      if (!ginBlockInfo(dim, cache, Math.floor(to.x), Math.floor(to.y), Math.floor(to.z)).passable) {
+        dim.spawnParticle("rukia:neve", from);
+        system.clearRun(interval);
+        return;
+      }
+      const [first] = ginEntitiesOnSegment(player, from, to, cfg.radius, null);
+      if (first) {
+        rukiaStrike(player, first, DAMAGE.whiteWave, cfg.pct, true);
+        system.clearRun(interval);
+        return;
+      }
+      pos = to;
+      dim.spawnParticle("rukia:gelo", to);
+      dim.spawnParticle("rukia:gelo", { x: to.x - dir.x * 0.9, y: to.y - dir.y * 0.9, z: to.z - dir.z * 0.9 });
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (life >= cfg.lifeTicks) system.clearRun(interval);
+  }, 1);
+}
+
+function castWhiteWave(player) {
+  if (!tryUseSkill(player, "rukia:white_wave")) return;
+
+  world.sendMessage(`§f${player.name}: §b§lWhite Wave`);
+  ginPlaySound(player, "random.glass", 1.4, 1.3);
+
+  const cfg = RUKIA.wave;
+  const cache = new Map();
+  for (let w = 0; w < cfg.waves; w++) {
+    system.runTimeout(() => {
+      try {
+        if (isDownOrGone(player)) return;
+        const view = player.getViewDirection();
+        // cada rajada e um leque de projeteis (centro e dois lados)
+        for (let i = 0; i < cfg.perWave; i++) {
+          const off = (i - (cfg.perWave - 1) / 2) * cfg.spread * 2;
+          const d = { x: view.x - view.z * off, y: view.y, z: view.z + view.x * off };
+          const len = Math.hypot(d.x, d.y, d.z) || 1;
+          launchFrostBolt(player, { x: d.x / len, y: d.y / len, z: d.z / len }, cache);
+        }
+        ginPlaySound(player, "random.glass", 0.8, 1.6);
+      } catch (e) {}
+    }, w * cfg.gapTicks);
+  }
+}
+
+/* ---------- White Sword (a lamina retratil da Extended Blade, com metade do alcance) ---------- */
+
+function castWhiteSword(player) {
+  if (!tryUseSkill(player, "rukia:white_sword")) return;
+
+  world.sendMessage(`§f${player.name}: §b§lWhite Sword`);
+  ginPlaySound(player, "random.glass", 1.2, 1.5);
+
+  const cfg = RUKIA.sword;
+  const dim = player.dimension;
+  const dir = ginUnit(ginHandOf(player), ginAimPoint(player, cfg.range));
+  const hit = new Set();
+  const blockCache = new Map();
+  const attackTicks = cfg.extendTicks + cfg.holdTicks;
+  const total = attackTicks + cfg.retractTicks;
+  let cap = cfg.range;
+  let reachedLen = 0;
+  let broken = 0;
+  let tick = 0;
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (isDownOrGone(player) || getActiveCharacter(player)?.id !== "rukia") {
+        system.clearRun(interval);
+        return;
+      }
+      let length;
+      if (tick <= cfg.extendTicks) length = (cfg.range * tick) / cfg.extendTicks;
+      else if (tick <= attackTicks) length = cfg.range;
+      else length = cfg.range * Math.max(0, 1 - (tick - attackTicks) / cfg.retractTicks);
+
+      const hand = ginHandOf(player);
+      const at = (d) => ({ x: hand.x + dir.x * d, y: hand.y + dir.y * d, z: hand.z + dir.z * d });
+
+      // como a Extended Blade: quebra os blocos que a ponta encosta
+      if (tick <= cfg.extendTicks && reachedLen < cap) {
+        const want = Math.min(length, cap);
+        const res = ginBreakBlocks(dim, blockCache, at(reachedLen), at(want), cfg.maxBreaks - broken);
+        broken += res.count;
+        if (res.blocked) cap = reachedLen + res.reach;
+        reachedLen = Math.min(want, cap);
+      }
+      length = Math.min(length, cap);
+
+      if (length > 0.2) {
+        const tip = at(length);
+        ginDrawBlade(dim, [hand, tip], 30, "rukia:gelo", "rukia:neve");
+        if (tick <= attackTicks) {
+          for (const entity of ginEntitiesOnSegment(player, hand, tip, cfg.hitRadius, hit)) {
+            hit.add(entity.id);
+            rukiaStrike(player, entity, DAMAGE.whiteSword, cfg.pct, true);
+          }
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (tick >= total) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Hadō #73: Sōren Sōkatsui ---------- */
+
+const rukiaChant = new Map(); // id -> tick em que o encantamento comecou
+const rukiaSneakSince = new Map(); // id -> tick em que comecou a agachar com a m1
+
+function rukiaCancelChant(player, message) {
+  rukiaChant.delete(player.id);
+  rukiaSneakSince.delete(player.id);
+  try {
+    player.removeEffect("slowness");
+    if (message) player.sendMessage(message);
+  } catch (e) {}
+}
+
+// Agachar 2s com a m1 na mao (com o Awk cheio) encanta o Hadō: fala o encantamento,
+// fica lenta, e o Awk sai com o dobro de dano. Sem isso, o Hadō sai normal.
+system.runInterval(() => {
+  const cfg = RUKIA.hado;
+  const now = system.currentTick;
+  for (const player of world.getPlayers()) {
+    try {
+      if (getActiveCharacter(player)?.id !== "rukia") {
+        if (rukiaChant.has(player.id) || rukiaSneakSince.has(player.id)) rukiaCancelChant(player);
+        continue;
+      }
+      const held = player.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Mainhand)?.typeId;
+      const holding = held === RUKIA_M1_ID;
+      const since = rukiaChant.get(player.id);
+      if (since !== undefined) {
+        if (!holding || now - since > cfg.chantTimeoutTicks) {
+          rukiaCancelChant(player, "§7Você desfez o encantamento.");
+          continue;
+        }
+        player.addEffect("slowness", 20, { amplifier: cfg.slowAmplifier, showParticles: false });
+        continue;
+      }
+      if (!holding || !player.isSneaking || isFrozen(player) || getAwakening(player) < 100) {
+        rukiaSneakSince.delete(player.id);
+        continue;
+      }
+      const start = rukiaSneakSince.get(player.id);
+      if (start === undefined) {
+        rukiaSneakSince.set(player.id, now);
+      } else if (now - start >= cfg.sneakTicks) {
+        rukiaChant.set(player.id, now);
+        world.sendMessage(`§b<${player.name}> §f${HADO_CHANT}`);
+        player.addEffect("slowness", 20, { amplifier: cfg.slowAmplifier, showParticles: false });
+      }
+    } catch (e) {}
+  }
+}, 4);
+
+// Awk: Hadō #73 Sōren Sōkatsui (super, gatilho: agachar + m1 com o medidor em 100%)
+function tryTriggerHado(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+
+  const chanted = rukiaChant.has(player.id);
+  player.setDynamicProperty(DP.awakening, 0);
+  if (chanted) {
+    rukiaCancelChant(player);
+    world.sendMessage(`§b<${player.name}> §f${HADO_NAME_LINE}`);
+  } else {
+    rukiaSneakSince.delete(player.id);
+    world.sendMessage(`§f${player.name}: §b§lAWK: Hadō #73: Sōren Sōkatsui`);
+  }
+  fireHado(player, chanted);
+  return true;
+}
+
+function fireHado(player, chanted) {
+  const cfg = RUKIA.hado;
+  const damage = DAMAGE.hado73 * (chanted ? cfg.chantedMultiplier : 1);
+  ginPlaySound(player, "beacon.activate", 2, 1.4);
+
+  const dim = player.dimension;
+  const hand = ginHandOf(player);
+  const dir = ginUnit(hand, ginAimPoint(player, cfg.range));
+  // a rajada para no primeiro bloco
+  const cache = new Map();
+  let length = cfg.range;
+  for (let d = 1; d <= cfg.range; d += 0.5) {
+    if (!ginBlockInfo(dim, cache, Math.floor(hand.x + dir.x * d), Math.floor(hand.y + dir.y * d), Math.floor(hand.z + dir.z * d)).passable) {
+      length = Math.max(0, d - 0.5);
+      break;
+    }
+  }
+  const hit = new Set();
+  const attackTicks = cfg.extendTicks + cfg.holdTicks;
+  const total = attackTicks + cfg.fadeTicks;
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const reach = tick <= cfg.extendTicks ? (length * tick) / cfg.extendTicks : length;
+      const start = ginHandOf(player);
+      const tip = { x: start.x + dir.x * reach, y: start.y + dir.y * reach, z: start.z + dir.z * reach };
+      ginDrawBlade(dim, [start, tip], 26, "rukia:energia", "rukia:energia");
+      if (tick <= attackTicks) {
+        for (const entity of ginEntitiesOnSegment(player, start, tip, cfg.radius, hit)) {
+          hit.add(entity.id);
+          if (isRespiring(entity)) {
+            showRespiraGuard(entity);
+            continue;
+          }
+          dealDamage(entity, damage * dmgMultiplier(player), player);
+          showRukiaSpark(entity);
+        }
+      }
+      if (tick === attackTicks) {
+        for (let i = 0; i < 5; i++) {
+          dim.spawnParticle("rukia:energia", { x: tip.x + (Math.random() - 0.5) * 2, y: tip.y + (Math.random() - 0.5) * 2, z: tip.z + (Math.random() - 0.5) * 2 });
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (tick >= total) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Juhaku (skill 4): trilha de gelo ---------- */
+
+// gigante = forma com marcador na offhand (Resurrección Ira do Yammy)
+function isGiantPlayer(entity) {
+  try {
+    return entity.typeId === "minecraft:player" && !!activeFormOf(entity)?.offhandMarker;
+  } catch (e) {
+    return false;
+  }
+}
+
+// prende as pernas: bloco de gelo em volta da metade de baixo do corpo (os 8 vizinhos
+// no nivel dos pes) + raiz; gigante leva muralha alta em volta
+function juhakuFreezeLegs(entity, ledger) {
+  const cfg = RUKIA.juhaku;
+  const dim = entity.dimension;
+  const bx = Math.floor(entity.location.x);
+  const by = Math.floor(entity.location.y);
+  const bz = Math.floor(entity.location.z);
+  const cache = new Map();
+  const place = (x, y, z) => {
+    if (ginBlockInfo(dim, cache, x, y, z).passable) iceSet(ledger, dim, x, y, z, "minecraft:packed_ice");
+  };
+  if (isGiantPlayer(entity)) {
+    const r = cfg.wallRadius;
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue; // so o perimetro
+        for (let h = 0; h < cfg.wallHeight; h++) place(bx + dx, by + h, bz + dz);
+      }
+    }
+  } else {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (dx === 0 && dz === 0) continue;
+        place(bx + dx, by, bz + dz);
+      }
+    }
+  }
+  // pernas presas: nao anda nem pula (mas ainda pode usar skill)
+  const end = system.currentTick + cfg.rootTicks;
+  const interval = system.runInterval(() => {
+    try {
+      if (isDownOrGone(entity) || system.currentTick >= end) {
+        system.clearRun(interval);
+        return;
+      }
+      entity.addEffect("slowness", 10, { amplifier: 255, showParticles: false });
+      entity.addEffect("jump_boost", 10, { amplifier: 128, showParticles: false });
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 4);
+}
+
+function runJuhaku(player) {
+  const cfg = RUKIA.juhaku;
+  const dim = player.dimension;
+  world.sendMessage(`§f${player.name}: §b§lJuhaku`);
+  ginPlaySound(player, "random.glass", 2, 0.5);
+
+  const o = player.location;
+  const f = hitsuFlat(player);
+  const r = { x: -f.z, z: f.x };
+  const columns = [];
+  const seen = new Set();
+  for (let a = 1; a <= cfg.length; a++) {
+    for (let b = -cfg.width / 2; b < cfg.width / 2; b++) {
+      const x = Math.floor(o.x + f.x * a + r.x * (b + 0.5));
+      const z = Math.floor(o.z + f.z * a + r.z * (b + 0.5));
+      const key = x + "," + z;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      columns.push({ x, z, a });
+    }
+  }
+
+  const trail = iceTrack([]); // a trilha volta ao normal com o tempo
+  const legs = iceTrack([]); // o gelo das pernas/muralhas
+  const hit = new Set();
+  const yTop = Math.floor(o.y) + HITSUGAYA.freezeSurface.up;
+  const yBottom = Math.floor(o.y) - HITSUGAYA.freezeSurface.down;
+  let idx = 0;
+  let tick = 0;
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const front = (cfg.length * tick) / cfg.growTicks;
+      while (idx < columns.length && columns[idx].a <= front) {
+        const c = columns[idx];
+        iceFreezeColumn(dim, trail, c.x, c.z, yTop, yBottom);
+        if (idx % 3 === 0) dim.spawnParticle("rukia:neve", { x: c.x + 0.5, y: o.y + 0.5 + Math.random(), z: c.z + 0.5 });
+        idx++;
+      }
+      for (const entity of dim.getEntities({ location: o, maxDistance: front + 4 })) {
+        if (entity.id === player.id || hit.has(entity.id)) continue;
+        if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+        const dx = entity.location.x - o.x;
+        const dz = entity.location.z - o.z;
+        const a = dx * f.x + dz * f.z;
+        const b = dx * r.x + dz * r.z;
+        if (a < 0 || a > front || Math.abs(b) > cfg.width / 2 + 0.4) continue;
+        if (Math.abs(entity.location.y - o.y) > 6) continue;
+        hit.add(entity.id);
+        if (isRespiring(entity)) {
+          showRespiraGuard(entity);
+          continue;
+        }
+        if (isIntocable(entity)) continue;
+        addFragility(entity, cfg.pct);
+        showRukiaSpark(entity);
+        juhakuFreezeLegs(entity, legs);
+      }
+    } catch (e) {
+      tick = cfg.growTicks;
+    }
+    if (tick >= cfg.growTicks) {
+      system.clearRun(interval);
+      system.runTimeout(() => iceRestore(trail), cfg.restoreTicks);
+      system.runTimeout(() => iceRestore(legs), cfg.rootTicks);
+    }
+  }, 1);
+}
+
+function castJuhaku(player) {
+  if (!tryUseSkill(player, "rukia:juhaku")) return;
+  runJuhaku(player);
+}
+
+/* ---------------------------------------------------------
+   Jūshiro Ukitake (Tier 5) - Sōgyo no Kotowari
+   --------------------------------------------------------- */
+
+const UKITAKE = {
+  throwPull: { range: 30, speed: 3, radius: 1.2, pullTicks: 6, stopDistance: 1.8 },
+  slam: { radius: 8, growTicks: 5 },
+  yinYang: { radius: 7, spinTicks: 14, pauseTicks: 4 }, // dois giros de 14 ticks
+  stagnation: {
+    lines: 5,
+    range: 40,
+    launchGapTicks: 2,
+    speed: 1.8,
+    lifeTicks: 45,
+    turn: 0.35, // o quanto a linha vira pro alvo a cada tick (teleguiada)
+    radius: 1.0,
+    paralysisTicks: 100, // 5s (nao foi especificado)
+    steal: 10, // % de awakening
+  },
+  absorb: { ticks: 200 }, // 10s
+};
+
+const UKITAKE_STORED = "mv:ukitake_stored"; // dano guardado pelo Absorb (vira o Hansha)
+const ukitakeAbsorb = new Map(); // id -> tick em que o Absorb acaba
+
+function ukitakeStoredOf(player) {
+  return Number(player.getDynamicProperty(UKITAKE_STORED) ?? 0);
+}
+
+// chamada pelo dealDamage: com o Absorb ativo o dano nao entra, fica guardado
+function absorbUkitakeDamage(target, amount) {
+  const end = ukitakeAbsorb.get(target.id);
+  if (end === undefined) return false;
+  if (system.currentTick >= end) {
+    ukitakeAbsorb.delete(target.id);
+    return false;
+  }
+  const total = ukitakeStoredOf(target) + amount;
+  try {
+    target.setDynamicProperty(UKITAKE_STORED, total);
+    const l = target.location;
+    for (let i = 0; i < 4; i++) {
+      target.dimension.spawnParticle("ukitake:energia", {
+        x: l.x + (Math.random() - 0.5) * 1.6,
+        y: l.y + 0.3 + Math.random() * 1.6,
+        z: l.z + (Math.random() - 0.5) * 1.6,
+      });
+    }
+    if (target.typeId === "minecraft:player") {
+      target.onScreenDisplay.setActionBar(`§bAbsorb: §f+${Math.round(amount)} §7(guardado: ${Math.round(total)})`);
+    }
+  } catch (e) {}
+  return true;
+}
+
+function showUkitakeSpark(entity) {
+  try {
+    const l = entity.location;
+    for (let i = 0; i < 4; i++) {
+      entity.dimension.spawnParticle(i % 2 === 0 ? "ukitake:hilo" : "ukitake:energia", {
+        x: l.x + (Math.random() - 0.5) * 0.9,
+        y: l.y + 0.4 + Math.random() * 1.2,
+        z: l.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+  } catch (e) {}
+}
+
+/* ---------- Throw 'n Pull ---------- */
+
+function castThrowPull(player) {
+  if (!tryUseSkill(player, "ukitake:throw_n_pull")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lThrow 'n Pull`);
+  ginPlaySound(player, "item.trident.throw", 1.3, 1.1);
+
+  const cfg = UKITAKE.throwPull;
+  const dim = player.dimension;
+  const hand0 = ginHandOf(player);
+  const dir = ginUnit(hand0, ginAimPoint(player, cfg.range));
+  const cache = new Map();
+  let pos = { ...hand0 };
+  let life = 0;
+
+  const interval = system.runInterval(() => {
+    life++;
+    try {
+      if (isDownOrGone(player)) {
+        system.clearRun(interval);
+        return;
+      }
+      const from = { ...pos };
+      const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
+      const hand = ginHandOf(player);
+
+      if (!ginBlockInfo(dim, cache, Math.floor(to.x), Math.floor(to.y), Math.floor(to.z)).passable) {
+        system.clearRun(interval);
+        return;
+      }
+      const [hit] = ginEntitiesOnSegment(player, from, to, cfg.radius, null);
+      if (hit) {
+        system.clearRun(interval);
+        ukitakePull(player, hit);
+        return;
+      }
+      pos = to;
+      ginDrawBlade(dim, [hand, to], 20, "ukitake:hilo", "ukitake:energia"); // a zanpakuto e a corrente
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (life >= Math.ceil(cfg.range / cfg.speed)) system.clearRun(interval);
+  }, 1);
+}
+
+function ukitakePull(player, target) {
+  const cfg = UKITAKE.throwPull;
+  if (isRespiring(target)) {
+    showRespiraGuard(target);
+    return;
+  }
+  dealDamage(target, DAMAGE.throwPull * dmgMultiplier(player), player);
+  showUkitakeSpark(target);
+  if (isIntocable(target)) return; // a guarda dele segura o puxao tambem
+
+  const dim = target.dimension;
+  const cache = new Map();
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (isDownOrGone(player) || isDownOrGone(target)) {
+        system.clearRun(interval);
+        return;
+      }
+      const p = player.location;
+      const t = target.location;
+      const dx = t.x - p.x;
+      const dz = t.z - p.z;
+      const len = Math.hypot(dx, dz) || 1;
+      // ponto colado no Ukitake (na direcao de onde o alvo veio)
+      const dest = { x: p.x + (dx / len) * cfg.stopDistance, y: p.y, z: p.z + (dz / len) * cfg.stopDistance };
+      const k = 1 / (cfg.pullTicks - tick + 1);
+      const next = { x: t.x + (dest.x - t.x) * k, y: t.y + (dest.y - t.y) * k, z: t.z + (dest.z - t.z) * k };
+      const fx = Math.floor(next.x);
+      const fy = Math.floor(next.y);
+      const fz = Math.floor(next.z);
+      if (ginBlockInfo(dim, cache, fx, fy, fz).passable && ginBlockInfo(dim, cache, fx, fy + 1, fz).passable) {
+        target.teleport(next);
+      }
+      ginDrawBlade(dim, [ginHandOf(player), ginBodyOf(target)], 14, "ukitake:hilo", "ukitake:energia");
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (tick >= cfg.pullTicks) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Double Slam ---------- */
+
+function castDoubleSlam(player) {
+  if (!tryUseSkill(player, "ukitake:double_slam")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lDouble Slam`);
+  ginPlaySound(player, "random.explode", 1.5, 0.8);
+
+  const cfg = UKITAKE.slam;
+  const dim = player.dimension;
+  const o = { ...player.location };
+  const hit = new Set();
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const r = (cfg.radius * tick) / cfg.growTicks;
+      if (tick === 1) {
+        for (let i = 0; i < 6; i++) {
+          dim.spawnParticle("ukitake:energia", { x: o.x + (Math.random() - 0.5) * 2, y: o.y + 0.3 + Math.random(), z: o.z + (Math.random() - 0.5) * 2 });
+        }
+      }
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        dim.spawnParticle("ukitake:onda", { x: o.x + Math.cos(a) * r, y: o.y + 0.3, z: o.z + Math.sin(a) * r });
+      }
+      // a onda da explosao acerta quem esta dentro do raio (uma vez)
+      for (const entity of dim.getEntities({ location: o, maxDistance: cfg.radius + 1 })) {
+        if (entity.id === player.id || hit.has(entity.id)) continue;
+        if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+        if (Math.hypot(entity.location.x - o.x, entity.location.z - o.z) > r + 0.5) continue;
+        if (Math.abs(entity.location.y - o.y) > 6) continue;
+        hit.add(entity.id);
+        dealDamage(entity, DAMAGE.doubleSlam * dmgMultiplier(player), player);
+        showUkitakeSpark(entity);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (tick >= cfg.growTicks) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Ying Yang: giro horario e depois anti-horario ---------- */
+
+function castYingYang(player) {
+  if (!tryUseSkill(player, "ukitake:ying_yang")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lYing Yang`);
+  ginPlaySound(player, "item.trident.throw", 1.3, 0.8);
+
+  const cfg = UKITAKE.yinYang;
+  const dim = player.dimension;
+  const sweep = (Math.PI * 2) / cfg.spinTicks;
+  const view = forwardDirection(player);
+  let angle = Math.atan2(view.z, view.x);
+  const spins = [
+    { sign: 1, hit: new Set() }, // horario (visto de cima)
+    { sign: -1, hit: new Set() }, // anti-horario
+  ];
+  const total = cfg.spinTicks * 2 + cfg.pauseTicks;
+  let tick = 0;
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (isDownOrGone(player) || getActiveCharacter(player)?.id !== "ukitake") {
+        system.clearRun(interval);
+        return;
+      }
+      let spin;
+      if (tick <= cfg.spinTicks) spin = spins[0];
+      else if (tick > cfg.spinTicks + cfg.pauseTicks) spin = spins[1];
+      if (spin) {
+        angle += spin.sign * sweep;
+        const hand = ginHandOf(player);
+        // duas zanpakutos, uma de cada lado
+        for (const arm of [0, Math.PI]) {
+          const a = angle + arm;
+          ginDrawBlade(dim, [hand, { x: hand.x + Math.cos(a) * cfg.radius, y: hand.y, z: hand.z + Math.sin(a) * cfg.radius }], 12, "ukitake:hilo", "ukitake:energia");
+        }
+        for (const entity of dim.getEntities({ location: hand, maxDistance: cfg.radius + 2 })) {
+          if (entity.id === player.id || spin.hit.has(entity.id)) continue;
+          if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+          const loc = entity.location;
+          if (hand.y < loc.y - 0.3 || hand.y > loc.y + 2.0) continue;
+          const dx = loc.x - hand.x;
+          const dz = loc.z - hand.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist > cfg.radius + 0.5) continue;
+          const facing = Math.atan2(dz, dx);
+          const slack = dist < 0.4 ? Math.PI : Math.atan2(0.6, dist);
+          let swept = false;
+          for (const arm of [0, Math.PI]) {
+            const passed = spin.sign * angleDiff(angle + arm, facing);
+            if (passed >= -slack && passed <= sweep + slack) swept = true;
+          }
+          if (!swept) continue;
+          spin.hit.add(entity.id);
+          dealDamage(entity, DAMAGE.yingYang * dmgMultiplier(player), player);
+          showUkitakeSpark(entity);
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (tick >= total) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Stagnation ---------- */
+
+function castStagnation(player) {
+  const cfg = UKITAKE.stagnation;
+  const target = ginNearestTarget(player, ginHandOf(player), cfg.range);
+  if (!target) {
+    player.sendMessage("§7Não tem ninguém por perto.");
+    return;
+  }
+  if (!tryUseSkill(player, "ukitake:stagnation")) return;
+
+  world.sendMessage(`§b${player.name}: §f§lStagnation §7(${nameOf(target)})`);
+  ginPlaySound(player, "item.trident.throw", 1.0, 1.7);
+
+  const dim = player.dimension;
+  const cache = new Map();
+  let landed = false;
+
+  for (let n = 0; n < cfg.lines; n++) {
+    system.runTimeout(() => {
+      try {
+        if (isDownOrGone(player)) return;
+        const hand = ginHandOf(player);
+        const view = player.getViewDirection();
+        // sai em leque e depois vira pro alvo
+        let dir = ginUnit({ x: 0, y: 0, z: 0 }, {
+          x: view.x + (Math.random() - 0.5) * 1.2,
+          y: view.y + (Math.random() - 0.3) * 0.8,
+          z: view.z + (Math.random() - 0.5) * 1.2,
+        });
+        let pos = { ...hand };
+        let life = 0;
+        const interval = system.runInterval(() => {
+          life++;
+          try {
+            if (isDownOrGone(target)) {
+              system.clearRun(interval);
+              return;
+            }
+            const goal = ginUnit(pos, ginBodyOf(target));
+            dir = ginUnit({ x: 0, y: 0, z: 0 }, {
+              x: dir.x * (1 - cfg.turn) + goal.x * cfg.turn,
+              y: dir.y * (1 - cfg.turn) + goal.y * cfg.turn,
+              z: dir.z * (1 - cfg.turn) + goal.z * cfg.turn,
+            });
+            const from = { ...pos };
+            const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
+            if (!ginBlockInfo(dim, cache, Math.floor(to.x), Math.floor(to.y), Math.floor(to.z)).passable) {
+              system.clearRun(interval);
+              return;
+            }
+            const reach = ginBodyReach(target, from, to);
+            if (reach.dist <= cfg.radius) {
+              system.clearRun(interval);
+              if (!landed) {
+                landed = true;
+                ukitakeStagnate(player, target);
+              }
+              return;
+            }
+            pos = to;
+            ginDrawBlade(dim, [from, to], 6, "ukitake:hilo", "ukitake:energia");
+          } catch (e) {
+            system.clearRun(interval);
+            return;
+          }
+          if (life >= cfg.lifeTicks) system.clearRun(interval);
+        }, 1);
+      } catch (e) {}
+    }, n * cfg.launchGapTicks);
+  }
+}
+
+function ukitakeStagnate(player, target) {
+  const cfg = UKITAKE.stagnation;
+  if (isRespiring(target)) {
+    showRespiraGuard(target);
+    return;
+  }
+  if (isIntocable(target)) return;
+  paralyzeFor(target, cfg.paralysisTicks, "§b❄ As linhas te prenderam: você está paralisado!");
+  showUkitakeSpark(target);
+
+  // suga 10% do awakening do alvo e passa pro Ukitake
+  if (target.typeId === "minecraft:player") {
+    const cur = getAwakening(target);
+    const stolen = Math.min(cfg.steal, cur);
+    if (stolen > 0) {
+      target.setDynamicProperty(DP.awakening, cur - stolen);
+      player.setDynamicProperty(DP.awakening, Math.min(100, getAwakening(player) + stolen));
+      player.sendMessage(`§bSugou §f${stolen}%§b de awakening de ${nameOf(target)}!`);
+    }
+  }
+}
+
+/* ---------- Absorb ---------- */
+
+function castAbsorb(player) {
+  if (!tryUseSkill(player, "ukitake:absorb")) return;
+
+  const cfg = UKITAKE.absorb;
+  world.sendMessage(`§b${player.name}: §f§lAbsorb`);
+  ginPlaySound(player, "beacon.activate", 1.2, 1.6);
+
+  const end = system.currentTick + cfg.ticks;
+  ukitakeAbsorb.set(player.id, end);
+  const interval = system.runInterval(() => {
+    try {
+      if (isDownOrGone(player) || system.currentTick >= end || ukitakeAbsorb.get(player.id) !== end) {
+        system.clearRun(interval);
+        if (ukitakeAbsorb.get(player.id) === end) ukitakeAbsorb.delete(player.id);
+        if (!isDownOrGone(player)) player.sendMessage(`§bAbsorb acabou. §7Dano guardado pro Hansha: §f${Math.round(ukitakeStoredOf(player))}`);
+        return;
+      }
+      const l = player.location;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + system.currentTick * 0.15;
+        player.dimension.spawnParticle("ukitake:energia", { x: l.x + Math.cos(a) * 1.4, y: l.y + 1 + Math.sin(a * 2) * 0.6, z: l.z + Math.sin(a) * 1.4 });
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 4);
+}
+
+/* ---------- Awk: Hansha (super, gatilho: agachar + m1 com o medidor em 100%) ---------- */
+
+function tryTriggerHansha(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+  const stored = ukitakeStoredOf(player);
+  if (stored <= 0) {
+    player.sendMessage("§7Nenhum dano guardado: use o Absorb antes do Hansha.");
+    return false;
+  }
+
+  player.setDynamicProperty(DP.awakening, 0);
+  player.setDynamicProperty(UKITAKE_STORED, 0);
+  world.sendMessage(`§b§lAWK: HANSHA §r§7- ${player.name} devolve §f${Math.round(stored)}§7 de dano!`);
+  ginPlaySound(player, "beacon.activate", 2, 1.4);
+
+  const cfg = RUKIA.hado; // mesma rajada larga do Hadō (alcance e espessura)
+  const dim = player.dimension;
+  const hand = ginHandOf(player);
+  const dir = ginUnit(hand, ginAimPoint(player, cfg.range));
+  const cache = new Map();
+  let length = cfg.range;
+  for (let d = 1; d <= cfg.range; d += 0.5) {
+    if (!ginBlockInfo(dim, cache, Math.floor(hand.x + dir.x * d), Math.floor(hand.y + dir.y * d), Math.floor(hand.z + dir.z * d)).passable) {
+      length = Math.max(0, d - 0.5);
+      break;
+    }
+  }
+  const hit = new Set();
+  const attackTicks = cfg.extendTicks + cfg.holdTicks;
+  const total = attackTicks + cfg.fadeTicks;
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const reach = tick <= cfg.extendTicks ? (length * tick) / cfg.extendTicks : length;
+      const start = ginHandOf(player);
+      const tip = { x: start.x + dir.x * reach, y: start.y + dir.y * reach, z: start.z + dir.z * reach };
+      ginDrawBlade(dim, [start, tip], 26, "ukitake:energia", "ukitake:energia");
+      if (tick <= attackTicks) {
+        for (const entity of ginEntitiesOnSegment(player, start, tip, cfg.radius, hit)) {
+          hit.add(entity.id);
+          if (isRespiring(entity)) {
+            showRespiraGuard(entity);
+            continue;
+          }
+          dealDamage(entity, stored, player);
+          showUkitakeSpark(entity);
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (tick >= total) system.clearRun(interval);
+  }, 1);
+  return true;
+}
+
+/* ---------------------------------------------------------
+   Kaname Tōsen (Tier 3) - Suzumushi / Enma Kōrogi
+   Individualidade: cegueira permanente (aplicada em applyCharacterEffects).
+   As skills funcionam "no escuro": area ao redor, laminas teleguiadas, avanco
+   que acha quem estiver na frente.
+   --------------------------------------------------------- */
+
+const TOSEN = {
+  nake: { radius: 12, growTicks: 5, paralysisTicks: 120 }, // 6s
+  benihiko: { blades: 6, launchGapTicks: 2, speed: 2.0, lifeTicks: 50, turn: 0.35, radius: 1.0, nauseaTicks: 120, range: 40 },
+  hado88: { radius: 15, flashTicks: 8, bolts: 5, damageDelayTicks: 4 },
+  silentCut: { distance: 14, touchRadius: 1.4, stopBefore: 1.0 },
+  enma: {
+    radius: 20, // esfera "enorme"
+    buildTicks: 10, // a esfera sobe de baixo pra cima
+    durationTicks: 600, // 30s
+    blindEvery: 20,
+    lineEvery: 5,
+    lineHeight: 6,
+  },
+};
+
+// Visored (forma alternativa): NAO usa o medidor de awakening. Ativa
+// carregando agachado com a Suzumushi base por 5s e depois usando ela.
+// Enquanto ativo continua com a cegueira da individualidade (igual a forma
+// base), so ganha a cura por segundo e a mascara.
+const TOSEN_VISORED = {
+  chargeTicksNeeded: 100, // 5s
+  health: 2000,
+  healPerInterval: { amount: 10, ticks: 20 }, // 10 de vida a cada 1s
+  items: {
+    0: "tosen:m1_visored",
+    1: "tosen:palacio_de_las_espadas",
+    2: "tosen:ecolocalizacion",
+    3: "tosen:cero",
+    4: "tosen:los_nueve_aspectos",
+  },
+  palacio: { swords: 8, range: 22, gapTicks: 4, radius: 6 },
+  eco: { radius: 30, durationTicks: 100, lineEvery: 4 }, // 5s
+  cero: { radius: 1.6, range: 45, speed: 2.3 },
+  nueve: { radius: 12, attacks: 10, gapTicks: 6 },
+};
+
+const tosenVisoredCharge = new Map(); // playerId -> ticks segurando
+const tosenVisoredReady = new Set(); // playerId com a mascara pronta pra ativar
+const tosenOldHelmet = new Map(); // playerId -> item que estava no capacete antes da mascara
+
+function resetTosenVisoredCharge(player) {
+  tosenVisoredCharge.delete(player.id);
+  tosenVisoredReady.delete(player.id);
+}
+
+function resetTosenVisoredChargeId(playerId) {
+  tosenVisoredCharge.delete(playerId);
+  tosenVisoredReady.delete(playerId);
+}
+
+function isTosenVisored(player) {
+  try {
+    return getActiveCharacter(player)?.id === "tosen" && !!player.getDynamicProperty(DP.tosenVisored);
+  } catch (e) {
+    return false;
+  }
+}
+
+function activateTosenVisored(player, character) {
+  player.setDynamicProperty(DP.tosenVisored, true);
+
+  applyCharacterEffects(player, TOSEN_VISORED.health, BASE_SPEED_AMPLIFIER);
+
+  const inv = getInv(player);
+  for (const slot in TOSEN_VISORED.items) {
+    inv.setItem(Number(slot), new ItemStack(TOSEN_VISORED.items[slot], 1));
+  }
+
+  system.runTimeout(() => healToMax(player, cutHealthFor(player, TOSEN_VISORED.health)), 2);
+
+  try {
+    const equip = player.getComponent("minecraft:equippable");
+    if (equip) {
+      tosenOldHelmet.set(player.id, equip.getEquipment(EquipmentSlot.Head));
+      equip.setEquipment(EquipmentSlot.Head, new ItemStack("shinji:mask_visual", 1));
+    }
+  } catch (e) {}
+
+  world.sendMessage(`§8§l${player.name} despertou: Visored!`);
+  player.sendMessage("§8§lA máscara tomou seu rosto. §r§7Você é agora o Tōsen Visored.");
+  try {
+    player.dimension.playSound("mob.wither.spawn", player.location, { volume: 1.4, pitch: 1.3 });
+  } catch (e) {}
+}
+
+function deactivateTosenVisored(player, reason) {
+  if (!isTosenVisored(player)) return;
+  const character = getActiveCharacter(player);
+  if (!character) return;
+
+  player.setDynamicProperty(DP.tosenVisored, false);
+
+  const hpBefore = player.getComponent("minecraft:health");
+  const previousHealth = hpBefore ? hpBefore.currentValue : character.health;
+
+  applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
+
+  const inv = getInv(player);
+  for (const slot in character.items) {
+    inv.setItem(Number(slot), new ItemStack(character.items[slot], 1));
+  }
+
+  try {
+    const equip = player.getComponent("minecraft:equippable");
+    if (equip) equip.setEquipment(EquipmentSlot.Head, tosenOldHelmet.get(player.id));
+  } catch (e) {}
+  tosenOldHelmet.delete(player.id);
+
+  system.runTimeout(() => {
+    const hp = player.getComponent("minecraft:health");
+    if (hp) hp.setCurrentValue(Math.min(previousHealth, realMaxHealthFor(character.health)));
+  }, 2);
+
+  player.sendMessage(
+    reason === "manual"
+      ? "§7Você tirou a máscara. Voltando à Suzumushi normal."
+      : "§7O Visored acabou. Voltando à Suzumushi normal."
+  );
+}
+
+const tosenEnma = new Map(); // id do Tosen -> { until }
+
+function isTosenPlayer(entity) {
+  try {
+    return entity.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === "tosen";
+  } catch (e) {
+    return false;
+  }
+}
+
+// particula que so o Tosen enxerga (o wall hack); se a API nao tiver, cai na normal
+function tosenSee(player, name, loc) {
+  try {
+    if (typeof player.spawnParticle === "function") player.spawnParticle(name, loc);
+    else player.dimension.spawnParticle(name, loc);
+  } catch (e) {}
+}
+
+function showTosenSpark(entity) {
+  try {
+    const l = entity.location;
+    for (let i = 0; i < 4; i++) {
+      entity.dimension.spawnParticle(i % 2 === 0 ? "tosen:corte" : "tosen:rayo", {
+        x: l.x + (Math.random() - 0.5) * 0.9,
+        y: l.y + 0.4 + Math.random() * 1.2,
+        z: l.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+  } catch (e) {}
+}
+
+/* ---------- Nake ---------- */
+
+function castNake(player) {
+  if (!tryUseSkill(player, "tosen:nake")) return;
+
+  world.sendMessage(`§5${player.name}: §f§lNake`);
+  ginPlaySound(player, "note.bell", 3, 2);
+
+  const cfg = TOSEN.nake;
+  const dim = player.dimension;
+  const o = { ...player.location };
+  const hit = new Set();
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      const r = (cfg.radius * tick) / cfg.growTicks;
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        dim.spawnParticle("tosen:onda", { x: o.x + Math.cos(a) * r, y: o.y + 1, z: o.z + Math.sin(a) * r });
+      }
+      // o som incapacita quem esta dentro do raio: dano e paralisia de 6s
+      for (const entity of dim.getEntities({ location: o, maxDistance: cfg.radius + 1 })) {
+        if (entity.id === player.id || hit.has(entity.id)) continue;
+        if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+        if (Math.hypot(entity.location.x - o.x, entity.location.z - o.z) > r + 0.5) continue;
+        if (Math.abs(entity.location.y - o.y) > 6) continue;
+        hit.add(entity.id);
+        dealDamage(entity, DAMAGE.nake * dmgMultiplier(player), player);
+        showTosenSpark(entity);
+        if (!isDownOrGone(entity) && !isIntocable(entity)) {
+          paralyzeFor(entity, cfg.paralysisTicks, "§5♪ O som te incapacitou por 6s!");
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (tick >= cfg.growTicks) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Benihikō ---------- */
+
+function castBenihiko(player) {
+  const cfg = TOSEN.benihiko;
+  const target = ginNearestTarget(player, ginHandOf(player), cfg.range);
+  if (!target) {
+    player.sendMessage("§7Não tem ninguém por perto.");
+    return;
+  }
+  if (!tryUseSkill(player, "tosen:benihiko")) return;
+
+  world.sendMessage(`§5${player.name}: §f§lBenihikō`);
+  ginPlaySound(player, "random.orb", 2, 0.6);
+
+  const dim = player.dimension;
+  const cache = new Map();
+  const perBlade = DAMAGE.benihiko / cfg.blades; // os 250 se dividem entre as laminas
+
+  for (let n = 0; n < cfg.blades; n++) {
+    system.runTimeout(() => {
+      try {
+        if (isDownOrGone(player)) return;
+        const hand = ginHandOf(player);
+        const view = player.getViewDirection();
+        // sai em leque e depois vira pro alvo (teleguiada)
+        let dir = ginUnit(
+          { x: 0, y: 0, z: 0 },
+          {
+            x: view.x + (Math.random() - 0.5) * 1.4,
+            y: view.y + (Math.random() - 0.2) * 0.9,
+            z: view.z + (Math.random() - 0.5) * 1.4,
+          }
+        );
+        let pos = { ...hand };
+        let life = 0;
+        const interval = system.runInterval(() => {
+          life++;
+          try {
+            if (isDownOrGone(target)) {
+              system.clearRun(interval);
+              return;
+            }
+            const goal = ginUnit(pos, ginBodyOf(target));
+            dir = ginUnit(
+              { x: 0, y: 0, z: 0 },
+              {
+                x: dir.x * (1 - cfg.turn) + goal.x * cfg.turn,
+                y: dir.y * (1 - cfg.turn) + goal.y * cfg.turn,
+                z: dir.z * (1 - cfg.turn) + goal.z * cfg.turn,
+              }
+            );
+            const from = { ...pos };
+            const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
+            if (!ginBlockInfo(dim, cache, Math.floor(to.x), Math.floor(to.y), Math.floor(to.z)).passable) {
+              system.clearRun(interval);
+              return;
+            }
+            if (ginBodyReach(target, from, to).dist <= cfg.radius) {
+              system.clearRun(interval);
+              if (isRespiring(target)) {
+                showRespiraGuard(target);
+                return;
+              }
+              dealDamage(target, perBlade * dmgMultiplier(player), player);
+              showTosenSpark(target);
+              if (!isDownOrGone(target) && !isIntocable(target)) {
+                try {
+                  target.addEffect("nausea", cfg.nauseaTicks, { amplifier: 0, showParticles: false });
+                } catch (e) {}
+              }
+              return;
+            }
+            pos = to;
+            ginDrawBlade(dim, [from, to], 5, "tosen:lamina", "tosen:lamina");
+          } catch (e) {
+            system.clearRun(interval);
+            return;
+          }
+          if (life >= cfg.lifeTicks) system.clearRun(interval);
+        }, 1);
+      } catch (e) {}
+    }, n * cfg.launchGapTicks);
+  }
+}
+
+/* ---------- Hadō #88: Hiryū Gekizoku Shinten Raihō ---------- */
+
+function castHado88(player) {
+  if (!tryUseSkill(player, "tosen:hado_88")) return;
+
+  world.sendMessage(`§e${player.name}: §f§lHadō #88: Hiryū Gekizoku Shinten Raihō`);
+  ginPlaySound(player, "ambient.weather.thunder", 3, 0.8);
+
+  const cfg = TOSEN.hado88;
+  const dim = player.dimension;
+  const o = { ...player.location };
+  const hit = new Set();
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      // raios em zigue-zague partindo do centro
+      for (let b = 0; b < cfg.bolts; b++) {
+        const a = Math.random() * Math.PI * 2;
+        const elev = (Math.random() - 0.3) * 0.9;
+        const len = cfg.radius * (0.6 + Math.random() * 0.4);
+        const dx = Math.cos(a);
+        const dz = Math.sin(a);
+        for (let d = 0; d <= len; d += 1.4) {
+          dim.spawnParticle("tosen:rayo", {
+            x: o.x + dx * d + (Math.random() - 0.5) * 0.9,
+            y: o.y + 1 + elev * d + (Math.random() - 0.5) * 0.9,
+            z: o.z + dz * d + (Math.random() - 0.5) * 0.9,
+          });
+        }
+      }
+      dim.spawnParticle("tosen:rayo", { x: o.x, y: o.y + 1, z: o.z });
+
+      // a descarga acerta todo mundo no raio (uma vez)
+      if (tick === cfg.damageDelayTicks) {
+        for (const entity of dim.getEntities({ location: o, maxDistance: cfg.radius + 1 })) {
+          if (entity.id === player.id || hit.has(entity.id)) continue;
+          if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+          if (Math.hypot(entity.location.x - o.x, entity.location.z - o.z) > cfg.radius) continue;
+          if (Math.abs(entity.location.y - o.y) > 8) continue;
+          hit.add(entity.id);
+          dealDamage(entity, DAMAGE.hado88 * dmgMultiplier(player), player);
+          showTosenSpark(entity);
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (tick >= cfg.flashTicks) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Silent Cut ---------- */
+
+function tosenDashEnd(player, dir, maxDist) {
+  const dim = player.dimension;
+  const start = player.location;
+  const cache = new Map();
+  let last = { x: start.x, y: start.y, z: start.z };
+  for (let d = 0.5; d <= maxDist; d += 0.5) {
+    const p = { x: start.x + dir.x * d, y: start.y + dir.y * d, z: start.z + dir.z * d };
+    const fx = Math.floor(p.x);
+    const fy = Math.floor(p.y);
+    const fz = Math.floor(p.z);
+    if (!ginBlockInfo(dim, cache, fx, fy, fz).passable || !ginBlockInfo(dim, cache, fx, fy + 1, fz).passable) break;
+    last = p;
+  }
+  return last;
+}
+
+function castSilentCut(player) {
+  if (!tryUseSkill(player, "tosen:silent_cut")) return; // o cooldown corre mesmo se nao achar ninguem
+
+  const cfg = TOSEN.silentCut;
+  world.sendMessage(`§5${player.name}: §f§lSilent Cut`);
+  const dim = player.dimension;
+  const from = { ...player.location };
+  const v = player.getViewDirection();
+  const y = Math.max(-0.5, Math.min(0.5, v.y));
+  const h = Math.hypot(v.x, v.z) || 1;
+  const k = Math.sqrt(Math.max(0, 1 - y * y)) / h;
+  const dir = { x: v.x * k, y, z: v.z * k };
+
+  let end = tosenDashEnd(player, dir, cfg.distance);
+  const a = { x: from.x, y: from.y + 1, z: from.z };
+  const b = { x: end.x, y: end.y + 1, z: end.z };
+  const [target] = ginEntitiesOnSegment(player, a, b, cfg.touchRadius, null);
+  if (target) {
+    // o avanco para colado em quem esta no caminho
+    const reach = ginBodyReach(target, a, b);
+    const total = ginDist(from, end) || 1;
+    const stop = Math.max(0, reach.t * total - cfg.stopBefore);
+    end = { x: from.x + ((end.x - from.x) * stop) / total, y: end.y, z: from.z + ((end.z - from.z) * stop) / total };
+  }
+  try {
+    player.teleport(end);
+  } catch (e) {}
+  for (let d = 0; d <= ginDist(from, end); d += 1) {
+    const t = ginDist(from, end) ? d / ginDist(from, end) : 0;
+    try {
+      dim.spawnParticle("tosen:corte", { x: from.x + (end.x - from.x) * t, y: from.y + 1, z: from.z + (end.z - from.z) * t });
+    } catch (e) {
+      break;
+    }
+  }
+  ginPlaySound(player, "item.trident.throw", 1.2, 1.9);
+  if (!target) return; // so ficou em cooldown
+
+  const grimm = target.typeId === "minecraft:player" && getActiveCharacter(target)?.id === "grimmjow";
+  dealDamage(target, (grimm ? DAMAGE.silentCutGrimmjow : DAMAGE.silentCut) * dmgMultiplier(player), player);
+  showTosenSpark(target);
+  if (grimm) world.sendMessage(`<${target.name}> AIIII MEU BRAÇO FDP`);
+}
+
+/* ---------- Visored: Palacio de las Espadas ---------- */
+
+// 8 espadas gigantes convergem no alvo mais proximo, uma a uma, cada uma
+// causando dano + um pulso de onda sonora que paralisa por um instante.
+function castPalacioDeLasEspadas(player) {
+  if (!tryUseSkill(player, "tosen:palacio_de_las_espadas")) return;
+
+  const cfg = TOSEN_VISORED.palacio;
+  const target = nearestTarget(player, cfg.range);
+  world.sendMessage(`§8${player.name}: §f§lPalacio de las Espadas`);
+  ginPlaySound(player, "mob.wither.shoot", 1.4, 0.8);
+
+  if (!target) return; // so ficou em cooldown
+
+  const dim = player.dimension;
+  let sword = 0;
+  const interval = system.runInterval(() => {
+    try {
+      if (isDownOrGone(player) || !isTosenVisored(player) || isDownOrGone(target)) {
+        system.clearRun(interval);
+        return;
+      }
+      const angle = Math.random() * Math.PI * 2;
+      const start = {
+        x: target.location.x + Math.cos(angle) * 8,
+        y: target.location.y + 5 + Math.random() * 3,
+        z: target.location.z + Math.sin(angle) * 8,
+      };
+      const tip = { x: target.location.x, y: target.location.y + 1, z: target.location.z };
+      ginDrawBlade(dim, [start, tip], 6, "tosen:lamina", "tosen:lamina");
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2;
+        dim.spawnParticle("tosen:onda", {
+          x: tip.x + Math.cos(a) * cfg.radius * 0.5,
+          y: tip.y,
+          z: tip.z + Math.sin(a) * cfg.radius * 0.5,
+        });
+      }
+      if (!isDownOrGone(target)) {
+        dealDamage(target, DAMAGE.tosenPalacio * dmgMultiplier(player), player);
+        showTosenSpark(target);
+        if (!isIntocable(target)) paralyzeFor(target, 20, "§8As ondas sonoras te paralisaram!");
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    sword++;
+    if (sword >= cfg.swords) system.clearRun(interval);
+  }, cfg.gapTicks);
+}
+
+/* ---------- Visored: Ecolocalización ---------- */
+
+// marca todo player ao redor com wall hack literal (o Tosen ve mesmo atraves
+// de paredes) por alguns segundos.
+function castEcolocalizacion(player) {
+  if (!tryUseSkill(player, "tosen:ecolocalizacion")) return;
+
+  const cfg = TOSEN_VISORED.eco;
+  world.sendMessage(`§8${player.name}: §f§lEcolocalización`);
+  ginPlaySound(player, "note.bell", 2, 1.8);
+  try {
+    player.dimension.spawnParticle("tosen:onda", { x: player.location.x, y: player.location.y + 1, z: player.location.z });
+  } catch (e) {}
+
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick += cfg.lineEvery;
+    try {
+      if (isDownOrGone(player) || !isTosenVisored(player) || tick >= cfg.durationTicks) {
+        system.clearRun(interval);
+        return;
+      }
+      for (const p of player.dimension.getPlayers({ location: player.location, maxDistance: cfg.radius })) {
+        if (p.id === player.id || isDownOrGone(p)) continue;
+        const l = p.location;
+        for (let h = 0; h < 3; h++) {
+          tosenSee(player, "tosen:rayo", { x: l.x, y: l.y + h, z: l.z });
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, cfg.lineEvery);
+}
+
+/* ---------- Visored: Cero ---------- */
+
+function castTosenCero(player) {
+  if (!tryUseSkill(player, "tosen:cero")) return;
+
+  const cfg = TOSEN_VISORED.cero;
+  world.sendMessage(`§8${player.name}: §f§lCero`);
+  ginPlaySound(player, "mob.wither.shoot", 1.6, 1.1);
+
+  fireEnergySphere(player, {
+    radius: cfg.radius,
+    range: cfg.range,
+    speed: cfg.speed,
+    damage: DAMAGE.tosenCero,
+    particle: "vizard:cero",
+  });
+}
+
+/* ---------- Visored: Los Nueve Aspectos ---------- */
+
+// 10 cortes omnidirecionais em area, um a um, acertando todo mundo perto
+// (menos o Tosen) a cada pulso.
+function castLosNueveAspectos(player) {
+  if (!tryUseSkill(player, "tosen:los_nueve_aspectos")) return;
+
+  const cfg = TOSEN_VISORED.nueve;
+  world.sendMessage(`§8${player.name}: §f§lLos Nueve Aspectos`);
+  ginPlaySound(player, "mob.wither.spawn", 1.5, 1.4);
+
+  const dim = player.dimension;
+  const o = { ...player.location };
+  let attack = 0;
+  const interval = system.runInterval(() => {
+    try {
+      if (isDownOrGone(player) || !isTosenVisored(player)) {
+        system.clearRun(interval);
+        return;
+      }
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + attack * 0.3;
+        for (let r = 1; r <= cfg.radius; r += 2) {
+          dim.spawnParticle("tosen:corte", { x: o.x + Math.cos(a) * r, y: o.y + 1, z: o.z + Math.sin(a) * r });
+        }
+      }
+      for (const entity of dim.getEntities({ location: o, maxDistance: cfg.radius })) {
+        if (entity.id === player.id || isDownOrGone(entity)) continue;
+        if (!entity.getComponent("minecraft:health")) continue;
+        dealDamage(entity, DAMAGE.tosenNueveAspectos * dmgMultiplier(player), player);
+        showTosenSpark(entity);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    attack++;
+    if (attack >= cfg.attacks) system.clearRun(interval);
+  }, cfg.gapTicks);
+}
+
+/* ---------- Awk-Bankai: Suzukushi Tsuishiki: Enma Kōrogi (super) ---------- */
+
+// as particulas do wall hack: uma coluna em cima de cada um dentro da esfera, so o Tosen ve
+function tosenDrawLines(tosen, center, cfg) {
+  for (const entity of tosen.dimension.getEntities({ location: center, maxDistance: cfg.radius })) {
+    if (entity.id === tosen.id) continue;
+    if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+    const l = entity.location;
+    for (let h = 0; h <= cfg.lineHeight; h += 0.75) {
+      tosenSee(tosen, "tosen:rayo", { x: l.x, y: l.y + h, z: l.z });
+    }
+  }
+}
+
+function runEnma(player) {
+  const cfg = TOSEN.enma;
+  const dim = player.dimension;
+  const center = { ...player.location };
+  const R = cfg.radius;
+  const ledger = iceTrack([]);
+  const state = { until: system.currentTick + cfg.durationTicks };
+  tosenEnma.set(player.id, state);
+
+  world.sendMessage(`§0§lBANKAI: Suzukushi Tsuishiki: Enma Kōrogi §r§7- ${player.name}`);
+  ginPlaySound(player, "mob.wither.spawn", 2, 0.6);
+
+  // ele "ve" pelas linhas: a cegueira da individualidade sai enquanto a esfera existe
+  try {
+    player.removeEffect("blindness");
+  } catch (e) {}
+
+  // a casca da esfera (espessura ~1,5), de baixo pra cima; so troca celula sem bloco
+  const cells = [];
+  const cx = Math.floor(center.x);
+  const cy = Math.floor(center.y);
+  const cz = Math.floor(center.z);
+  for (let dx = -R - 1; dx <= R + 1; dx++) {
+    for (let dy = -R - 1; dy <= R + 1; dy++) {
+      for (let dz = -R - 1; dz <= R + 1; dz++) {
+        const d = Math.hypot(dx + 0.5, dy + 0.5, dz + 0.5);
+        if (d >= R - 1.0 && d <= R + 0.5) cells.push([cx + dx, cy + dy, cz + dz]);
+      }
+    }
+  }
+  cells.sort((a, b) => a[1] - b[1]);
+  const perTick = Math.max(1, Math.ceil(cells.length / cfg.buildTicks));
+  const cache = new Map();
+  let idx = 0;
+  let tick = 0;
+
+  const finish = () => {
+    system.clearRun(interval);
+    iceRestore(ledger); // a esfera some (volta o que estava ali)
+    tosenEnma.delete(player.id);
+    for (const p of dim.getPlayers({ location: center, maxDistance: R + 10 })) {
+      try {
+        if (p.id !== player.id) p.removeEffect("blindness");
+      } catch (e) {}
+    }
+    try {
+      if (isTosenPlayer(player)) {
+        setPermanentEffect(player, "blindness", 0);
+        player.sendMessage("§7A esfera se desfez e a escuridão voltou só pra você.");
+      }
+    } catch (e) {}
+    world.sendMessage("§8A esfera negra desapareceu.");
+  };
+
+  const interval = system.runInterval(() => {
+    tick++;
+    try {
+      if (isDownOrGone(player) || !isTosenPlayer(player) || system.currentTick >= state.until) {
+        finish();
+        return;
+      }
+      for (let n = 0; n < perTick && idx < cells.length; n++, idx++) {
+        const [x, y, z] = cells[idx];
+        if (ginBlockInfo(dim, cache, x, y, z).passable) iceSet(ledger, dim, x, y, z, "minecraft:black_concrete");
+      }
+      // todos la dentro ficam sem visao
+      if (tick % cfg.blindEvery === 1) {
+        for (const p of dim.getPlayers({ location: center, maxDistance: R })) {
+          if (p.id === player.id || isDownOrGone(p)) continue;
+          p.addEffect("blindness", cfg.blindEvery * 3, { amplifier: 0, showParticles: false });
+        }
+      }
+      if (tick % cfg.lineEvery === 0) tosenDrawLines(player, center, cfg);
+    } catch (e) {
+      finish();
+    }
+  }, 1);
+}
+
+function tryTriggerEnma(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+  if (tosenEnma.has(player.id)) return false;
+
+  player.setDynamicProperty(DP.awakening, 0);
+  runEnma(player);
+  return true;
+}
+
 /* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
 // registro generico de armas m1 - facilita adicionar novos personagens
 const MELEE_WEAPONS = {
+  "shinji:m1_sakanade": {
+    baseDamage: 75,
+    particle: "shinji:gold",
+    dot: null,
+    animation: "slash",
+  },
   "ichigo:m1_zangetsu": {
     baseDamage: DAMAGE.m1,
     particle: "minecraft:crit_particle",
@@ -7288,16 +14036,26 @@ const MELEE_WEAPONS = {
     particle: "ulquiorra:oscuras",
     dot: null,
   },
+  "aaroniero:m1": {
+    baseDamage: DAMAGE.aaronieroM1,
+    particle: "mayuri:poison_fog",
+    dot: null,
+  },
+  "aaroniero:m1_glotoneria": {
+    baseDamage: DAMAGE.aaronieroAwkM1,
+    particle: "mayuri:poison_fog",
+    dot: null,
+  },
   "mayuri:m1_ashisogi_jizo": {
     baseDamage: DAMAGE.mayuriM1,
     particle: "mayuri:poison_fog",
     dot: null,
-    // a cada 3 acertos a lamina "corta os tendoes" e derruba a velocidade
+    // a cada 5 acertos a lamina "corta os tendoes"
     combo: {
-      everyHits: 3,
+      everyHits: 5,
       effect: "slowness",
-      amplifier: 0, // slowness 1
-      durationTicks: 60, // 3s
+      amplifier: 1, // Lentidão II
+      durationTicks: 20, // 1s
       message: "§5Ashisogi Jizō cortou os tendões!",
     },
   },
@@ -7365,6 +14123,56 @@ const MELEE_WEAPONS = {
     particle: "grimmjow:cero",
     dot: null,
   },
+  "nnoitra:m1_zanpakuto": {
+    baseDamage: DAMAGE.nnoitraM1,
+    particle: "nnoitra:corte",
+    dot: null,
+  },
+  "gin:m1_shinso": {
+    baseDamage: DAMAGE.ginM1,
+    particle: "gin:lamina",
+    dot: null,
+  },
+  "hitsugaya:m1_hyorinmaru": {
+    baseDamage: DAMAGE.hitsugayaM1,
+    particle: "hitsugaya:gelo",
+    dot: null,
+  },
+  "hitsugaya:m1_daiguren": {
+    baseDamage: DAMAGE.hitsugayaBankaiM1,
+    particle: "hitsugaya:gelo",
+    dot: null,
+  },
+  "shunsui:m1_katen_kyokotsu": {
+    baseDamage: DAMAGE.shunsuiM1,
+    particle: "shunsui:corte",
+    dot: null,
+  },
+  "soifon:m1_suzumebachi": {
+    baseDamage: DAMAGE.soifonM1,
+    particle: "soifon:rastro",
+    dot: null,
+  },
+  "rukia:m1_zanpakuto": {
+    baseDamage: DAMAGE.rukiaM1,
+    particle: "rukia:gelo",
+    dot: null,
+  },
+  "ukitake:m1_sogyo_no_kotowari": {
+    baseDamage: DAMAGE.ukitakeM1,
+    particle: "ukitake:hilo",
+    dot: null,
+  },
+  "tosen:m1_suzumushi": {
+    baseDamage: DAMAGE.tosenM1,
+    particle: "tosen:corte",
+    dot: null,
+  },
+  "tosen:m1_visored": {
+    baseDamage: DAMAGE.tosenM1Visored,
+    particle: "tosen:lamina",
+    dot: null,
+  },
 };
 
 function comboKeyFor(weaponId) {
@@ -7408,7 +14216,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
   if (!damagingEntity || damagingEntity.typeId !== "minecraft:player") return;
 
   // preso no Teatro de Títeres: o golpe nao sai (vale pros dois lados)
-  if (isFrozen(damagingEntity)) return;
+  if (isFrozen(damagingEntity) || isMayuriParalyzed(damagingEntity)) return;
 
   const equip = damagingEntity.getComponent("minecraft:equippable");
   const held = equip?.getEquipment(EquipmentSlot.Mainhand);
@@ -7416,6 +14224,13 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
 
   const awakened = isAwakened(damagingEntity);
   const weapon = MELEE_WEAPONS[held.typeId];
+
+  if (held.typeId === "shinji:m1_sakanade") shinji.melee(damagingEntity);
+
+  // Se Nigeki estiver aguardando um acerto, a Zanpakuto confirma a etapa.
+  if (held.typeId === "soifon:m1_suzumebachi") {
+    if (soiHandleNigekiM1(damagingEntity, hitEntity)) return;
+  }
 
   if (weapon) {
     if (!awakened && weapon.awardsAwakening !== false) {
@@ -7444,7 +14259,22 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       // TODO o dano do m1 agora vem daqui - o item tem minecraft:damage = 0,
       // entao passa certinho pela escala de vida virtual do alvo (dealDamage)
       // em vez de sair direto da engine como dano real fixo
-      const totalDamage = weapon.baseDamage * dmgMultiplier(damagingEntity);
+      let baseDamage = weapon.baseDamage;
+      if (
+        held.typeId === "nnoitra:m1_zanpakuto" &&
+        getActiveCharacter(damagingEntity)?.id === "nnoitra" &&
+        isAwakened(damagingEntity)
+      ) {
+        baseDamage = DAMAGE.nnoitraResM1;
+      }
+      if (
+        held.typeId === "ulquiorra:m1_garras" &&
+        getActiveCharacter(damagingEntity)?.id === "ulquiorra" &&
+        isTrueForm(damagingEntity)
+      ) {
+        baseDamage = 70;
+      }
+      const totalDamage = baseDamage * dmgMultiplier(damagingEntity);
       try {
         dealDamage(hitEntity, totalDamage, damagingEntity);
       } catch (e) {
@@ -7505,6 +14335,8 @@ system.runInterval(() => {
     // perna cortada pelo Teatro de Títeres: sem dash
     if (player.getDynamicProperty(DP.legCut)) continue;
     if (isFrozen(player)) continue;
+    // Ice Age do Hitsugaya: sem dash por um tempo
+    if (onCooldown(player, DP.noDash, HITSUGAYA.iceAge.noDashTicks, now)) continue;
 
     const vel = player.getVelocity();
     const horizontalSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
@@ -7515,7 +14347,7 @@ system.runInterval(() => {
     const wasAlready = wasSneakJumping.get(player.id) ?? false;
 
     if (justJumped && !wasAlready) {
-      if (!onCooldown(player, DP.dashCd, DASH_COOLDOWN_TICKS, now)) {
+      if (!onCooldown(player, DP.dashCd, dashCooldownFor(player), now)) {
         setCooldown(player, DP.dashCd, now);
 
         // o Vasto Lorde nao avanca: ele aparece em cima do alvo
@@ -7656,6 +14488,51 @@ system.runInterval(() => {
 }, 4);
 
 /* ---------------------------------------------------------
+   Carregamento do Visored (Tosen): agachado segurando a Suzumushi
+   base por 5s. Diferente do Awakening normal, isso nao depende do
+   medidor - e um gatilho proprio, independente.
+   --------------------------------------------------------- */
+
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    const character = getActiveCharacter(player);
+    if (character?.id !== "tosen" || isTosenVisored(player)) {
+      if (tosenVisoredCharge.has(player.id) || tosenVisoredReady.has(player.id)) {
+        resetTosenVisoredCharge(player);
+      }
+      continue;
+    }
+
+    const inv = getInv(player);
+    const held = inv.getItem(0);
+    const holdingBaseM1 = held && held.typeId === "tosen:m1_suzumushi";
+
+    if (player.isSneaking && holdingBaseM1) {
+      const current = (tosenVisoredCharge.get(player.id) ?? 0) + 4;
+      tosenVisoredCharge.set(player.id, current);
+
+      if (current >= TOSEN_VISORED.chargeTicksNeeded && !tosenVisoredReady.has(player.id)) {
+        tosenVisoredReady.add(player.id);
+        player.sendMessage("§8§lA máscara está pronta. Use a Suzumushi pra se transformar.");
+        try {
+          player.dimension.playSound("mob.wither.spawn", player.location, { volume: 0.6, pitch: 1.7 });
+          for (let i = 0; i < 10; i++) {
+            const a = Math.random() * Math.PI * 2;
+            player.dimension.spawnParticle("tosen:onda", {
+              x: player.location.x + Math.cos(a) * 1.4,
+              y: player.location.y + 1,
+              z: player.location.z + Math.sin(a) * 1.4,
+            });
+          }
+        } catch (e) {}
+      }
+    } else {
+      resetTosenVisoredCharge(player);
+    }
+  }
+}, 4);
+
+/* ---------------------------------------------------------
    Teatro de Títeres: segura quem esta preso, mantem a mutilacao
    e devolve tudo quando um dos dois cai. E o Gabriel renasce aqui.
    --------------------------------------------------------- */
@@ -7754,8 +14631,73 @@ system.runInterval(() => {
 }, 4);
 
 /* ---------------------------------------------------------
+   Individualidade do Mayuri + veneno próprio
+   --------------------------------------------------------- */
+system.runInterval(()=>{
+  const now=system.currentTick;
+  for(const player of world.getPlayers()){
+    // Paralisia do Envenenar: a marca fica no ALVO (o Szayelaporro), entao a
+    // checagem vale pra qualquer personagem. Antes ela ficava depois do
+    // "continue" que so deixava passar o Mayuri, e por isso nunca paralisava.
+    if(isMayuriParalyzed(player)){
+      try{
+        dealDamage(player, 20, player);
+        player.addEffect("slowness",40,{amplifier:255,showParticles:false});
+        player.addEffect("jump_boost",40,{amplifier:128,showParticles:false});
+        const x=player.getDynamicProperty(DP.mayuriParalysisX),y=player.getDynamicProperty(DP.mayuriParalysisY),z=player.getDynamicProperty(DP.mayuriParalysisZ);
+        if([x,y,z].every(v=>typeof v==="number")) player.teleport({x,y,z},{keepVelocity:false});
+      }catch(e){}
+    }
+    const c=getActiveCharacter(player);
+    if(c?.id!=="mayuri") continue;
+    const last=player.getDynamicProperty("mv:mayuri_regen_tick");
+    if(typeof last!=="number" || now-last>=200){
+      player.setDynamicProperty("mv:mayuri_regen_tick",now);
+      const hp=player.getComponent("minecraft:health");
+      if(hp){const scale=healthScaleOf(player);hp.setCurrentValue(Math.min(hp.effectiveMax,hp.currentValue+50/scale));}
+    }
+  }
+  for(const [id,e] of activeMayuriPoisons){
+    try{
+      const hp=e.entity.getComponent("minecraft:health");
+      if(!hp || hp.currentValue<=0 || now>=e.endTick){activeMayuriPoisons.delete(id);continue;}
+      dealDamage(e.entity,e.damagePerSecond,e.source);
+      const l=e.entity.location;
+      for(let i=0;i<4;i++) e.entity.dimension.spawnParticle("mayuri:poison_fog",{x:l.x+(Math.random()-.5)*.8,y:l.y+.4+Math.random()*1.6,z:l.z+(Math.random()-.5)*.8});
+    }catch(err){activeMayuriPoisons.delete(id);}
+  }
+},20);
+
+/* ---------------------------------------------------------
+   Máscara do Kaien: expiração
+   --------------------------------------------------------- */
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    if (getActiveCharacter(player)?.id !== "aaroniero") continue;
+    const end = readTickDeadline(player, DP.aaronieroMaskEnd, 240);
+    if (system.currentTick >= end && player.getDynamicProperty(DP.aaronieroMaskEnd)) {
+      player.setDynamicProperty(DP.aaronieroMaskEnd, 0);
+      const c = getActiveCharacter(player);
+      if (c) {
+        const f = activeFormOf(player, c);
+        applyCharacterEffects(
+          player,
+          f?.health ?? c.health,
+          f?.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+          "regenAmplifier" in (f ?? {}) ? f.regenAmplifier : REGEN_AMPLIFIER,
+          f?.extraEffects
+        );
+      }
+      player.sendMessage("§7A Máscara do Kaien terminou.");
+    }
+  }
+}, 5);
+
+/* ---------------------------------------------------------
    Actionbar (saude + awakening) - sempre visivel
    --------------------------------------------------------- */
+
+const lastActionBar = new Map();
 
 system.runInterval(() => {
   for (const player of world.getPlayers()) {
@@ -7779,10 +14721,25 @@ system.runInterval(() => {
         : "";
 
     const blockTag = isBlocking(player) ? " §a🛡 GUARDA" : "";
+    const hierroTag = isHierro(player) ? " §7🛡 HIERRO" : "";
 
-    player.onScreenDisplay.setActionBar(
-      `§c❤ ${current}/${max}   §b⚡ Awakening: ${awakening}%${awakenedTag}${senkeiTag}${blockTag}`
-    );
+    // quem nao tem awakening nem super ataque (o Nnoitra) nao ganha medidor
+    const character = getActiveCharacter(player);
+    const canAwaken = !character || !!character.awakening || !!character.superAttack;
+    const awakeningPart = canAwaken
+      ? `   §b⚡ Awakening: ${awakening}%${awakenedTag}${senkeiTag}`
+      : "";
+
+    // so manda pro cliente quando o texto muda (ou a cada 1,5s pra nao sumir)
+    const barText =
+      `§c❤ ${current}/${max}${awakeningPart}${hierroTag}${blockTag}` +
+      (character?.id === "shinji" ? shinji.hud(player) : "");
+    const lastBar = lastActionBar.get(player.id);
+    const barNow = system.currentTick;
+    if (!lastBar || lastBar.text !== barText || barNow - lastBar.tick >= 30) {
+      player.onScreenDisplay.setActionBar(barText);
+      lastActionBar.set(player.id, { text: barText, tick: barNow });
+    }
   }
 }, 5);
 
@@ -7838,7 +14795,7 @@ const formHealTicks = new Map();
 
 system.runInterval(() => {
   for (const player of world.getPlayers()) {
-    const heal = activeFormOf(player)?.healPerInterval;
+    const heal = activeFormOf(player)?.healPerInterval ?? (isTosenVisored(player) ? TOSEN_VISORED.healPerInterval : undefined);
 
     if (!heal) {
       formHealTicks.delete(player.id);
@@ -7913,13 +14870,18 @@ system.runInterval(() => {
    --------------------------------------------------------- */
 
 system.runInterval(() => {
+  // Apenas o Vasto Lorde do Ichigo Vizard usa ascensão automática por vida.
+  // A Segunda Etapa do Ulquiorra é EXCLUSIVAMENTE manual: 50% de Awakening +
+  // agachar + usar a M1 da Resurrección.
   for (const player of world.getPlayers()) {
     if (!isAwakened(player) || isTrueForm(player)) continue;
 
     const character = getActiveCharacter(player);
-    const form = character?.awakening;
+    if (character?.id !== "ichigo_vizard") continue;
+
+    const form = character.awakening;
     const trueForm = form?.trueForm;
-    if (!trueForm) continue;
+    if (!trueForm || typeof trueForm.healthThreshold !== "number") continue;
 
     try {
       if (virtualHealth(player) > trueForm.healthThreshold) continue;
@@ -7934,9 +14896,27 @@ system.runInterval(() => {
    Drena o awakening 1%/segundo enquanto ativo, desativa em 0%
    --------------------------------------------------------- */
 
+// Awk infinito pra quem tem SUPER (nao se transforma): o medidor volta pra 100% logo
+// depois de usar
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    try {
+      if (!isInfiniteAwakening(player) || isAwakened(player)) continue;
+      if (getActiveCharacter(player)?.superAttack && getAwakening(player) < 100) {
+        player.setDynamicProperty(DP.awakening, 100);
+      }
+    } catch (e) {}
+  }
+}, 5);
+
 system.runInterval(() => {
   for (const player of world.getPlayers()) {
     if (!isAwakened(player)) continue;
+
+    if (isInfiniteAwakening(player)) {
+      player.setDynamicProperty(DP.awakening, 100);
+      continue;
+    }
 
     const current = getAwakening(player);
     const next = Math.max(0, current - 1);
@@ -7954,12 +14934,40 @@ system.runInterval(() => {
    deixa a arena aberta prendendo todo mundo pra sempre)
    --------------------------------------------------------- */
 
+/* ---------------------------------------------------------
+   Black concrete das habilidades (ex: esfera da bankai do Tosen)
+   e inquebravel: cancela o break se o bloco pertence a algum
+   ledger ativo (iceRegistry). Se por algum motivo ele ja tiver
+   sumido do ledger mas ainda for black_concrete "orfao", nao
+   mexe - so protege o que esta de fato marcado como temporario.
+   --------------------------------------------------------- */
+
+world.beforeEvents.playerBreakBlock.subscribe((ev) => {
+  try {
+    const block = ev.block;
+    if (!block || block.typeId !== "minecraft:black_concrete") return;
+    const dim = ev.dimension;
+    const { x, y, z } = block.location;
+    for (const ledger of iceRegistry) {
+      for (const e of ledger) {
+        if (e.done || e.dim !== dim) continue;
+        if (e.x === x && e.y === y && e.z === z) {
+          ev.cancel = true;
+          return;
+        }
+      }
+    }
+  } catch (err) {}
+});
+
 world.afterEvents.playerLeave.subscribe((ev) => {
   const playerId = ev.playerId;
   removeZonesOwnedBy(playerId);
   removeCursesBy(playerId);
   warnedOffhand.delete(playerId);
   warnedArmor.delete(playerId);
+  soiClearNigeki(playerId);
+  shinji.cleanupId(playerId);
   blockingNow.delete(playerId);
   removeMutilationsBy(playerId);
   gabrielHosts.delete(playerId);
@@ -7967,4 +14975,16 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   senkeiChargeReady.delete(playerId);
   wasSneakJumping.delete(playerId);
   formHealTicks.delete(playerId);
+  lastActionBar.delete(playerId);
+  lastArmorSweepTick.delete(playerId);
+  resetTosenVisoredChargeId(playerId);
+  tosenOldHelmet.delete(playerId);
+});
+
+
+const shinji = createShinji({
+  getActiveCharacter, getAwakening, isAwakened, addAwakening,
+  activateAwakening, revertAwakening, reapplyFormEffects,
+  dealDamage, dmgMultiplier, entitiesInFrontBox, nearestTarget,
+  isFrozen, trappingZoneFor, skillBlockingZoneFor, isRespiring, showRespiraGuard,
 });

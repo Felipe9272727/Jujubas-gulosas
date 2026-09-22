@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "hitsugaya:ice_age",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "hitsugaya:ice_age",
+      "minecraft:display_name": {
+        "value": "Ice Age"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "hitsugaya_ice_age",
+        "duration": 40
+      }
+    }
+  }
+}
