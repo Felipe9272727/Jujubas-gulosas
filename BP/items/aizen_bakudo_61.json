@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "aizen:bakudo_61",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "aizen:bakudo_61",
+      "minecraft:display_name": {
+        "value": "Bakudō #61: Rikujōkōrō"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "aizen_bakudo_61",
+        "duration": 25
+      }
+    }
+  }
+}

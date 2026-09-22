@@ -550,6 +550,24 @@
     },
     "tosen:los_nueve_aspectos": {
       "textures": "textures/items/tosen_los_nueve_aspectos"
+    },
+    "aizen:m1_kyoka_suigetsu": {
+      "textures": "textures/items/aizen_m1_kyoka_suigetsu"
+    },
+    "aizen:m1_kyoka_oculta": {
+      "textures": "textures/items/aizen_m1_kyoka_oculta"
+    },
+    "aizen:illusions_mastery": {
+      "textures": "textures/items/aizen_illusions_mastery"
+    },
+    "aizen:betrayal_of_the_illusioner": {
+      "textures": "textures/items/aizen_betrayal_of_the_illusioner"
+    },
+    "aizen:bakudo_61": {
+      "textures": "textures/items/aizen_bakudo_61"
+    },
+    "aizen:fools_trick": {
+      "textures": "textures/items/aizen_fools_trick"
     }
   }
 }

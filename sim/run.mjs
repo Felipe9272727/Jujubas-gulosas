@@ -4017,6 +4017,610 @@ check("vida normalizada em 20", virtualMax(ichigo) === 20 && hp(ichigo).currentV
 check("itens do personagem removidos", slotIds(ichigo, 5).every((id) => id === undefined), JSON.stringify(slotIds(ichigo, 5)));
 check("seletor continua no slot 8", inv(ichigo).getItem(8)?.typeId === "multiversal:character_selector");
 
+/* ================= Sousuke Aizen (Captain's Fight) ================= */
+
+const AIZEN_CFG = game.AIZEN;
+const KYOKA = "aizen:m1_kyoka_suigetsu";
+const KYOKA_OCULTA = "aizen:m1_kyoka_oculta";
+const ichigoM1 = "ichigo:m1_zangetsu";
+
+function aim(from, to) {
+  const dx = to.location.x - from.location.x;
+  const dz = to.location.z - from.location.z;
+  const len = Math.hypot(dx, dz) || 1;
+  from._view = { x: dx / len, y: 0, z: dz / len };
+}
+function clonesOf() {
+  return overworld.getEntities({ type: "aizen:clone" });
+}
+function aizenLines(since) {
+  return log.worldMessages.slice(since).filter((m) => m.to === "*" && m.message.includes("<AizenPlayer>"));
+}
+function fullHp(p) {
+  setVirtualHp(p, virtualMax(p));
+}
+
+scenario("Sousuke Aizen: ativação (Shinigami, Tier 6)");
+const aizen = createPlayer("AizenPlayer", { x: 8000, y: 64, z: 8000 });
+const hinamori = createPlayer("Hinamori", { x: 8004, y: 64, z: 8000 });
+emit("playerSpawn", { player: aizen, initialSpawn: true });
+emit("playerSpawn", { player: hinamori, initialSpawn: true });
+advanceTicks(20, "spawn-aizen");
+mark = errors.length;
+check("registro: Shinigami, Tier 6", RACE_TIER.aizen?.race === "shinigami" && RACE_TIER.aizen?.tier === 6, JSON.stringify(RACE_TIER.aizen));
+await pickCharacter(aizen, "aizen");
+await pickCharacter(hinamori, "ichigo");
+advanceTicks(20, "ativar-aizen");
+noNewErrors("ativar o Aizen pelo menu sem erro", mark);
+const AIZEN_CHAR = game.CHARACTERS.aizen;
+check("personagem salvo", aizen.getDynamicProperty(DP.character) === "aizen");
+check("vida maxima 5500", virtualMax(aizen) === 5500, `${virtualMax(aizen)}`);
+check(
+  "Kyōka + 4 skills nos slots 0-4",
+  JSON.stringify(slotIds(aizen, 5)) === JSON.stringify([0, 1, 2, 3, 4].map((i) => AIZEN_CHAR.items[i])),
+  JSON.stringify(slotIds(aizen, 5))
+);
+
+scenario("Kyōka Suigetsu: m1 de 120 marca o alvo pra sempre");
+mark = errors.length;
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+hinamori.teleport({ x: 8002, y: 64, z: 8000 });
+check("Hinamori começa sem a marca", !hinamori.getDynamicProperty("mv:kyoka_mark"));
+dmgBefore = log.damages.length;
+const awkAntesKyoka = aizen.getDynamicProperty(DP.awakening) ?? 0;
+hitWith(aizen, hinamori, KYOKA);
+advanceTicks(2, "kyoka-m1");
+noNewErrors("m1 da Kyōka sem erro", mark);
+check(
+  "120 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Hinamori" && virtualDamage(hinamori, d) === 120),
+  JSON.stringify(log.damages.slice(dmgBefore))
+);
+check("o alvo fica marcado", hinamori.getDynamicProperty("mv:kyoka_mark") === true);
+check(
+  "o Aizen é avisado de quem entrou na ilusão",
+  log.worldMessages.some((m) => m.to === "AizenPlayer" && m.message.includes("Hinamori"))
+);
+check("m1 enche o medidor da Kurohitsugi", (aizen.getDynamicProperty(DP.awakening) ?? 0) === awkAntesKyoka + 1);
+const bonecoKyoka = createDummy("BonecoKyoka", { x: 8003, y: 64, z: 8003 }, 50000);
+hitWith(aizen, bonecoKyoka, KYOKA);
+check("mob também pode ser marcado", bonecoKyoka.getDynamicProperty("mv:kyoka_mark") === true);
+bonecoKyoka.kill(); // sai do caminho da mira dos proximos cenarios
+emit("playerSpawn", { player: hinamori, initialSpawn: false });
+advanceTicks(5, "respawn-hinamori");
+check("a marca sobrevive à morte (é pra sempre)", hinamori.getDynamicProperty("mv:kyoka_mark") === true);
+
+scenario("Kyōka: bater num bloco marca o bloco; agachar 2x em 2s volta pra ele");
+mark = errors.length;
+const pedra = overworld.getBlock({ x: 8010, y: 63, z: 8000 });
+pedra.setType("minecraft:stone");
+emit("entityHitBlock", { damagingEntity: aizen, hitBlock: pedra, blockFace: "Up" });
+noNewErrors("marcar bloco sem erro", mark);
+check(
+  "bloco guardado no Aizen",
+  aizen.getDynamicProperty("mv:kyoka_block") === JSON.stringify({ x: 8010, y: 63, z: 8000, dim: "minecraft:overworld" }),
+  String(aizen.getDynamicProperty("mv:kyoka_block"))
+);
+const outraPedra = overworld.getBlock({ x: 8030, y: 63, z: 8000 });
+outraPedra.setType("minecraft:stone");
+inv(aizen).setItem(aizen.selectedSlotIndex = 1, new ItemStack("aizen:illusions_mastery", 1));
+emit("entityHitBlock", { damagingEntity: aizen, hitBlock: outraPedra, blockFace: "Up" });
+check(
+  "bater com outro item não marca",
+  aizen.getDynamicProperty("mv:kyoka_block").includes("8010")
+);
+aizen.selectedSlotIndex = 0;
+advanceTicks(10, "restaurar-slots");
+
+async function tapSneak(p, holdTicks = 3, gapTicks = 3) {
+  p.isSneaking = true;
+  advanceTicks(holdTicks, "agachar");
+  p.isSneaking = false;
+  advanceTicks(gapTicks, "soltar");
+}
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+await tapSneak(aizen);
+check("um agachar só não teleporta", Math.abs(aizen.location.x - 8000) < 0.01);
+await tapSneak(aizen);
+check(
+  "o segundo agachar em 2s leva pra cima do bloco marcado",
+  Math.abs(aizen.location.x - 8010.5) < 0.01 && Math.abs(aizen.location.y - 64) < 0.01 && Math.abs(aizen.location.z - 8000.5) < 0.01,
+  JSON.stringify(aizen.location)
+);
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+await tapSneak(aizen);
+advanceTicks(45, "passou-da-janela");
+await tapSneak(aizen);
+check("dois agachares com mais de 2s entre eles não teleportam", Math.abs(aizen.location.x - 8000) < 0.01);
+advanceTicks(45, "zera-janela");
+// agachar gasto na guarda (agachar + m1) não é um "toque"
+aizen.isSneaking = true;
+advanceTicks(2, "agachar-guarda");
+useItem(aizen, KYOKA);
+advanceTicks(2, "guarda");
+aizen.isSneaking = false;
+advanceTicks(3, "solta-guarda");
+await tapSneak(aizen);
+check("agachar que levantou a guarda não conta pro teleporte", Math.abs(aizen.location.x - 8000) < 0.01);
+check("(e a guarda subiu normalmente)", aizen.getDynamicProperty("mv:block_end") > 0);
+aizen.isSneaking = true;
+useItem(aizen, KYOKA); // baixa a guarda
+aizen.isSneaking = false;
+aizen.setDynamicProperty("mv:block_end", 0);
+aizen.setDynamicProperty("mv:cd_block", undefined);
+advanceTicks(45, "zera-janela-2");
+pedra.setType("minecraft:air");
+await tapSneak(aizen);
+await tapSneak(aizen);
+check("bloco destruído: não teleporta e avisa", Math.abs(aizen.location.x - 8000) < 0.01 &&
+  log.worldMessages.some((m) => m.to === "AizenPlayer" && m.message.includes("não existe mais")));
+noNewErrors("agachar duplo sem erro", mark);
+
+scenario("Illusion's Mastery: só funciona em quem viu a Kyōka");
+mark = errors.length;
+const intocado = createDummy("Intocado", { x: 8000, y: 64, z: 8006 }, 50000);
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+aim(aizen, intocado);
+useItem(aizen, "aizen:illusions_mastery");
+advanceTicks(2, "mastery-sem-marca");
+check("alvo sem a marca: recusa", clonesOf().length === 0);
+check("e não gasta o cooldown", aizen.getDynamicProperty("mv:cd_aizen_illusions_mastery") === undefined);
+check(
+  "explica que precisa acertar com a m1",
+  log.worldMessages.some((m) => m.to === "AizenPlayer" && m.message.includes("nunca viu a Kyōka"))
+);
+aizen._view = { x: 0, y: 1, z: 0 }; // olhando pro céu
+useItem(aizen, "aizen:illusions_mastery");
+check("sem ninguém na mira: recusa sem gastar", aizen.getDynamicProperty("mv:cd_aizen_illusions_mastery") === undefined);
+intocado.kill();
+noNewErrors("recusas sem erro", mark);
+
+scenario("Illusion's Mastery: invisível + 3 clones em triângulo em volta do alvo");
+mark = errors.length;
+fullHp(hinamori);
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+hinamori.teleport({ x: 8004, y: 64, z: 8000 });
+aim(aizen, hinamori);
+let linhasAntes = log.worldMessages.length;
+useItem(aizen, "aizen:illusions_mastery");
+advanceTicks(3, "mastery");
+noNewErrors("Illusion's Mastery sem erro", mark);
+let clones = clonesOf();
+check("3 clones", clones.length === 3, `${clones.length}`);
+check("cada clone leva o nome do Aizen", clones.every((c) => c.nameTag === "AizenPlayer"), clones.map((c) => c.nameTag).join(","));
+check(
+  "em triângulo em volta do alvo",
+  clones.every((c) => Math.abs(Math.hypot(c.location.x - 8004, c.location.z - 8000) - AIZEN_CFG.mastery.radius) < 0.05),
+  clones.map((c) => Math.hypot(c.location.x - 8004, c.location.z - 8000).toFixed(2)).join(",")
+);
+check("Aizen invisível", !!aizen.getEffect("invisibility"));
+check("sem o nome em cima da cabeça", aizen.nameTag === "");
+check("a Kyōka na mão fica invisível (textura vazia)", inv(aizen).getItem(0)?.typeId === KYOKA_OCULTA, inv(aizen).getItem(0)?.typeId);
+hinamori.teleport({ x: 8010, y: 64, z: 8006 });
+advanceTicks(2, "alvo-anda");
+clones = clonesOf();
+check(
+  "os clones seguem o alvo",
+  clones.every((c) => Math.abs(Math.hypot(c.location.x - 8010, c.location.z - 8006) - AIZEN_CFG.mastery.radius) < 0.05)
+);
+advanceTicks(10, "trava-itens");
+check("o loop de itens mantém a Kyōka oculta no slot 0", inv(aizen).getItem(0)?.typeId === KYOKA_OCULTA);
+
+scenario("Illusion's Mastery: acertar um clone custa 50 e ele some");
+mark = errors.length;
+fullHp(hinamori);
+dmgBefore = log.damages.length;
+linhasAntes = log.worldMessages.length;
+const awkHinamori = hinamori.getDynamicProperty(DP.awakening) ?? 0;
+hitWith(hinamori, clones[0], ichigoM1);
+advanceTicks(3, "acertou-clone");
+noNewErrors("acertar clone sem erro", mark);
+check("o clone some", clonesOf().length === 2, `${clonesOf().length}`);
+check(
+  "quem acertou toma 50",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Hinamori" && virtualDamage(hinamori, d) === 50 && d.by === "AizenPlayer"),
+  JSON.stringify(log.damages.slice(dmgBefore))
+);
+check("o clone não leva dano nenhum", !log.damages.slice(dmgBefore).some((d) => d.target === "aizen:clone"));
+check(
+  "\"Errou...tente novamente\" no chat, em roxo",
+  aizenLines(linhasAntes).some((m) => m.message.startsWith("§5") && m.message.includes("Errou...tente novamente"))
+);
+check("bater na ilusão não enche o medidor", (hinamori.getDynamicProperty(DP.awakening) ?? 0) === awkHinamori);
+check("com clone sobrando o Aizen continua invisível", !!aizen.getEffect("invisibility"));
+// area de skill passa direto pelo clone
+dmgBefore = log.damages.length;
+hinamori.teleport({ x: 8010, y: 64, z: 8006 });
+useItem(hinamori, "ichigo:getsuga_slam");
+advanceTicks(5, "slam-nos-clones");
+check("skill em área não derruba clone", clonesOf().length === 2);
+
+scenario("Illusion's Mastery: m1 do Aizen no alvo = 300 + lentidão e a ilusão cai");
+mark = errors.length;
+fullHp(hinamori);
+dmgBefore = log.damages.length;
+linhasAntes = log.worldMessages.length;
+const somAntes = log.sounds.length;
+hitWith(aizen, hinamori, KYOKA_OCULTA);
+advanceTicks(10, "golpe-da-ilusao");
+noNewErrors("golpe da ilusão sem erro", mark);
+check(
+  "300 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Hinamori" && virtualDamage(hinamori, d) === 300),
+  JSON.stringify(log.damages.slice(dmgBefore))
+);
+check("lentidão no alvo", hinamori.getEffect("slowness")?.amplifier === AIZEN_CFG.mastery.strikeSlownessAmplifier);
+check("os clones somem", clonesOf().length === 0);
+check("o Aizen volta a aparecer", !aizen.getEffect("invisibility"));
+check("com o nome de volta", aizen.nameTag === "AizenPlayer", aizen.nameTag);
+check("e a Kyōka de verdade na mão", inv(aizen).getItem(0)?.typeId === KYOKA, inv(aizen).getItem(0)?.typeId);
+check(
+  "\"Tolo, caiu em minha ilusão\" em roxo",
+  aizenLines(linhasAntes).some((m) => m.message.startsWith("§5") && m.message.includes("Tolo, caiu em minha ilusão"))
+);
+const vidros = log.sounds.slice(somAntes).filter((s) => s.soundId === "random.glass" && s.by);
+check(
+  "a Kyōka quebra: vidro pra TODOS os players",
+  world.getPlayers().every((p) => vidros.some((s) => s.by === p.name)),
+  `${new Set(vidros.map((s) => s.by)).size}/${world.getPlayers().length} players`
+);
+check(
+  "o quebrar tem camadas (vidro + ametista)",
+  log.sounds.slice(somAntes).some((s) => s.soundId === "break.amethyst_block") &&
+    log.sounds.slice(somAntes).some((s) => s.soundId === "chime.amethyst_block")
+);
+hinamori.removeEffect("slowness");
+
+scenario("Illusion's Mastery: acertar os 3 clones tira a invisibilidade");
+mark = errors.length;
+fullHp(hinamori);
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+hinamori.teleport({ x: 8004, y: 64, z: 8000 });
+aizen.setDynamicProperty("mv:cd_aizen_illusions_mastery", undefined);
+aim(aizen, hinamori);
+useItem(aizen, "aizen:illusions_mastery");
+advanceTicks(3, "mastery-2");
+dmgBefore = log.damages.length;
+linhasAntes = log.worldMessages.length;
+check(
+  "(a ilusão pegou quem ele mirou)",
+  clonesOf().every((c) => Math.abs(Math.hypot(c.location.x - hinamori.location.x, c.location.z - hinamori.location.z) - AIZEN_CFG.mastery.radius) < 0.05)
+);
+for (const clone of clonesOf()) hitWith(hinamori, clone, ichigoM1);
+advanceTicks(5, "tres-clones");
+noNewErrors("três clones sem erro", mark);
+check("150 no total (50 por clone)", log.damages.slice(dmgBefore).filter((d) => d.target === "Hinamori").reduce((n, d) => n + virtualDamage(hinamori, d), 0) === 150);
+check("três \"Errou\" no chat", aizenLines(linhasAntes).filter((m) => m.message.includes("Errou")).length === 3);
+check("o Aizen perde a invisibilidade", !aizen.getEffect("invisibility") && aizen.nameTag === "AizenPlayer");
+
+scenario("Illusion's Mastery: a rede de segurança do damage_sensor");
+mark = errors.length;
+fullHp(hinamori);
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+hinamori.teleport({ x: 8004, y: 64, z: 8000 });
+aizen.setDynamicProperty("mv:cd_aizen_illusions_mastery", undefined);
+aim(aizen, hinamori);
+useItem(aizen, "aizen:illusions_mastery");
+advanceTicks(3, "mastery-3");
+dmgBefore = log.damages.length;
+// só o evento do BP chega (como se o entityHitEntity não disparasse pro clone)
+emit("dataDrivenEntityTrigger", { entity: clonesOf()[0], eventId: "aizen:golpeado" });
+advanceTicks(4, "sensor");
+check("o clone some pelo evento do damage_sensor", clonesOf().length === 2);
+check(
+  "e cobra os 50 de quem está preso na ilusão",
+  log.damages.slice(dmgBefore).filter((d) => d.target === "Hinamori").length === 1,
+  JSON.stringify(log.damages.slice(dmgBefore))
+);
+// os dois caminhos juntos: um golpe só
+dmgBefore = log.damages.length;
+const alvoDuplo = clonesOf()[0];
+hitWith(hinamori, alvoDuplo, ichigoM1);
+emit("dataDrivenEntityTrigger", { entity: alvoDuplo, eventId: "aizen:golpeado" });
+advanceTicks(4, "sensor-duplo");
+check("golpe visto pelos dois caminhos conta uma vez só", log.damages.slice(dmgBefore).filter((d) => d.target === "Hinamori").length === 1);
+noNewErrors("sensor sem erro", mark);
+
+scenario("Illusion's Mastery: acaba sozinha e o clone órfão some");
+mark = errors.length;
+advanceTicks(AIZEN_CFG.mastery.durationTicks, "mastery-tempo");
+check("tempo esgotado: clones somem", clonesOf().length === 0);
+check("e o Aizen reaparece", !aizen.getEffect("invisibility") && aizen.nameTag === "AizenPlayer");
+const orfao = overworld.spawnEntity("aizen:clone", { x: 8050, y: 64, z: 8050 });
+advanceTicks(45, "orfao");
+check("clone sem dono (mundo recarregado) é removido", !orfao.isValid);
+noNewErrors("fim da ilusão sem erro", mark);
+
+scenario("Betrayal of the Illusioner: 5 teleportes pelas costas, m1 dobrado");
+mark = errors.length;
+fullHp(hinamori);
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+hinamori.teleport({ x: 8008, y: 64, z: 8000 });
+hinamori._view = { x: -1, y: 0, z: 0 }; // olhando pro Aizen (-x): as costas ficam em +x
+aim(aizen, hinamori);
+const tpAntes = log.teleports.length;
+useItem(aizen, "aizen:betrayal_of_the_illusioner");
+advanceTicks(1, "betrayal-1");
+check(
+  "o primeiro já aparece nas costas do alvo",
+  aizen.location.x > hinamori.location.x && Math.abs(aizen.location.x - hinamori.location.x - AIZEN_CFG.betrayal.behind) < 0.05,
+  `aizen.x=${aizen.location.x.toFixed(2)} alvo.x=${hinamori.location.x}`
+);
+dmgBefore = log.damages.length;
+hitWith(aizen, hinamori, KYOKA);
+check(
+  "m1 dobrado durante o Betrayal (240)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Hinamori" && virtualDamage(hinamori, d) === 240),
+  JSON.stringify(log.damages.slice(dmgBefore))
+);
+// o alvo vira: o proximo teleporte segue as costas novas
+hinamori._view = { x: 0, y: 0, z: 1 };
+advanceTicks(20, "betrayal-2");
+check(
+  "cada teleporte segue as costas de agora",
+  aizen.location.z < hinamori.location.z && Math.abs(aizen.location.x - hinamori.location.x) < 0.05,
+  JSON.stringify(aizen.location)
+);
+advanceTicks(70, "betrayal-resto");
+const saltos = log.teleports.slice(tpAntes).filter((t) => t.target === "AizenPlayer");
+check("5 teleportes, 1s entre eles", saltos.length === 5 && saltos[1].tick - saltos[0].tick === 20 && saltos[4].tick - saltos[0].tick === 80, saltos.map((t) => t.tick).join(","));
+advanceTicks(20, "betrayal-janela");
+fullHp(hinamori);
+dmgBefore = log.damages.length;
+hitWith(aizen, hinamori, KYOKA);
+check("passada a janela o m1 volta a 120", log.damages.slice(dmgBefore).some((d) => d.target === "Hinamori" && virtualDamage(hinamori, d) === 120));
+noNewErrors("Betrayal sem erro", mark);
+
+scenario("Bakudō #61: Rikujōkōrō paralisa por 5s");
+mark = errors.length;
+fullHp(hinamori);
+hinamori.removeEffect("slowness");
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+hinamori.teleport({ x: 8006, y: 64, z: 8000 });
+aim(aizen, hinamori);
+linhasAntes = log.worldMessages.length;
+const luzAntes = log.particles.length;
+useItem(aizen, "aizen:bakudo_61");
+advanceTicks(5, "bakudo");
+noNewErrors("Bakudō sem erro", mark);
+check("encantamento em roxo", aizenLines(linhasAntes).some((m) => m.message.startsWith("§5") && m.message.includes("Bakudō #61: Rikujōkōrō")));
+check("alvo paralisado (lentidão máxima)", hinamori.getEffect("slowness")?.amplifier === 255);
+check(
+  "seis barras de luz desenhadas",
+  log.particles.slice(luzAntes).filter((p) => p.particleId === "aizen:luz").length >= 36,
+  `${log.particles.slice(luzAntes).filter((p) => p.particleId === "aizen:luz").length}`
+);
+linhasAntes = log.worldMessages.length;
+useItem(hinamori, "ichigo:getsuga_slash");
+check(
+  "paralisado não usa skill",
+  log.worldMessages.slice(linhasAntes).some((m) => m.to === "Hinamori" && m.message.includes("paralisado"))
+);
+advanceTicks(100, "bakudo-fim");
+check("depois de 5s a paralisia solta", !hinamori.getEffect("slowness"));
+
+scenario("Fool's Trick: awakening falso, e 3s depois o corte pelas costas");
+mark = errors.length;
+fullHp(hinamori);
+const naoMarcado = createDummy("NaoMarcado", { x: 8000, y: 64, z: 8005 }, 50000);
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+aim(aizen, naoMarcado);
+useItem(aizen, "aizen:fools_trick");
+check("alvo sem a marca: recusa sem gastar", aizen.getDynamicProperty("mv:cd_aizen_fools_trick") === undefined);
+naoMarcado.kill();
+hinamori.teleport({ x: 8008, y: 64, z: 8000 });
+hinamori._view = { x: -1, y: 0, z: 0 };
+aim(aizen, hinamori);
+linhasAntes = log.worldMessages.length;
+const somTrick = log.sounds.length;
+useItem(aizen, "aizen:fools_trick");
+advanceTicks(2, "trick-inicio");
+check(
+  "\"AWAKENING: Hadō 99: Goryūtenmetsu\" em roxo",
+  aizenLines(linhasAntes).some((m) => m.message.startsWith("§5") && m.message.includes("AWAKENING: Hadō 99: Goryūtenmetsu"))
+);
+check("com um barulho alto", log.sounds.slice(somTrick).some((s) => s.soundId === "mob.wither.spawn" && s.options?.volume >= 3));
+check("durante a carga ele ainda não se mexeu", Math.abs(aizen.location.x - 8000) < 0.01);
+dmgBefore = log.damages.length;
+advanceTicks(60, "trick-revela");
+check("3s depois: atrás do alvo", aizen.location.x > hinamori.location.x, `aizen.x=${aizen.location.x.toFixed(2)}`);
+check("alvo paralisado", hinamori.getEffect("slowness")?.amplifier === 255);
+check("\"Achou mesmo ser digno?\" em roxo", aizenLines(linhasAntes).some((m) => m.message.startsWith("§5") && m.message.includes("Achou mesmo ser digno?")));
+advanceTicks(12, "trick-corte");
+check(
+  "o corte: 400 de dano",
+  log.damages.slice(dmgBefore).some((d) => d.target === "Hinamori" && virtualDamage(hinamori, d) === 400),
+  JSON.stringify(log.damages.slice(dmgBefore))
+);
+check("e náusea por 4s", (hinamori.getEffect("nausea")?.endTick ?? 0) - system.currentTick > 60);
+noNewErrors("Fool's Trick sem erro", mark);
+advanceTicks(40, "trick-solta");
+
+scenario("Counter: 5 m1 em 3s no Aizen");
+mark = errors.length;
+fullHp(hinamori);
+fullHp(aizen);
+hinamori.removeEffect("slowness");
+hinamori.removeEffect("jump_boost");
+advanceTicks(20, "counter-prep");
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+hinamori.teleport({ x: 8002, y: 64, z: 8000 });
+hinamori._view = { x: -1, y: 0, z: 0 };
+const vidaCheia = virtualHp(aizen);
+linhasAntes = log.worldMessages.length;
+for (let i = 0; i < 4; i++) {
+  hitWith(hinamori, aizen, ichigoM1);
+  advanceTicks(4, "combo");
+}
+const vidaNoCombo = virtualHp(aizen);
+check("os 4 primeiros golpes entram", vidaNoCombo < vidaCheia - 60, `${vidaCheia} -> ${vidaNoCombo}`);
+hitWith(hinamori, aizen, ichigoM1);
+advanceTicks(2, "counter");
+noNewErrors("Counter sem erro", mark);
+check("\"Você vencer sempre foi uma ilusão\" em roxo", aizenLines(linhasAntes).some((m) => m.message.startsWith("§5") && m.message.includes("Você vencer sempre foi uma ilusão")));
+check("recupera toda a vida perdida no combo", Math.abs(virtualHp(aizen) - vidaCheia) < 1, `${vidaCheia} -> ${virtualHp(aizen)}`);
+check("aparece atrás do atacante", aizen.location.x > hinamori.location.x, `aizen.x=${aizen.location.x.toFixed(2)}`);
+check("atacante paralisado", hinamori.getEffect("slowness")?.amplifier === 255);
+dmgBefore = log.damages.length;
+hitWith(hinamori, aizen, ichigoM1);
+check("paralisado não bate (a brecha pro ataque)", !log.damages.slice(dmgBefore).some((d) => d.target === "AizenPlayer"));
+advanceTicks(70, "counter-solta");
+// golpes espaçados demais nao contam
+linhasAntes = log.worldMessages.length;
+for (let i = 0; i < 5; i++) {
+  hitWith(hinamori, aizen, ichigoM1);
+  advanceTicks(20, "golpe-espacado");
+}
+check("5 golpes em mais de 3s não disparam", !aizenLines(linhasAntes).some((m) => m.message.includes("sempre foi uma ilusão")));
+// quem nunca viu a Kyoka nao cai no Counter
+const estranho = createPlayer("Estranho", { x: 8003, y: 64, z: 8000 });
+emit("playerSpawn", { player: estranho, initialSpawn: true });
+advanceTicks(10, "spawn-estranho");
+await pickCharacter(estranho, "ichigo");
+advanceTicks(20, "ativar-estranho");
+linhasAntes = log.worldMessages.length;
+for (let i = 0; i < 5; i++) {
+  hitWith(estranho, aizen, ichigoM1);
+  advanceTicks(3, "golpe-estranho");
+}
+check("quem nunca foi marcado não é afetado pelo Counter", !aizenLines(linhasAntes).some((m) => m.message.includes("sempre foi uma ilusão")));
+noNewErrors("Counter (casos negativos) sem erro", mark);
+
+scenario("Awakening: Hadō #90 Kurohitsugi");
+mark = errors.length;
+fullHp(aizen);
+aizen.teleport({ x: 8200, y: 64, z: 8200 });
+const caixao = createDummy("Caixao", { x: 8206, y: 64, z: 8200 }, 500000);
+const vizinho = createDummy("Vizinho", { x: 8208, y: 64, z: 8202 }, 500000);
+const deFora = createDummy("DeFora", { x: 8214, y: 64, z: 8200 }, 500000);
+estranho.teleport({ x: 8300, y: 64, z: 8300 });
+hinamori.teleport({ x: 8300, y: 64, z: 8310 });
+// sem medidor: a tecla vira guarda
+aizen.setDynamicProperty(DP.awakening, 40);
+aim(aizen, caixao);
+aizen.isSneaking = true;
+useItem(aizen, KYOKA);
+aizen.isSneaking = false;
+check("sem 100% a Kurohitsugi não sai (a tecla vira guarda)", aizen.getDynamicProperty("mv:block_end") > 0 && aizen.getDynamicProperty(DP.awakening) === 40);
+aizen.isSneaking = true;
+useItem(aizen, KYOKA);
+aizen.isSneaking = false;
+aizen.setDynamicProperty("mv:block_end", 0);
+aizen.setDynamicProperty("mv:cd_block", undefined);
+// sem ninguem na mira: tambem cai pra guarda e nao gasta o medidor
+aizen.setDynamicProperty(DP.awakening, 100);
+aizen._view = { x: 0, y: 1, z: 0 };
+aizen.isSneaking = true;
+useItem(aizen, KYOKA);
+aizen.isSneaking = false;
+check("sem alvo na mira não gasta o medidor", aizen.getDynamicProperty(DP.awakening) === 100);
+aizen.isSneaking = true;
+useItem(aizen, KYOKA);
+aizen.isSneaking = false;
+aizen.setDynamicProperty("mv:block_end", 0);
+aizen.setDynamicProperty("mv:cd_block", undefined);
+
+aim(aizen, caixao);
+linhasAntes = log.worldMessages.length;
+const particulasAntesCaixa = log.particles.length;
+const blocosAntesCaixa = log.blocks.length;
+dmgBefore = log.damages.length;
+aizen.isSneaking = true;
+useItem(aizen, KYOKA);
+aizen.isSneaking = false;
+advanceTicks(12, "caixa-sobe");
+check("\"Hadō #90: Kurohitsugi\" em roxo", aizenLines(linhasAntes).some((m) => m.message.startsWith("§5") && m.message.includes("Hadō #90: Kurohitsugi")));
+check("consome o medidor", aizen.getDynamicProperty(DP.awakening) === 0);
+const pretos = log.blocks.slice(blocosAntesCaixa).filter((b) => b.typeId === "minecraft:black_concrete");
+check("caixa 10x10x10 de concreto preto (488 blocos de casca)", pretos.length === 488, `${pretos.length}`);
+const xs = pretos.map((b) => b.location.x);
+check("10 de largura em volta do alvo", Math.max(...xs) - Math.min(...xs) === 9 && Math.min(...xs) <= 8206 && Math.max(...xs) >= 8206);
+const paredeEvt = { block: overworld.getBlock(pretos[0].location), dimension: overworld, player: estranho, cancel: false };
+world.beforeEvents.playerBreakBlock._emit(paredeEvt);
+check("a parede da caixa não pode ser quebrada", paredeEvt.cancel === true);
+const auraRoxa = log.particles
+  .slice(particulasAntesCaixa)
+  .filter((p) => p.particleId === "aizen:reiatsu" && (p.location.x < 8201 || p.location.x > 8211 || p.location.y > 72)).length;
+check("aura roxa em volta da caixa", auraRoxa > 100, `${auraRoxa}`);
+advanceTicks(110, "estocadas");
+noNewErrors("Kurohitsugi sem erro", mark);
+const golpesCaixao = log.damages.slice(dmgBefore).filter((d) => d.target === "Caixao" && d.by === "AizenPlayer");
+const totalCaixao = golpesCaixao.reduce((n, d) => n + d.amount, 0);
+check("50 ataques de 50 = 2500 em quem está dentro", totalCaixao === 2500, `${totalCaixao} em ${golpesCaixao.length} rajadas`);
+check("pega todo mundo lá dentro", log.damages.slice(dmgBefore).filter((d) => d.target === "Vizinho").reduce((n, d) => n + d.amount, 0) === 2500);
+check("quem está fora da caixa não toma", !log.damages.slice(dmgBefore).some((d) => d.target === "DeFora"));
+check("o Aizen não se machuca", !log.damages.slice(dmgBefore).some((d) => d.target === "AizenPlayer"));
+check(
+  "lanças negras nas estocadas",
+  log.particles.some((p) => p.particleId === "aizen:lanca")
+);
+const restauradosCaixa = log.blocks.slice(blocosAntesCaixa).filter((b) => b.typeId === "minecraft:air");
+check("acabados os ataques a caixa some (tudo restaurado)", restauradosCaixa.length === 488, `${restauradosCaixa.length}`);
+check("e o bloco volta a ser o que era", overworld.getBlock(pretos[0].location).typeId === "minecraft:air");
+for (const d of [caixao, vizinho, deFora]) d.kill();
+
+scenario("Aizen: teleporte pelas costas nunca entra em bloco");
+mark = errors.length;
+advanceTicks(100, "solta-paralisias");
+fullHp(hinamori);
+hinamori.teleport({ x: 8100.5, y: 64, z: 8100.5 });
+hinamori._view = { x: -1, y: 0, z: 0 }; // costas pro +x
+for (const x of [8101, 8102]) {
+  for (const y of [64, 65]) overworld.getBlock({ x, y, z: 8100 }).setType("minecraft:stone");
+}
+aizen.teleport({ x: 8090, y: 64, z: 8100.5 });
+aim(aizen, hinamori);
+aizen.setDynamicProperty("mv:cd_aizen_betrayal_of_the_illusioner", undefined);
+useItem(aizen, "aizen:betrayal_of_the_illusioner");
+advanceTicks(1, "betrayal-parede");
+const pes = overworld.getBlock(aizen.location);
+check(
+  "parede nas costas: aparece de lado, fora do bloco",
+  pes.isAir && pes.above().isAir,
+  `${JSON.stringify(aizen.location)} em ${pes.typeId}`
+);
+advanceTicks(100, "betrayal-parede-fim");
+for (const x of [8101, 8102]) {
+  for (const y of [64, 65]) overworld.getBlock({ x, y, z: 8100 }).setType("minecraft:air");
+}
+hinamori.nameTag = ""; // como se tivesse saído do jogo invisível
+emit("playerSpawn", { player: hinamori, initialSpawn: true });
+advanceTicks(5, "rejoin-nome");
+check("quem volta ao mundo sem nome recupera o nome", hinamori.nameTag === "Hinamori", JSON.stringify(hinamori.nameTag));
+noNewErrors("teleporte e rejoin sem erro", mark);
+
+scenario("Aizen: desativar no meio da ilusão não deixa nada pendurado");
+mark = errors.length;
+fullHp(hinamori);
+aizen.teleport({ x: 8000, y: 64, z: 8000 });
+hinamori.teleport({ x: 8004, y: 64, z: 8000 });
+hinamori.removeEffect("slowness");
+aizen.setDynamicProperty("mv:cd_aizen_illusions_mastery", undefined);
+aim(aizen, hinamori);
+useItem(aizen, "aizen:illusions_mastery");
+advanceTicks(3, "mastery-desativar");
+check("(ilusão de pé)", clonesOf().length === 3 && aizen.nameTag === "");
+queueFormResponse(deactivateButtonIndex());
+useItem(aizen, "multiversal:character_selector");
+await settleForms();
+advanceTicks(20, "desativar-aizen");
+noNewErrors("desativar o Aizen sem erro", mark);
+check("clones removidos", clonesOf().length === 0);
+check("visível e com nome", !aizen.getEffect("invisibility") && aizen.nameTag === "AizenPlayer");
+check(
+  "nenhuma Kyōka (nem a oculta) sobra no inventário",
+  !inv(aizen).slots.some((i) => i && isKyokaId(i.typeId)),
+  JSON.stringify(inv(aizen).slots.filter(Boolean).map((i) => i.typeId))
+);
+function isKyokaId(id) {
+  return id === KYOKA || id === KYOKA_OCULTA;
+}
+check(
+  "toda fala do Aizen no chat saiu em roxo",
+  log.worldMessages.filter((m) => m.message.includes("<AizenPlayer>")).every((m) => m.message.startsWith("§5"))
+);
+estranho.kill();
+
 /* ================= estabilidade longa ================= */
 
 scenario("Estabilidade: 2000 ticks livres");

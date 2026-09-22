@@ -172,6 +172,8 @@ const DP = {
   mayuriParalysisY: "mv:mayuri_paralysis_y",
   mayuriParalysisZ: "mv:mayuri_paralysis_z",
   noDash: "mv:cd_nodash", // Ice Age do Hitsugaya: sem dash por um tempo
+  kyokaMark: "mv:kyoka_mark", // viu a Kyōka Suigetsu (m1 do Aizen): pra sempre sob as ilusões
+  kyokaBlock: "mv:kyoka_block", // bloco marcado pela Kyōka ({x,y,z,dim}), destino do agachar duplo
 };
 
 // Paralisia do Piercing Shinso do Gin: id da entidade -> tick limite. O isFrozen()
@@ -825,6 +827,24 @@ const CHARACTERS = {
       triggerItem: "tosen:m1_suzumushi",
     },
   },
+  aizen: {
+    id: "aizen",
+    name: "Sousuke Aizen (Captain's Fight)",
+    health: 5500,
+    items: {
+      0: "aizen:m1_kyoka_suigetsu",
+      1: "aizen:illusions_mastery",
+      2: "aizen:betrayal_of_the_illusioner",
+      3: "aizen:bakudo_61",
+      4: "aizen:fools_trick",
+    },
+    // Hadō #90 Kurohitsugi como super ataque: agachar + usar a Kyōka com o
+    // medidor em 100%, mirando no alvo
+    superAttack: {
+      onTrigger: "aizen",
+      triggerItem: "aizen:m1_kyoka_suigetsu",
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -842,6 +862,8 @@ const EXTRA_OWNED_ITEMS = {
   "vizard:hollow_chest": "ichigo_vizard",
   "vizard:vasto_chest": "ichigo_vizard",
   "ulquiorra:segunda_chest": "ulquiorra",
+  // a Kyōka "oculta" (textura vazia) fica no slot 0 enquanto o Aizen esta invisivel
+  "aizen:m1_kyoka_oculta": "aizen",
 };
 
 const STARKK_ALT_WEAPONS = [
@@ -887,6 +909,7 @@ const CHARACTER_RACE_TIER = {
   ukitake: { race: "shinigami", tier: 5 },
   shinji: { race: "hybrid", tier: 4 },
   tosen: { race: "hybrid", tier: 3 },
+  aizen: { race: "shinigami", tier: 6 },
 
   grimmjow: { race: "hollow", tier: 2 },
   szayelaporro: { race: "hollow", tier: 2 },
@@ -1094,6 +1117,9 @@ function isIntocable(entity) {
 }
 
 function dealDamage(target, amount, source, options) {
+  // clone da Illusion's Mastery: area e skill passam direto por ele; so o golpe
+  // corpo a corpo (entityHitEntity) conta como "acertar o clone"
+  if (target?.typeId === AIZEN.cloneType) return;
   if (isIntocable(target)) {
     if (!options?.bypassesIntocable) {
       try {
@@ -1272,6 +1298,10 @@ const SKILL_COOLDOWN_TICKS = {
   "tosen:ecolocalizacion": 400, // 20s
   "tosen:cero": 800, // 40s
   "tosen:los_nueve_aspectos": 900, // 45s
+  "aizen:illusions_mastery": 500, // 25s
+  "aizen:betrayal_of_the_illusioner": 600, // 30s
+  "aizen:bakudo_61": 500, // 25s
+  "aizen:fools_trick": 700, // 35s
 };
 
 const SKILL_NAMES = {
@@ -1409,6 +1439,10 @@ const SKILL_NAMES = {
   "tosen:ecolocalizacion": "Ecolocalización",
   "tosen:cero": "Cero",
   "tosen:los_nueve_aspectos": "Los Nueve Aspectos",
+  "aizen:illusions_mastery": "Illusion's Mastery",
+  "aizen:betrayal_of_the_illusioner": "Betrayal of the Illusioner",
+  "aizen:bakudo_61": "Bakudō #61: Rikujōkōrō",
+  "aizen:fools_trick": "Fool's Trick",
 };
 
 // dano aumentado
@@ -1579,6 +1613,12 @@ const DAMAGE = {
   bulletHell: 45,
   ceroRain: 10,
   gritoDiabloTick: 6,
+  // Sousuke Aizen (Captain's Fight)
+  aizenM1: 120, // Kyōka Suigetsu
+  aizenIllusionStrike: 300, // m1 no alvo preso na Illusion's Mastery
+  aizenCloneBacklash: 50, // quem acerta um clone
+  aizenFoolsTrick: 400, // o corte do Fool's Trick
+  aizenKurohitsugiHit: 50, // por ataque; 50 ataques
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -2621,6 +2661,9 @@ function getActiveItemsForPlayer(player, character) {
   if (character.id === "tosen" && isTosenVisored(player)) {
     return TOSEN_VISORED.items;
   }
+  if (character.id === "aizen" && aizenIllusions.has(player.id)) {
+    return { ...character.items, 0: AIZEN.kyokaHidden };
+  }
   if (character.superAttack) {
     const weaponState = getByakuyaWeaponState(player);
     if (weaponState === "senkei") {
@@ -2670,6 +2713,7 @@ function deactivateCharacter(player) {
   soiClearNigeki(player.id);
   const character = getActiveCharacter(player);
   if (!character) return;
+  if (character.id === "aizen") aizenCleanup(player.id);
 
   if (isMasked(player)) {
     try {
@@ -3111,6 +3155,10 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
 
   if (initialSpawn) {
     player.runCommand("hud @s hide health");
+    // saiu do jogo invisivel na Illusion's Mastery do Aizen: o nome volta
+    try {
+      if (player.nameTag === "") player.nameTag = player.name;
+    } catch (e) {}
     // o contador de ticks reinicia com o mundo, entao todo cooldown/deadline
     // gravado numa sessao anterior tem que morrer aqui
     clearSessionTimers(player);
@@ -3118,6 +3166,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     forceGiveLockedItem(inv, SELECTOR_SLOT, SELECTOR_ITEM);
   } else {
     soiClearNigeki(player.id);
+    aizenCleanup(player.id);
     ukitakeAbsorb.delete(player.id);
     player.setDynamicProperty(UKITAKE_STORED, 0);
     // respawn depois de morrer: reaplica personagem se tinha um ativo
@@ -3227,6 +3276,10 @@ world.afterEvents.itemUse.subscribe((ev) => {
 
   const character = getActiveCharacter(player);
   if (!character) return;
+
+  // Aizen: agachar pra usar item (guarda, Kurohitsugi) nao e um "toque" do
+  // agachar duplo que teleporta pro bloco marcado
+  if (character.id === "aizen" && player.isSneaking) aizenSneakSpent(player);
 
   // Ulquiorra: a Segunda Etapa agora depende da VIDA REAL/virtual, não do
   // percentual do medidor. Durante a Murciélago, com 1000 de vida ou menos,
@@ -3791,6 +3844,18 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "tosen:los_nueve_aspectos":
       castLosNueveAspectos(player);
+      break;
+    case "aizen:illusions_mastery":
+      castIllusionsMastery(player);
+      break;
+    case "aizen:betrayal_of_the_illusioner":
+      castBetrayal(player);
+      break;
+    case "aizen:bakudo_61":
+      castBakudo61(player);
+      break;
+    case "aizen:fools_trick":
+      castFoolsTrick(player);
       break;
   }
 });
@@ -4768,6 +4833,8 @@ function tryTriggerSuperAttack(player, character) {
       return tryTriggerHansha(player);
     case "tosen":
       return tryTriggerEnma(player);
+    case "aizen":
+      return tryTriggerKurohitsugi(player);
   }
   return false;
 }
@@ -13981,11 +14048,1038 @@ function tryTriggerEnma(player) {
 }
 
 /* ---------------------------------------------------------
+   Sousuke Aizen (Captain's Fight) - Tier 6
+
+   Individualidade: a Kyōka Suigetsu. Quem leva um m1 dela fica marcado PRA
+   SEMPRE (dynamic property no alvo) e passa a poder ser afetado pelas ilusões;
+   quem nunca foi acertado não é. Bater num bloco com ela marca o bloco, e
+   agachar duas vezes em 2s leva o Aizen até ele.
+
+   Ilusões (exigem a marca e terminam com a Kyōka se partindo pra todo mundo):
+     Illusion's Mastery, Fool's Trick e o Counter.
+   Físicas (não exigem nada): Betrayal of the Illusioner, Bakudō #61 e a
+   Kurohitsugi (Hadō #90).
+   Toda fala do Aizen no chat sai em roxo.
+   --------------------------------------------------------- */
+
+const AIZEN = {
+  cloneType: "aizen:clone",
+  kyoka: "aizen:m1_kyoka_suigetsu",
+  kyokaHidden: "aizen:m1_kyoka_oculta",
+  targetRange: 32,
+  mastery: {
+    durationTicks: 200, // nao especificado: 10s ate a ilusao se desfazer sozinha
+    clones: 3,
+    radius: 2.2,
+    spinPerTick: 3, // graus: o triangulo gira devagar em volta do alvo
+    strikeSlownessAmplifier: 2, // "lentidao" sem nivel: Lentidão III
+    strikeSlownessTicks: 60, // nao especificado: 3s
+  },
+  betrayal: { teleports: 5, gapTicks: 20, behind: 1.6, windowTicks: 100, m1Multiplier: 2 },
+  bakudo: { paralysisTicks: 100, bars: 6, slamTicks: 3, refreshTicks: 4 },
+  foolsTrick: { revealDelayTicks: 60, slashDelayTicks: 10, paralysisTicks: 30, nauseaTicks: 80 },
+  counter: { hits: 5, windowTicks: 60, paralysisTicks: 60 },
+  doubleSneakTicks: 40,
+  kurohitsugi: {
+    size: 10, // caixa 10x10x10
+    hits: 50,
+    strikeEveryTicks: 2,
+    // o dano sai em rajadas: 5 golpes somados a cada 10 ticks. Golpe a golpe a
+    // cada 2 ticks poderia esbarrar na invulnerabilidade pos-dano do alvo; o
+    // total (50 x 50) chega igual
+    damageEveryTicks: 10,
+    buildTicks: 10,
+  },
+};
+
+const aizenIllusions = new Map(); // id do Aizen -> ilusao ativa
+const aizenCloneOwner = new Map(); // id do clone -> id do Aizen
+const aizenCloneHitTick = new Map(); // id do clone -> tick do ultimo golpe visto
+const aizenBetrayals = new Map(); // id do Aizen -> { until, timer }
+const aizenTricks = new Map(); // id do Aizen -> Fool's Trick em andamento
+const aizenCoffins = new Map(); // id do Aizen -> Kurohitsugi em andamento
+const aizenCounterHits = new Map(); // id do Aizen -> Map(atacante -> ticks)
+const aizenTrack = new Map(); // id do Aizen -> { hp: [...], agachar duplo }
+
+function isAizen(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === "aizen";
+  } catch (e) {
+    return false;
+  }
+}
+
+function isKyoka(typeId) {
+  return typeId === AIZEN.kyoka || typeId === AIZEN.kyokaHidden;
+}
+
+// toda fala do Aizen no chat e roxa
+function aizenSay(player, text, bold = false) {
+  let name = "Aizen";
+  try {
+    name = player.name;
+  } catch (e) {}
+  world.sendMessage(`§5${bold ? "§l" : ""}<${name}> ${text}`);
+}
+
+function aizenTrackOf(player) {
+  let track = aizenTrack.get(player.id);
+  if (!track) {
+    track = { hp: [], sneaking: false, sneakStart: 0, sneakSpent: false, lastTap: undefined };
+    aizenTrack.set(player.id, track);
+  }
+  return track;
+}
+
+function aizenSneakSpent(player) {
+  aizenTrackOf(player).sneakSpent = true;
+}
+
+function hasKyokaMark(entity) {
+  try {
+    return entity.getDynamicProperty(DP.kyokaMark) === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function aizenPuff(dim, loc, count = 8, spread = 0.6) {
+  for (let i = 0; i < count; i++) {
+    try {
+      dim.spawnParticle("aizen:reiatsu", {
+        x: loc.x + (Math.random() - 0.5) * spread * 2,
+        y: loc.y + 0.3 + Math.random() * 1.6,
+        z: loc.z + (Math.random() - 0.5) * spread * 2,
+      });
+    } catch (e) {}
+  }
+}
+
+// "a Kyōka quebrando": vidro em camadas, com ametista por cima pra soar como
+// cristal/espelho e o beacon apagando no fim. Toca na posicao de CADA player,
+// entao todo mundo ouve igual, perto ou longe.
+const KYOKA_SHATTER = [
+  [0, "random.glass", 0.7, 1],
+  [0, "break.amethyst_block", 0.6, 0.9],
+  [2, "random.glass", 1.0, 0.9],
+  [2, "chime.amethyst_block", 1.2, 1],
+  [4, "random.glass", 1.35, 0.8],
+  [4, "break.amethyst_cluster", 1.0, 0.8],
+  [7, "chime.amethyst_block", 0.8, 0.7],
+  [7, "beacon.deactivate", 1.4, 0.5],
+];
+
+function kyokaShatter(dim, center) {
+  if (dim && center) {
+    for (let i = 0; i < 3; i++) {
+      try {
+        dim.spawnParticle("aizen:estilhaco", {
+          x: center.x + (Math.random() - 0.5),
+          y: center.y + 0.8 + Math.random(),
+          z: center.z + (Math.random() - 0.5),
+        });
+      } catch (e) {}
+    }
+  }
+  for (const [delay, sound, pitch, volume] of KYOKA_SHATTER) {
+    const play = () => {
+      for (const p of world.getPlayers()) {
+        try {
+          p.playSound(sound, { pitch, volume });
+        } catch (e) {}
+      }
+    };
+    if (delay) system.runTimeout(play, delay);
+    else play();
+  }
+}
+
+// alvo na mira do Aizen, pulando os proprios clones
+function aizenTargetInView(player, range = AIZEN.targetRange) {
+  try {
+    return player
+      .getEntitiesFromViewDirection({ maxDistance: range })
+      .map((hit) => hit.entity)
+      .find(
+        (entity) =>
+          entity &&
+          entity.id !== player.id &&
+          entity.typeId !== AIZEN.cloneType &&
+          entity.getComponent("minecraft:health") &&
+          !isDownOrGone(entity)
+      );
+  } catch (e) {
+    return undefined;
+  }
+}
+
+function aizenStandable(dim, loc) {
+  try {
+    const feet = dim.getBlock({ x: Math.floor(loc.x), y: Math.floor(loc.y), z: Math.floor(loc.z) });
+    const head = feet?.above();
+    return !!feet && !!head && (feet.isAir || feet.isLiquid) && (head.isAir || head.isLiquid);
+  } catch (e) {
+    return false;
+  }
+}
+
+// atras do alvo, do lado oposto ao que ele olha. Parede nas costas: tenta mais
+// perto, depois os lados; sem espaco nenhum, aparece colado no proprio alvo
+// (o jogo separa os dois) em vez de dentro de um bloco
+function aizenSpotBehind(target, distance) {
+  const view = target.getViewDirection();
+  const length = Math.hypot(view.x, view.z) || 1;
+  const bx = -view.x / length;
+  const bz = -view.z / length;
+  const t = target.location;
+  const options = [
+    [bx * distance, bz * distance],
+    [bx * distance * 0.6, bz * distance * 0.6],
+    [bz * distance, -bx * distance], // lado direito
+    [-bz * distance, bx * distance], // lado esquerdo
+  ];
+  for (const [dx, dz] of options) {
+    const spot = { x: t.x + dx, y: t.y, z: t.z + dz };
+    if (aizenStandable(target.dimension, spot)) return spot;
+  }
+  return { x: t.x, y: t.y, z: t.z };
+}
+
+function aizenBlinkBehind(player, target, distance) {
+  const from = player.location;
+  const spot = aizenSpotBehind(target, distance);
+  const t = target.location;
+  player.teleport(spot, {
+    dimension: target.dimension,
+    keepVelocity: false,
+    facingLocation: { x: t.x, y: t.y + 1.2, z: t.z },
+  });
+  aizenPuff(player.dimension, from, 6, 0.4);
+  aizenPuff(target.dimension, spot, 6, 0.4);
+  target.dimension.playSound("mob.endermen.portal", spot, { volume: 0.7, pitch: 1.5 });
+  return spot;
+}
+
+function setVirtualHealth(entity, value) {
+  const hp = entity.getComponent("minecraft:health");
+  if (!hp) return;
+  hp.setCurrentValue(Math.max(1, Math.min(hp.effectiveMax, value / healthScaleOf(entity))));
+}
+
+/* ---------- individualidade: a marca da Kyōka ---------- */
+
+function markWithKyoka(aizen, target) {
+  if (!target || target.id === aizen.id || target.typeId === AIZEN.cloneType) return;
+  if (hasKyokaMark(target)) return;
+  try {
+    target.setDynamicProperty(DP.kyokaMark, true);
+  } catch (e) {
+    return;
+  }
+  try {
+    aizen.sendMessage(`§5A Kyōka Suigetsu marcou §d${nameOf(target)}§5: as ilusões agora funcionam nele.`);
+    aizenPuff(target.dimension, target.location, 10, 0.5);
+  } catch (e) {}
+}
+
+function aizenMarkBlock(player, block) {
+  const loc = block.location;
+  const mark = JSON.stringify({ x: loc.x, y: loc.y, z: loc.z, dim: block.dimension.id });
+  if (player.getDynamicProperty(DP.kyokaBlock) === mark) return;
+  player.setDynamicProperty(DP.kyokaBlock, mark);
+  aizenPuff(block.dimension, { x: loc.x + 0.5, y: loc.y + 0.6, z: loc.z + 0.5 }, 10, 0.5);
+  try {
+    player.playSound("chime.amethyst_block", { pitch: 1.5, volume: 0.8 });
+  } catch (e) {}
+  player.sendMessage("§5Bloco marcado pela Kyōka Suigetsu. §7(agache duas vezes em 2s pra voltar até ele)");
+}
+
+function aizenMarkedBlock(player) {
+  const raw = player.getDynamicProperty(DP.kyokaBlock);
+  if (typeof raw !== "string") return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    player.setDynamicProperty(DP.kyokaBlock, undefined);
+    return undefined;
+  }
+}
+
+function aizenTeleportToBlock(player) {
+  const mark = aizenMarkedBlock(player);
+  if (!mark) {
+    player.sendMessage("§5Nenhum bloco marcado: bata num bloco com a Kyōka Suigetsu.");
+    return false;
+  }
+  if (isFrozen(player) || isMayuriParalyzed(player) || trappingZoneFor(player)) {
+    player.sendMessage("§5Preso: a Kyōka não consegue te tirar daqui.");
+    return false;
+  }
+  let dim;
+  let block;
+  try {
+    dim = world.getDimension(mark.dim);
+    block = dim.getBlock({ x: mark.x, y: mark.y, z: mark.z });
+  } catch (e) {}
+  if (!block) {
+    player.sendMessage("§5O bloco marcado está longe demais (fora da área carregada).");
+    return false;
+  }
+  if (block.isAir || block.isLiquid) {
+    player.setDynamicProperty(DP.kyokaBlock, undefined);
+    player.sendMessage("§5O bloco marcado não existe mais.");
+    return false;
+  }
+  const dest = { x: mark.x + 0.5, y: mark.y + 1, z: mark.z + 0.5 };
+  if (!aizenStandable(dim, dest)) {
+    player.sendMessage("§5O bloco marcado está coberto: não há espaço em cima dele.");
+    return false;
+  }
+  const from = player.location;
+  const fromDim = player.dimension;
+  player.teleport(dest, { dimension: dim, keepVelocity: false });
+  aizenPuff(fromDim, from, 10, 0.5);
+  aizenPuff(dim, dest, 10, 0.5);
+  fromDim.playSound("mob.endermen.portal", from, { volume: 0.8, pitch: 1.3 });
+  dim.playSound("mob.endermen.portal", dest, { volume: 0.8, pitch: 1.3 });
+  return true;
+}
+
+/* ---------- Illusion's Mastery ---------- */
+
+function aizenCloneSpot(target, index, angle) {
+  const a = ((angle + index * 120) * Math.PI) / 180;
+  const t = target.location;
+  return {
+    x: t.x + Math.cos(a) * AIZEN.mastery.radius,
+    y: t.y,
+    z: t.z + Math.sin(a) * AIZEN.mastery.radius,
+  };
+}
+
+function aizenHide(player, state, ticks) {
+  try {
+    player.addEffect("invisibility", ticks + 20, { amplifier: 0, showParticles: false });
+  } catch (e) {}
+  try {
+    state.nameTag = player.nameTag;
+    player.nameTag = ""; // o nome em cima da cabeca entregaria a posicao
+  } catch (e) {}
+  try {
+    forceGiveLockedItem(getInv(player), 0, AIZEN.kyokaHidden);
+  } catch (e) {}
+}
+
+function aizenReveal(player, state) {
+  try {
+    player.removeEffect("invisibility");
+  } catch (e) {}
+  try {
+    player.nameTag = state.nameTag || player.name;
+  } catch (e) {}
+  try {
+    if (isAizen(player)) forceGiveLockedItem(getInv(player), 0, AIZEN.kyoka);
+  } catch (e) {}
+}
+
+function castIllusionsMastery(player) {
+  if (aizenIllusions.has(player.id)) {
+    player.sendMessage("§5A ilusão já está de pé.");
+    return;
+  }
+  const target = aizenTargetInView(player);
+  if (!target) {
+    player.sendMessage("§5Mire em alguém pra prender na ilusão.");
+    return;
+  }
+  if (!hasKyokaMark(target)) {
+    player.sendMessage(
+      `§5${nameOf(target)} nunca viu a Kyōka Suigetsu: acerte com a m1 primeiro pra ele cair nas ilusões.`
+    );
+    return;
+  }
+  if (!tryUseSkill(player, "aizen:illusions_mastery")) return;
+
+  const cfg = AIZEN.mastery;
+  const dim = target.dimension;
+  const state = {
+    aizen: player,
+    aizenId: player.id,
+    target,
+    dim,
+    clones: [],
+    angle: 0,
+    until: system.currentTick + cfg.durationTicks,
+  };
+  for (let i = 0; i < cfg.clones; i++) {
+    try {
+      const spot = aizenCloneSpot(target, i, 0);
+      const clone = dim.spawnEntity(AIZEN.cloneType, spot);
+      clone.nameTag = player.name;
+      state.clones.push({ entity: clone, id: clone.id, popped: false });
+      aizenCloneOwner.set(clone.id, player.id);
+      aizenPuff(dim, spot, 8, 0.4);
+    } catch (e) {}
+  }
+  aizenIllusions.set(player.id, state);
+  aizenHide(player, state, cfg.durationTicks);
+
+  world.sendMessage(`§5${player.name} usou §lIllusion's Mastery§r§5 em ${nameOf(target)}.`);
+  dim.playSound("mob.evocation_illager.prepare_summon", target.location, { volume: 1.2, pitch: 1.3 });
+}
+
+function endIllusion(state, reason) {
+  if (state.ended) return;
+  state.ended = true;
+  aizenIllusions.delete(state.aizenId);
+  for (const clone of state.clones) {
+    aizenCloneOwner.delete(clone.id);
+    if (clone.popped) continue;
+    try {
+      aizenPuff(state.dim, clone.entity.location, 6, 0.3);
+      clone.entity.remove();
+    } catch (e) {}
+  }
+  aizenReveal(state.aizen, state);
+  if (reason === "strike") aizenSay(state.aizen, "Tolo, caiu em minha ilusão");
+  let center;
+  try {
+    center = state.target.location;
+  } catch (e) {
+    try {
+      center = state.aizen.location;
+    } catch (e2) {}
+  }
+  kyokaShatter(state.dim, center);
+}
+
+function stepIllusion(state, now) {
+  const { aizen, target } = state;
+  if (isDownOrGone(aizen) || !isAizen(aizen) || isDownOrGone(target)) {
+    endIllusion(state, "gone");
+    return;
+  }
+  try {
+    if (target.dimension.id !== state.dim.id) {
+      endIllusion(state, "gone");
+      return;
+    }
+  } catch (e) {}
+  if (now >= state.until) {
+    endIllusion(state, "timeout");
+    return;
+  }
+  state.angle = (state.angle + AIZEN.mastery.spinPerTick) % 360;
+  const t = target.location;
+  const look = { x: t.x, y: t.y + 1.4, z: t.z };
+  state.clones.forEach((clone, index) => {
+    if (clone.popped) return;
+    try {
+      clone.entity.teleport(aizenCloneSpot(target, index, state.angle), {
+        keepVelocity: false,
+        facingLocation: look,
+      });
+    } catch (e) {
+      clone.popped = true; // sumiu por fora (chunk, /kill): conta como desfeito
+    }
+  });
+  if (state.clones.every((clone) => clone.popped)) endIllusion(state, "clones");
+}
+
+// alguem acertou um clone (entityHitEntity)
+function aizenCloneStruck(entity, attacker) {
+  const id = entity.id;
+  aizenCloneHitTick.set(id, system.currentTick);
+  const state = aizenIllusions.get(aizenCloneOwner.get(id));
+  const clone = state?.clones.find((c) => c.id === id);
+  if (!state || !clone) {
+    try {
+      entity.remove(); // clone orfao (ilusao ja acabou)
+    } catch (e) {}
+    return;
+  }
+  if (attacker.id === state.aizenId) return; // o proprio Aizen nao desfaz o clone
+  popClone(state, clone, attacker);
+}
+
+function popClone(state, clone, attacker) {
+  if (clone.popped) return;
+  clone.popped = true;
+  aizenCloneOwner.delete(clone.id);
+  let loc;
+  try {
+    loc = clone.entity.location;
+    clone.entity.remove();
+  } catch (e) {}
+  if (loc) {
+    try {
+      state.dim.spawnParticle("aizen:estilhaco", { x: loc.x, y: loc.y + 1.1, z: loc.z });
+      state.dim.playSound("random.glass", loc, { volume: 0.9, pitch: 1.2 });
+    } catch (e) {}
+  }
+  // quem ataca a ilusao se machuca: 50 por clone
+  try {
+    dealDamage(attacker, DAMAGE.aizenCloneBacklash, state.aizen);
+  } catch (e) {
+    try {
+      dealDamage(attacker, DAMAGE.aizenCloneBacklash);
+    } catch (e2) {}
+  }
+  aizenSay(state.aizen, "Errou...tente novamente");
+  if (state.clones.every((c) => c.popped)) endIllusion(state, "clones");
+}
+
+// rede de seguranca: o damage_sensor do clone manda "aizen:golpeado". Se o
+// entityHitEntity ja tratou esse golpe, nao faz nada; senao desfaz o clone
+// cobrando de quem esta preso na ilusao
+function aizenCloneSensorHit(entity) {
+  let id;
+  try {
+    id = entity.id;
+  } catch (e) {
+    return;
+  }
+  const seenAt = system.currentTick;
+  system.runTimeout(() => {
+    if ((aizenCloneHitTick.get(id) ?? -1000) >= seenAt - 1) return;
+    const state = aizenIllusions.get(aizenCloneOwner.get(id));
+    const clone = state?.clones.find((c) => c.id === id);
+    if (state && clone) popClone(state, clone, state.target);
+  }, 2);
+}
+
+/* ---------- m1 da Kyōka ---------- */
+
+function aizenKyokaStrike(aizen, target) {
+  markWithKyoka(aizen, target);
+  let damage = DAMAGE.aizenM1;
+  const illusion = aizenIllusions.get(aizen.id);
+  const caught = illusion && illusion.target.id === target.id ? illusion : undefined;
+  if (caught) damage = DAMAGE.aizenIllusionStrike;
+  const betrayal = aizenBetrayals.get(aizen.id);
+  if (betrayal && system.currentTick < betrayal.until) damage *= AIZEN.betrayal.m1Multiplier;
+  return { damage, illusion: caught };
+}
+
+function aizenAfterKyokaStrike(aizen, target, strike) {
+  if (!strike.illusion) return;
+  try {
+    target.addEffect("slowness", AIZEN.mastery.strikeSlownessTicks, {
+      amplifier: AIZEN.mastery.strikeSlownessAmplifier,
+      showParticles: true,
+    });
+  } catch (e) {}
+  endIllusion(strike.illusion, "strike");
+}
+
+/* ---------- Betrayal of the Illusioner ---------- */
+
+function castBetrayal(player) {
+  const target = aizenTargetInView(player);
+  if (!target) {
+    player.sendMessage("§5Mire em alguém pra aparecer nas costas dele.");
+    return;
+  }
+  if (!tryUseSkill(player, "aizen:betrayal_of_the_illusioner")) return;
+
+  const cfg = AIZEN.betrayal;
+  world.sendMessage(`§5${player.name} usou §lBetrayal of the Illusioner§r§5!`);
+  const state = { until: system.currentTick + cfg.windowTicks, jumps: 0 };
+  aizenBetrayals.set(player.id, state);
+
+  const jump = () => {
+    if (aizenBetrayals.get(player.id) !== state) return; // cancelado
+    if (isDownOrGone(player) || !isAizen(player) || isDownOrGone(target) || isFrozen(player)) return;
+    state.jumps++;
+    try {
+      aizenBlinkBehind(player, target, cfg.behind);
+    } catch (e) {
+      return;
+    }
+    if (state.jumps < cfg.teleports) state.timer = system.runTimeout(jump, cfg.gapTicks);
+  };
+  jump();
+}
+
+/* ---------- Bakudō #61: Rikujōkōrō ---------- */
+
+function drawRikujokoro(dim, loc, bars, slam) {
+  for (const bar of bars) {
+    const out = slam * 0.8; // as barras chegam de fora e batem na cintura
+    for (let step = 0; step <= 5; step++) {
+      const r = 0.45 + out + step * 0.28;
+      const lift = (step / 5 - 0.5) * 0.3 * bar.tilt;
+      try {
+        dim.spawnParticle("aizen:luz", {
+          x: loc.x + Math.cos(bar.angle) * r,
+          y: loc.y + 1.0 + lift,
+          z: loc.z + Math.sin(bar.angle) * r,
+        });
+      } catch (e) {}
+    }
+  }
+}
+
+function castBakudo61(player) {
+  const target = aizenTargetInView(player);
+  if (!target) {
+    player.sendMessage("§5Mire em alguém pra prender com o Rikujōkōrō.");
+    return;
+  }
+  if (!tryUseSkill(player, "aizen:bakudo_61")) return;
+
+  const cfg = AIZEN.bakudo;
+  aizenSay(player, "Bakudō #61: Rikujōkōrō", true);
+  // kido de longe: a Respira do Barragan e o Intocable do Nnoitra seguram
+  if (isRespiring(target)) {
+    showRespiraGuard(target);
+    return;
+  }
+  if (isIntocable(target)) {
+    showIntocableGuard(target);
+    return;
+  }
+
+  paralyzeFor(target, cfg.paralysisTicks, "§e✦ Rikujōkōrō: seis barras de luz te prenderam!");
+  const base = Math.random() * Math.PI * 2;
+  const bars = Array.from({ length: cfg.bars }, (_, k) => ({
+    angle: base + (k * Math.PI * 2) / cfg.bars,
+    tilt: k % 2 === 0 ? 1 : -1,
+  }));
+  const dim = target.dimension;
+  dim.playSound("beacon.power", target.location, { volume: 1.2, pitch: 1.6 });
+  for (let k = 0; k < cfg.bars; k++) {
+    system.runTimeout(() => {
+      try {
+        dim.playSound("item.trident.hit", target.location, { volume: 0.8, pitch: 1.5 + k * 0.08 });
+      } catch (e) {}
+    }, 1 + Math.floor(k / 2));
+  }
+
+  let tick = 0;
+  const interval = system.runInterval(() => {
+    tick++;
+    if (isDownOrGone(target) || tick > cfg.paralysisTicks) {
+      system.clearRun(interval);
+      return;
+    }
+    try {
+      const loc = target.location;
+      if (tick <= cfg.slamTicks) drawRikujokoro(dim, loc, bars, cfg.slamTicks - tick);
+      else if (tick % cfg.refreshTicks === 0) drawRikujokoro(dim, loc, bars, 0);
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 1);
+}
+
+/* ---------- Fool's Trick ---------- */
+
+function castFoolsTrick(player) {
+  if (aizenTricks.has(player.id)) return;
+  const target = aizenTargetInView(player);
+  if (!target) {
+    player.sendMessage("§5Mire em alguém pra enganar.");
+    return;
+  }
+  if (!hasKyokaMark(target)) {
+    player.sendMessage(
+      `§5${nameOf(target)} nunca viu a Kyōka Suigetsu: acerte com a m1 primeiro pra ele cair nas ilusões.`
+    );
+    return;
+  }
+  if (!tryUseSkill(player, "aizen:fools_trick")) return;
+
+  const cfg = AIZEN.foolsTrick;
+  // o awakening falso: fala, barulho alto e a carga de reiatsu, tudo de mentira
+  aizenSay(player, "AWAKENING: Hadō 99: Goryūtenmetsu", true);
+  const origin = player.location;
+  player.dimension.playSound("mob.wither.spawn", origin, { volume: 4, pitch: 0.6 });
+  player.dimension.playSound("ambient.weather.thunder", origin, { volume: 3, pitch: 0.7 });
+
+  const state = { target };
+  aizenTricks.set(player.id, state);
+  let tick = 0;
+  state.run = system.runInterval(() => {
+    tick += 2;
+    if (aizenTricks.get(player.id) !== state) {
+      system.clearRun(state.run);
+      return;
+    }
+    if (isDownOrGone(player) || !isAizen(player)) {
+      system.clearRun(state.run);
+      aizenTricks.delete(player.id);
+      return;
+    }
+    try {
+      const l = player.location;
+      for (let i = 0; i < 3; i++) {
+        const a = tick * 0.35 + (i * Math.PI * 2) / 3;
+        player.dimension.spawnParticle("aizen:reiatsu", {
+          x: l.x + Math.cos(a) * 1.3,
+          y: l.y + (tick / cfg.revealDelayTicks) * 2.4,
+          z: l.z + Math.sin(a) * 1.3,
+        });
+      }
+    } catch (e) {}
+    if (tick < cfg.revealDelayTicks) return;
+    system.clearRun(state.run);
+
+    // a ilusao cai: ele ja estava atras do alvo
+    if (isDownOrGone(target)) {
+      aizenTricks.delete(player.id);
+      kyokaShatter(player.dimension, player.location);
+      return;
+    }
+    try {
+      aizenBlinkBehind(player, target, 1.3);
+    } catch (e) {}
+    if (!isIntocable(target)) paralyzeFor(target, cfg.paralysisTicks, "§5Você não consegue se mexer...");
+    aizenSay(player, "Achou mesmo ser digno?");
+    kyokaShatter(target.dimension, target.location);
+
+    state.slash = system.runTimeout(() => {
+      aizenTricks.delete(player.id);
+      if (isDownOrGone(target) || isDownOrGone(player) || !isAizen(player)) return;
+      dealDamage(target, DAMAGE.aizenFoolsTrick * dmgMultiplier(player), player);
+      try {
+        target.addEffect("nausea", cfg.nauseaTicks, { amplifier: 0, showParticles: false });
+      } catch (e) {}
+      try {
+        const l = target.location;
+        const dim = target.dimension;
+        for (let i = -4; i <= 4; i++) {
+          dim.spawnParticle("minecraft:crit_particle", {
+            x: l.x + i * 0.18,
+            y: l.y + 1.1 + i * 0.12,
+            z: l.z,
+          });
+        }
+        dim.playSound("item.trident.hit", l, { volume: 1.2, pitch: 0.7 });
+        dim.playSound("random.glass", l, { volume: 0.6, pitch: 1.8 });
+      } catch (e) {}
+    }, cfg.slashDelayTicks);
+  }, 2);
+}
+
+/* ---------- Counter (passiva) ---------- */
+
+// Chamado pelo m1 de qualquer um. So conta golpe em Aizen, e so de quem esta
+// sob a Kyōka: a vitoria "sempre foi uma ilusao" pra quem viu a liberacao.
+function aizenCountHit(aizen, attacker) {
+  if (!isAizen(aizen) || !attacker || attacker.id === aizen.id) return;
+  if (!hasKyokaMark(attacker)) return;
+  if (isFrozen(aizen) || isDownOrGone(aizen)) return;
+
+  const cfg = AIZEN.counter;
+  const now = system.currentTick;
+  let perAttacker = aizenCounterHits.get(aizen.id);
+  if (!perAttacker) {
+    perAttacker = new Map();
+    aizenCounterHits.set(aizen.id, perAttacker);
+  }
+  const hits = (perAttacker.get(attacker.id) ?? []).filter((t) => now - t <= cfg.windowTicks);
+  hits.push(now);
+  if (hits.length < cfg.hits) {
+    perAttacker.set(attacker.id, hits);
+    return;
+  }
+  perAttacker.delete(attacker.id);
+  triggerAizenCounter(aizen, attacker, hits[0]);
+}
+
+function triggerAizenCounter(aizen, attacker, since) {
+  const cfg = AIZEN.counter;
+  // toda a vida perdida nesse tempo: a maior vida registrada desde o 1º golpe
+  let best = virtualHealth(aizen);
+  for (const sample of aizenTrackOf(aizen).hp) {
+    if (sample.tick >= since - 2 && sample.hp > best) best = sample.hp;
+  }
+  try {
+    aizenBlinkBehind(aizen, attacker, 1.4);
+  } catch (e) {}
+  if (!isIntocable(attacker)) paralyzeFor(attacker, cfg.paralysisTicks, "§5A ilusão te prendeu!");
+  try {
+    setVirtualHealth(aizen, best);
+  } catch (e) {}
+  aizenSay(aizen, "Você vencer sempre foi uma ilusão");
+  kyokaShatter(aizen.dimension, aizen.location);
+}
+
+/* ---------- Awakening (super): Hadō #90 Kurohitsugi ---------- */
+
+function tryTriggerKurohitsugi(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+  if (aizenCoffins.has(player.id)) return false;
+  // sem ninguem na mira a tecla cai pra guarda, como nos outros supers
+  const target = aizenTargetInView(player, 40);
+  if (!target) return false;
+  player.setDynamicProperty(DP.awakening, 0);
+  runKurohitsugi(player, target);
+  return true;
+}
+
+function runKurohitsugi(player, target) {
+  const cfg = AIZEN.kurohitsugi;
+  const dim = target.dimension;
+  const t = target.location;
+  const half = Math.floor(cfg.size / 2);
+  const min = { x: Math.floor(t.x) - half, y: Math.floor(t.y) - 1, z: Math.floor(t.z) - half };
+  const max = { x: min.x + cfg.size - 1, y: min.y + cfg.size - 1, z: min.z + cfg.size - 1 };
+  const inside = (l) =>
+    l.x >= min.x + 1 && l.x < max.x && l.z >= min.z + 1 && l.z < max.z && l.y >= min.y + 0.99 && l.y < max.y;
+
+  // a casca da caixa, de baixo pra cima; so troca celula livre (ar/liquido)
+  const cells = [];
+  for (let x = min.x; x <= max.x; x++) {
+    for (let y = min.y; y <= max.y; y++) {
+      for (let z = min.z; z <= max.z; z++) {
+        if (x === min.x || x === max.x || y === min.y || y === max.y || z === min.z || z === max.z) {
+          cells.push([x, y, z]);
+        }
+      }
+    }
+  }
+  cells.sort((a, b) => a[1] - b[1]);
+  const perTick = Math.ceil(cells.length / cfg.buildTicks);
+  const ledger = iceTrack([]);
+  const cache = new Map();
+  const state = { ledger, dim, min, max };
+  aizenCoffins.set(player.id, state);
+
+  aizenSay(player, "Hadō #90: Kurohitsugi", true);
+  dim.playSound("block.end_portal.spawn", t, { volume: 2, pitch: 0.5 });
+  dim.playSound("beacon.activate", t, { volume: 2, pitch: 0.5 });
+
+  const center = { x: (min.x + max.x + 1) / 2, y: (min.y + max.y + 1) / 2, z: (min.z + max.z + 1) / 2 };
+  const pending = new Map(); // id -> { entity, amount }
+  let idx = 0;
+  let tick = 0;
+  let strikes = 0;
+
+  const flush = () => {
+    for (const { entity, amount } of pending.values()) {
+      if (isDownOrGone(entity)) continue;
+      try {
+        dealDamage(entity, amount * dmgMultiplier(player), player);
+      } catch (e) {}
+    }
+    pending.clear();
+  };
+
+  const finish = () => {
+    system.clearRun(state.run);
+    flush();
+    iceRestore(ledger); // a caixa some e devolve o que estava ali
+    aizenCoffins.delete(player.id);
+    try {
+      dim.playSound("random.explode", center, { volume: 1.5, pitch: 0.5 });
+      dim.playSound("beacon.deactivate", center, { volume: 1.5, pitch: 0.6 });
+      for (let i = 0; i < 16; i++) {
+        dim.spawnParticle("aizen:reiatsu", {
+          x: center.x + (Math.random() - 0.5) * cfg.size,
+          y: min.y + 1 + Math.random() * (cfg.size - 2),
+          z: center.z + (Math.random() - 0.5) * cfg.size,
+        });
+      }
+    } catch (e) {}
+  };
+  state.finish = finish;
+
+  state.run = system.runInterval(() => {
+    tick++;
+    try {
+      if (isDownOrGone(player) || !isAizen(player)) {
+        finish();
+        return;
+      }
+      // sobe a caixa
+      for (let n = 0; n < perTick && idx < cells.length; n++, idx++) {
+        const [x, y, z] = cells[idx];
+        if (ginBlockInfo(dim, cache, x, y, z).passable) iceSet(ledger, dim, x, y, z, "minecraft:black_concrete");
+      }
+      // aura roxa colada por fora das paredes
+      for (let i = 0; i < 18; i++) {
+        const face = Math.floor(Math.random() * 5); // 4 paredes + teto
+        const u = min.x + Math.random() * cfg.size;
+        const v = min.y + Math.random() * cfg.size;
+        const w = min.z + Math.random() * cfg.size;
+        const p =
+          face === 0 ? { x: min.x - 0.4, y: v, z: w }
+          : face === 1 ? { x: max.x + 1.4, y: v, z: w }
+          : face === 2 ? { x: u, y: v, z: min.z - 0.4 }
+          : face === 3 ? { x: u, y: v, z: max.z + 1.4 }
+          : { x: u, y: max.y + 1.4, z: w };
+        dim.spawnParticle("aizen:reiatsu", p);
+      }
+      if (tick <= cfg.buildTicks) return;
+
+      // as estocadas: 50, uma a cada 2 ticks, em todo mundo la dentro menos o Aizen
+      if ((tick - cfg.buildTicks) % cfg.strikeEveryTicks === 0 && strikes < cfg.hits) {
+        strikes++;
+        for (const entity of dim.getEntities({ location: center, maxDistance: cfg.size })) {
+          if (entity.id === player.id || entity.typeId === AIZEN.cloneType) continue;
+          if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+          const l = entity.location;
+          if (!inside(l)) continue;
+          const entry = pending.get(entity.id) ?? { entity, amount: 0 };
+          entry.amount += DAMAGE.aizenKurohitsugiHit;
+          pending.set(entity.id, entry);
+          // lanca negra vindo de um ponto aleatorio na direcao do peito
+          const a = Math.random() * Math.PI * 2;
+          const from = { x: l.x + Math.cos(a) * 2.6, y: l.y + 0.4 + Math.random() * 2, z: l.z + Math.sin(a) * 2.6 };
+          for (let s = 0; s < 6; s++) {
+            const k = s / 5;
+            dim.spawnParticle("aizen:lanca", {
+              x: from.x + (l.x - from.x) * k,
+              y: from.y + (l.y + 1.1 - from.y) * k,
+              z: from.z + (l.z - from.z) * k,
+            });
+          }
+          dim.playSound("item.trident.hit", l, { volume: 0.6, pitch: 0.6 + Math.random() * 0.5 });
+        }
+      }
+      if ((tick - cfg.buildTicks) % cfg.damageEveryTicks === 0) flush();
+      if (strikes >= cfg.hits) finish();
+    } catch (e) {
+      finish();
+    }
+  }, 1);
+}
+
+/* ---------- loop do Aizen ---------- */
+
+system.runInterval(() => {
+  const now = system.currentTick;
+  for (const player of world.getPlayers()) {
+    if (!isAizen(player)) {
+      aizenTrack.delete(player.id);
+      continue;
+    }
+    const track = aizenTrackOf(player);
+
+    // vida dos ultimos 4s pro Counter devolver "toda a vida perdida nesse tempo"
+    try {
+      track.hp.push({ tick: now, hp: virtualHealth(player) });
+      while (track.hp.length && now - track.hp[0].tick > 80) track.hp.shift();
+    } catch (e) {}
+
+    // agachar duas vezes em 2s: conta o agachar ao SOLTAR, e so se ele nao foi
+    // gasto em outra coisa (guarda, Kurohitsugi, dash)
+    const sneaking = player.isSneaking;
+    if (sneaking && !track.sneaking) {
+      track.sneakStart = now;
+      track.sneakSpent = false;
+    }
+    if (sneaking) {
+      try {
+        if (player.getVelocity().y > 0.28) track.sneakSpent = true;
+      } catch (e) {}
+    }
+    if (!sneaking && track.sneaking && !track.sneakSpent) {
+      if (track.lastTap !== undefined && track.sneakStart - track.lastTap <= AIZEN.doubleSneakTicks) {
+        track.lastTap = undefined;
+        aizenTeleportToBlock(player);
+      } else {
+        track.lastTap = track.sneakStart;
+      }
+    }
+    track.sneaking = sneaking;
+
+    // o bloco marcado brilha so pra ele
+    if (now % 20 === 0) {
+      const mark = aizenMarkedBlock(player);
+      try {
+        const l = player.location;
+        if (
+          mark &&
+          mark.dim === player.dimension.id &&
+          Math.hypot(mark.x - l.x, mark.y - l.y, mark.z - l.z) < 64
+        ) {
+          for (let h = 0; h < 3; h++) {
+            tosenSee(player, "aizen:reiatsu", { x: mark.x + 0.5, y: mark.y + 1.1 + h * 0.5, z: mark.z + 0.5 });
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
+  for (const state of [...aizenIllusions.values()]) stepIllusion(state, now);
+}, 1);
+
+// clone sem dono (mundo recarregado no meio da ilusao) some sozinho
+system.runInterval(() => {
+  for (const id of ["minecraft:overworld", "minecraft:nether", "minecraft:the_end"]) {
+    let dim;
+    try {
+      dim = world.getDimension(id);
+    } catch (e) {
+      continue;
+    }
+    for (const entity of dim.getEntities({ type: AIZEN.cloneType })) {
+      try {
+        if (!aizenCloneOwner.has(entity.id)) entity.remove();
+      } catch (e) {}
+    }
+  }
+}, 40);
+
+world.afterEvents.entityHitBlock.subscribe((ev) => {
+  const player = ev.damagingEntity;
+  if (!isAizen(player)) return;
+  try {
+    const held = player.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Mainhand);
+    if (!held || !isKyoka(held.typeId)) return;
+    aizenMarkBlock(player, ev.hitBlock);
+  } catch (e) {}
+});
+
+world.afterEvents.dataDrivenEntityTrigger.subscribe(
+  (ev) => {
+    if (ev.eventId !== "aizen:golpeado") return;
+    aizenCloneSensorHit(ev.entity);
+  },
+  { entityTypes: [AIZEN.cloneType], eventTypes: ["aizen:golpeado"] }
+);
+
+// desativar, morrer, sair: nada do Aizen pode ficar pendurado no mundo
+function aizenCleanup(playerId) {
+  const illusion = aizenIllusions.get(playerId);
+  if (illusion) endIllusion(illusion, "gone");
+  const betrayal = aizenBetrayals.get(playerId);
+  if (betrayal?.timer !== undefined) system.clearRun(betrayal.timer);
+  aizenBetrayals.delete(playerId);
+  const trick = aizenTricks.get(playerId);
+  if (trick) {
+    if (trick.run !== undefined) system.clearRun(trick.run);
+    if (trick.slash !== undefined) system.clearRun(trick.slash);
+    aizenTricks.delete(playerId);
+  }
+  aizenCoffins.get(playerId)?.finish?.();
+  aizenCounterHits.delete(playerId);
+  for (const perAttacker of aizenCounterHits.values()) perAttacker.delete(playerId);
+  aizenTrack.delete(playerId);
+}
+
+/* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
 // registro generico de armas m1 - facilita adicionar novos personagens
 const MELEE_WEAPONS = {
+  "aizen:m1_kyoka_suigetsu": {
+    baseDamage: DAMAGE.aizenM1,
+    particle: "aizen:reiatsu",
+    dot: null,
+  },
+  // a mesma Kyōka enquanto ele esta invisivel: sem particula, que entregaria
+  // onde o Aizen esta
+  "aizen:m1_kyoka_oculta": {
+    baseDamage: DAMAGE.aizenM1,
+    particle: null,
+    dot: null,
+  },
   "shinji:m1_sakanade": {
     baseDamage: 75,
     particle: "shinji:gold",
@@ -14227,6 +15321,12 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
   // preso no Teatro de Títeres: o golpe nao sai (vale pros dois lados)
   if (isFrozen(damagingEntity) || isMayuriParalyzed(damagingEntity)) return;
 
+  // bater num clone da Illusion's Mastery (ate de mao vazia) e errar o golpe
+  if (hitEntity?.typeId === AIZEN.cloneType) {
+    aizenCloneStruck(hitEntity, damagingEntity);
+    return;
+  }
+
   const equip = damagingEntity.getComponent("minecraft:equippable");
   const held = equip?.getEquipment(EquipmentSlot.Mainhand);
   if (!held) return;
@@ -14251,7 +15351,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
     const dim = damagingEntity.dimension;
     const dir = forwardDirection(damagingEntity);
     const loc = damagingEntity.location;
-    for (let i = -2; i <= 2; i++) {
+    for (let i = -2; i <= 2 && weapon.particle; i++) {
       const p = {
         x: loc.x + dir.x * 1.2 - dir.z * (i * 0.2),
         y: loc.y + 1 + Math.cos(i) * 0.15,
@@ -14283,12 +15383,18 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       ) {
         baseDamage = 70;
       }
+      // Kyōka Suigetsu: marca o alvo, e o golpe muda na ilusao e no Betrayal
+      const kyokaStrike = isKyoka(held.typeId) ? aizenKyokaStrike(damagingEntity, hitEntity) : null;
+      if (kyokaStrike) baseDamage = kyokaStrike.damage;
       const totalDamage = baseDamage * dmgMultiplier(damagingEntity);
       try {
         dealDamage(hitEntity, totalDamage, damagingEntity);
       } catch (e) {
         // ignora
       }
+      if (kyokaStrike) aizenAfterKyokaStrike(damagingEntity, hitEntity, kyokaStrike);
+      // Counter: m1 seguidos no Aizen
+      aizenCountHit(hitEntity, damagingEntity);
       if (weapon.dot) {
         applyDot(hitEntity, damagingEntity, weapon.dot.perSecond, weapon.dot.seconds);
       }
@@ -14988,6 +16094,7 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   lastArmorSweepTick.delete(playerId);
   resetTosenVisoredChargeId(playerId);
   tosenOldHelmet.delete(playerId);
+  aizenCleanup(playerId);
 });
 
 
@@ -15014,4 +16121,5 @@ export {
   MELEE_WEAPONS,
   BLOCK,
   TOXIC_FOG,
+  AIZEN,
 };

@@ -5,14 +5,19 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 428 checks na simulação, zero exceções. Packs na versão 1.8.0.
+- **Estado**: 809 checks na simulação, zero exceções. Packs na versão 1.20.0.
+- **Base**: a partir da 1.20.0 o repo parte da **1.19.25 (TosenVisored)** que o
+  usuário mandou em `.mcaddon` — ela descende da 1.14.0 daqui (mesmos UUIDs) e foi
+  desenvolvida fora deste branch. Foi importada byte a byte no commit
+  `b9719db`; tudo depois disso está no histórico normal.
 
 ## Como trabalhar aqui
 
 ```bash
 python3 tools/build.py          # valida + simula + empacota (falha se algo quebrar)
-python3 tools/validate.py       # JSON, itens, texturas, manifests, versões
+python3 tools/validate.py       # JSON, itens, texturas, manifests, sons, entidades
 python3 tools/gen_textures.py   # renderiza os grids de tools/textures.py em PNG
+python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen)
 python3 tools/bump_version.py minor   # OBRIGATÓRIO a cada release de conteúdo
 node --import ./sim/register.mjs sim/run.mjs   # só a simulação
 ```
@@ -24,21 +29,27 @@ O `build.py` roda tudo e **se recusa a empacotar** se qualquer etapa falhar.
 ```
 BP/                     behavior pack
   manifest.json         versão dos packs (ver "cache de pack" abaixo)
-  items/*.json          45 itens, um arquivo cada (format_version 1.26.40)
-  scripts/main.js       ~3570 linhas: TODO o gameplay
+  items/*.json          190 itens, um arquivo cada (format_version 1.26.40)
+  entities/*.json       boneco de teste, clone do Aizen
+  scripts/main.js       ~16 mil linhas: TODO o gameplay (menos o Shinji)
+  scripts/shinji.js     o Shinji Hirako, importado pelo main.js
 RP/                     resource pack
-  particles/*.json      sakura:leaf, mayuri:poison_fog, grimmjow:cero, ulquiorra:oscuras
-  textures/items/*.png  45 texturas
-  textures/item_texture.json
+  particles/*.json      partículas customizadas (uma por arquivo)
+  entity/*.json         client entities (player override, boneco, clone)
+  textures/...          itens, partículas, entidades
 tools/
-  textures.py           grids de caracteres + paletas = FONTE das texturas
-  gen_textures.py       grid 16x16 -> PNG 64x64 (upscale nearest 4x)
+  textures.py           grids de caracteres + paletas = FONTE das texturas do addon
+  hollow_model.py       modelo dos attachables do Ichigo Vizard
+  aizen_clone_model.py  modelo do clone da Illusion's Mastery
+  gen_textures.py       grids -> PNG (e --check)
+  gen_model.py          modelos -> .geo.json (e --check)
+  vanilla_sounds.txt    IDs de som do Bedrock (Mojang/bedrock-samples)
   validate.py           checagem estática
   bump_version.py       sobe a versão dos dois packs e sincroniza dependências
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~2200 linhas, 424 checks
+  run.mjs               ~4750 linhas, 809 checks
 ```
 
 ### A simulação
@@ -52,37 +63,74 @@ dynamic properties, raycast e formulários com resposta roteirizada.
 falha em silêncio — por exemplo, `addEffect` recusa `amplifier > 255`. Foi
 assim que quase todos os bugs abaixo apareceram antes de ir pro jogo.
 
+**Os números não são copiados.** O fim do `main.js` exporta `CHARACTERS`,
+`DAMAGE`, `SKILL_COOLDOWN_TICKS`, `MELEE_WEAPONS` etc. (no jogo ninguém importa
+o main.js, então exportar não muda nada) e os checks provam que **o valor
+configurado é o que chega no alvo**. Rebalancear não quebra a simulação; mudar
+mecânica quebra, que é o que ela tem que pegar.
+
+**O anti-lag do main.js engole erro de loop** (todo `runInterval` vira
+try/catch com `console.warn`). O stub transforma esse aviso de volta em erro —
+senão a simulação ficaria cega pra exceção dentro de loop, que é justamente onde
+o bug do `tierOfPlayer` estava escondido.
+
 ## Elenco
 
-O seletor é separado por **arcos**; agachar + usar o seletor troca de arco.
-Personagem que não estiver em `ARCS` **não aparece no menu**.
+O seletor é **raça → tier → personagem**: agachar + usar o seletor troca a
+raça; usar abre os 9 tiers; o tier abre os personagens daquela raça naquele
+tier. Personagem que não estiver em `CHARACTER_RACE_TIER` **não aparece no
+menu**. Tabela gerada do registro do `main.js`:
 
-### Invasão à Soul Society
-| Personagem | Vida | Awakening |
-|---|---|---|
-| Ichigo Kurosaki | 200 | Tensa Zangetsu (troca os 5 itens) + Máscara Hollow |
-| Byakuya Kuchiki | 200 | Super ataque: Kageyoshi **ou** Senkei (carrega 5s agachado) |
-| Zaraki Kenpachi | 300 | Pressão: burst 50x50 + 50% de dano |
-| Mayuri Kurotsuchi | 180 | Super ataque: Konjiki Ashisogi Jizō |
+### Shinigami
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 2 | Byakuya Kuchiki (Shikai) | 700 | super: Kageyoshi ou Senkei |
+| 2 | Mayuri Kurotsuchi (Shikai) | 600 | super: Konjiki Ashisogi Jizō |
+| 2 | Rukia Kuchiki (Sode no Shirayuki) | 600 | super |
+| 3 | Zaraki Kenpachi | 1700 | Pressão (tapa-olho removido) |
+| 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000) |
+| 4 | Soi Fon (Suzumebachi) | 2000 | super: Jakuhō Raikōben |
+| 5 | Gin Ichimaru | 4000 | super: Kamishini no Yari |
+| 5 | Shunsui Kyoraku (Katen Kyokotsu) | 4500 | super: Karamatsu Shinjū |
+| 5 | Jūshiro Ukitake (Sōgyo no Kotowari) | 4400 | super |
+| 6 | **Sousuke Aizen (Captain's Fight)** | 5500 | super: Hadō #90 Kurohitsugi |
 
-### Arrancar / Hueco Mundo
-| Personagem | Vida | Awakening |
-|---|---|---|
-| Grimmjow Jaegerjaquez | 800 | La Pantera — "Mutile, Pantera" (1200, speed 5, regen 4) |
-| Ulquiorra Cifer | 1600 | Murciélago — "Confine, Murciélago" (2000) |
-| Coyote Starkk | 4000 | Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
-| Yammy Llargo | 1000 | Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
-| Tier Harribel | 2600 | Tiburón — "Reduce a cenizas, Tiburón" (3000) |
-| Barragan Louisenbairn | 3000 | Arrogante — "Envelhece, Arrogante!" (mesma vida) |
-| Szayelaporro Granz | 750 (752) | Fornicarás — "Sorva...Fornicarás" (1000, cura 40 a cada 6s) |
-| Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
+### Hollow
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 2 | Grimmjow Jaegerjaquez | 800 | La Pantera (1200) |
+| 2 | Szayelaporro Granz | 750 (752) | Fornicarás (1000) |
+| 2 | Aaroniero Arruruerie (Espada 9) | 700 | Glotonería (1100) |
+| 3 | Nnoitra Gilga | 1300 | Santa Teresa (1600) |
+| 3 | Ulquiorra Cifer | 1600 | Murciélago (2000) → Segunda Etapa |
+| 3 | Tier Harribel | 2600 | Tiburón (3000) |
+| 4 | Barragan Louisenbairn | 3000 | Arrogante |
+| 4 | Coyote Starkk | 4000 | Los Lobos (4000) |
+| 5 | Yammy Llargo | 1000 | Ira (6000) |
+
+### Híbrido
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 2 | Ichigo Kurosaki (Shikai) | 700 | Tensa Zangetsu (1100) + Máscara |
+| 3 | Kaname Tōsen (Suzumushi) | 1500 | super: Enma Kōrogi; Visored como forma alternativa |
+| 4 | Shinji Hirako | 2600 | Sakanade (em `shinji.js`) |
+| 4 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
+
+O **tier** não é só etiqueta: a Pressão Espiritual (skill genérica do slot 7)
+machuca quem está 2+ tiers abaixo e **mata na hora** quem está 5+ abaixo, e o
+Air Step exige tier 5+. O Aizen (6) apaga qualquer tier 1 dentro de 60 blocos
+com a pressão ligada.
 
 ## Sistemas genéricos (reusar, não duplicar)
 
 | Sistema | O que faz |
 |---|---|
 | `CHARACTERS` | Registro: `health`, `items` (slot→item), `awakening` ou `superAttack` |
-| `ARCS` | Agrupamento do seletor |
+| `CHARACTER_RACE_TIER` | Raça e tier de cada personagem: é o que o seletor lista |
+| `tierOfPlayer` | Tier do personagem ativo (0 sem personagem) |
+| `paralyzeFor(alvo, ticks, msg)` | Paralisia por tempo fixo, pelas travas do `isFrozen()` |
+| `iceTrack` / `iceSet` / `iceRestore` | Livro-caixa de blocos: coloca, lembra o que tinha e devolve. Concreto preto registrado não pode ser quebrado (Enma Kōrogi, Kurohitsugi) |
+| `kyokaShatter` | O som da Kyōka quebrando, pra todos os players |
 | `dealDamage(target, amount, source)` | **Porta única de dano**: aplica escala de vida e marca da Pesquisa. Não existe `applyDamage` solto |
 | `MELEE_WEAPONS` | Armas de m1: `baseDamage`, `particle`, `dot`, `combo`, `onHit` |
 | `activeZones` | Zonas com flags: `blocksSkills`, `blocksOwnerSkills`, `traps`, `blocksRegen`. Senkei e Enigma são a mesma estrutura |
@@ -169,10 +217,28 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    travado na offhand, lido por `query.is_item_name_any`. A **hitbox não muda** —
    isso é inerente ao método.
 
+13. **Som com ID errado toca silêncio.** Nenhum erro, nenhum aviso. A Soi Fon
+   usava `mob.enderman.teleport` (o certo é `mob.endermen.portal`) e a Harribel
+   `mob.guardian.attack`/`mob.guardian.curse` — essas skills estavam mudas. O
+   `validate.py` agora confere todo ID de som dos scripts contra
+   `tools/vanilla_sounds.txt` (lista oficial da Mojang).
+14. **Não existe `ItemDyeableComponent` na API estável 2.0.0.** Não dá pra
+   tingir couro por script nem por comando. Por isso os clones do Aizen são uma
+   entidade própria com o visual pintado, e não armor stands vanilla (que ainda
+   quebram com dois golpes e dropam a armadura).
+15. **`Block.isSolid` não existe na estável 2.0.0.** O `ginBlockInfo` testa
+   `block.isSolid === false`, que é sempre falso: na prática "passável" é só ar
+   ou líquido. Não quebra nada (é conservador), mas não conte com isso.
+16. **Client entity com geometria/textura errada fica invisível** e a entidade
+   continua existindo (leva golpe, tem nome). O `validate.py` confere toda
+   entidade do addon.
+
 ## Disputa da tecla agachar + m1
 
-A mesma tecla faz cinco coisas. A ordem é: **awakening → máscara → super ataque
-→ câmera alta / troca de persona → bloqueio**. As três primeiras só ficam com a
+A mesma tecla faz várias coisas. A ordem é: **awakening → máscara → super ataque
+→ câmera alta / troca de persona → bloqueio**. No Aizen, o super (Kurohitsugi)
+só pega a tecla com medidor cheio **e alguém na mira**; sem alvo ela cai pra
+guarda sem gastar o medidor. As três primeiras só ficam com a
 tecla quando realmente disparam (medidor cheio, vida baixa); se não disparam, a
 tecla cai pro bloqueio em vez de morrer. As duas do meio (câmera da Ira do Yammy,
 persona do Starkk) sempre disparam, então **nessas duas formas despertas não dá
@@ -279,6 +345,68 @@ cabelo **nascendo nos pés**. No Bedrock o `origin` do cubo é em espaço de
 MODELO, não relativo ao osso — o pivô do osso só define o centro de rotação. Eu
 tinha escrito os chifres em `y=0`. Sem o render isso ia pro jogo.
 
+## Sousuke Aizen (Captain's Fight)
+
+Tier 6, Shinigami, 5500 de vida. Itens: Kyōka Suigetsu (m1, 120), Illusion's
+Mastery, Betrayal of the Illusioner, Bakudō #61 e Fool's Trick. Super:
+Hadō #90 Kurohitsugi. **Toda fala dele no chat sai em roxo** (`aizenSay`).
+
+### A marca da Kyōka (individualidade)
+
+O m1 grava `mv:kyoka_mark` no alvo — player ou mob — e **nunca apaga**
+(sobrevive à morte e à troca de personagem: "permanente"). Três coisas são
+**ilusões** e só funcionam em quem tem a marca: **Illusion's Mastery**,
+**Fool's Trick** e o **Counter**. As outras (Betrayal, Bakudō, Kurohitsugi) são
+físicas e pegam qualquer um. Toda ilusão termina com a Kyōka quebrando: vidro +
+ametista em camadas, tocado **na posição de cada player** (todo mundo ouve) e
+cacos de vidro (`aizen:estilhaco`).
+
+Bater num bloco com a Kyōka (`entityHitBlock`) marca o bloco (`mv:kyoka_block`,
+que brilha só pra ele). **Agachar duas vezes em 2s** leva o Aizen pra cima dele.
+O agachar conta ao **soltar**, e só se não foi gasto em outra coisa: agachar pra
+levantar a guarda, disparar a Kurohitsugi ou dar o dash não conta. Sem isso,
+baixar a guarda e agachar de novo teleportava sem querer. A espada tem
+`can_destroy_in_creative: false`, senão no criativo o golpe quebrava o bloco em
+vez de marcar.
+
+### Illusion's Mastery e os clones
+
+O clone **não é armor stand** (ver armadilha 14): é a entidade `aizen:clone`,
+com modelo de armor stand vestindo couro branco completo gerado por
+`tools/aizen_clone_model.py` (medidas do `geometry.armor_stand` da Mojang),
+imune a dano, sem loot e com o nome do Aizen sempre visível. Três clones giram
+em triângulo em volta do alvo (reposicionados todo tick). O Aizen fica
+invisível, o nome some da cabeça e a Kyōka do slot 0 vira a **Kyōka oculta**
+(mesma arma, textura vazia), senão a espada flutuando entregaria onde ele está.
+
+Acertar um clone: quem acertou toma 50, o clone some, "Errou...tente
+novamente". Os três: o Aizen reaparece. M1 dele no alvo: 300 + lentidão e a
+ilusão cai com "Tolo, caiu em minha ilusão". Dano de skill/área passa direto
+pelo clone (`dealDamage` ignora o tipo): só golpe de verdade conta.
+
+**Duas rotas pro golpe no clone**: o `entityHitEntity` (principal, sabe quem
+bateu) e o `damage_sensor` do clone, que dispara o evento `aizen:golpeado`
+(`dataDrivenEntityTrigger`). Se o jogo não mandar `entityHitEntity` pra uma
+entidade que não toma dano, o evento desfaz o clone do mesmo jeito, cobrando de
+quem está preso na ilusão. Um golpe visto pelas duas rotas conta uma vez só.
+
+### Counter
+
+5 m1 **do mesmo atacante** em 3s no Aizen (e o atacante tem que ter a marca):
+ele aparece atrás, paralisa 3s e volta pra **maior vida registrada desde o
+primeiro golpe** (o loop do Aizen guarda a vida dos últimos 4s). Recupera dano
+de qualquer fonte nessa janela, não só dos m1.
+
+### Kurohitsugi
+
+Caixa oca 10×10×10 de concreto preto em volta do alvo mirado, montada de baixo
+pra cima e registrada no livro-caixa de blocos (a parede não quebra e tudo volta
+ao normal no fim). Só troca célula de ar/líquido. 50 estocadas de 50 em todo
+mundo lá dentro menos o Aizen, uma a cada 2 ticks; **o dano é aplicado em
+rajadas de 5 golpes a cada 10 ticks** (250 por vez) porque golpe a golpe a
+cada 2 ticks poderia esbarrar na invulnerabilidade pós-dano do alvo. O total é
+o mesmo (2500).
+
 ## Animações
 
 `RP/animations/vizard.animation.json` define cinco animações e cada ataque tem
@@ -307,6 +435,25 @@ partícula na altura da mão (`flashCastingHand`): é o único retorno visual do
 ataque que aparece em primeira pessoa.
 
 ## Bugs conhecidos / limitações em aberto
+
+**Achados na 1.19.25 importada** (o validador/simulação pegaram):
+
+- ~~`tierOfPlayer` não existia~~ **RESOLVIDO** — Pressão Espiritual, Air Step,
+  troca de skill genérica e skills do Gin/Shunsui lançavam ReferenceError
+  engolido pelo anti-lag.
+- ~~Sons inexistentes na Soi Fon e na Harribel~~ **RESOLVIDO** (armadilha 13).
+- ~~Máscara do Shinji sem os ossos pais do rig~~ **RESOLVIDO** — não
+  acompanhava o corpo ao agachar/nadar.
+- **Cooldown visual ≠ cooldown do script** em 12 itens: as 8 skills do Vizard
+  (o script ficou 10s mais longo que o item) e as 4 do Shinji (item com 0.05s).
+  O item mostra "pronto" antes da hora. Não mexi: `validate.py` lista.
+- **Poison Slash (Mayuri) não aplica mais a lentidão** — `POISON_SLASH` ainda
+  tem `slownessAmplifier`/`slownessTicks`, mas nada lê. Pode ter sido de
+  propósito.
+- **Sakura's Distraction gasta o cooldown antes de conferir o alvo**: mirando
+  em mob (não player/boneco) ela avisa e recarrega do mesmo jeito.
+- Sobras inofensivas: `byakuya_coating.png` sem item, partículas `shinji:red` e
+  `shinji:white` sem uso, `training_dummy_spawn_egg` nunca citado no script.
 
 1. ~~Dano do m1 não escala com vida virtual.~~ **RESOLVIDO.** Os 13 itens de m1
    têm `minecraft:damage: 0` e o dano sai inteiro do script. Sobra 1 de dano
@@ -367,22 +514,33 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Aqua's Dash (Harribel) | 80 de dano de contato, 24 blocos |
 | M1 do Dente de Tubarão (Harribel) | 90 de dano |
 | Tsunami / Vórtice (Harribel) | largura 14 e altura 6; raio do vórtice 7 |
+| Illusion's Mastery (Aizen) | dura 10s; triângulo de raio 2,2 girando; "lentidão" do golpe = Lentidão III por 3s |
+| Betrayal (Aizen) | 1,6 bloco atrás; m1 dobrado por 5s (do 1º teleporte até 1s depois do 5º) |
+| Fool's Trick (Aizen) | paralisia de 1,5s (só até o corte), corte 0,5s depois do "Achou mesmo ser digno?" |
+| Counter (Aizen) | conta por atacante; sem cooldown próprio (a paralisia de 3s já segura) |
+| Kurohitsugi (Aizen) | caixa também com 10 de altura; dano em rajadas de 250 a cada 0,5s |
+| Ilusões (Aizen) | quais exigem a marca: Mastery, Fool's Trick e Counter — Betrayal ficou "física" |
 
 ## Próximos passos sugeridos
 
-1. **Resolver o item 1 dos bugs** (m1 escalado) antes de adicionar personagem com
-   vida alta — é a inconsistência mais visível hoje.
-2. **Mais arcos**: a estrutura já suporta. Falta o arco dos Fullbringers, o da
-   Guerra Sangrenta, etc.
-3. **Bankai do Mayuri troca a m1?** Hoje a Konjiki não muda arma nenhuma.
-4. **Balancear entre arcos**: Soul Society vai de 180 a 300 de vida, Hueco Mundo
-   de 800 a 2000. Um Ichigo não encosta num Ulquiorra. Talvez arcos não devam se
-   enfrentar, ou o Ichigo precise de escalonamento.
-5. **Som próprio**: hoje tudo reusa sons vanilla (`mob.wither.shoot`, etc).
+1. **Testar o Aizen no jogo**, principalmente o que a simulação não enxerga: o
+   visual do clone, se o nome do Aizen some mesmo quando ele fica invisível, e
+   se o golpe no clone chega pelo `entityHitEntity` ou pela rede de segurança
+   do `damage_sensor`.
+2. **Invulnerabilidade pós-dano**: várias skills do addon batem a cada tick
+   (Grito del Diablo, Rugido del Diablo) ou a cada 4–6 ticks (Palacio de las
+   Espadas, Los Nueve Aspectos). Se o `applyDamage` respeitar a janela de
+   invulnerabilidade do Bedrock, elas entregam bem menos do que o número diz.
+   A Kurohitsugi já soma em rajadas de 10 ticks por isso; vale medir no jogo
+   antes de mexer nas outras.
+3. **Sincronizar os cooldowns visuais** do Vizard e do Shinji com o script
+   (lista no `validate.py`).
+4. **Raças vazias**: Quincy e Fullbringer existem no seletor sem ninguém.
+5. **Som próprio**: hoje tudo reusa sons vanilla.
 
 ## Receita: adicionar personagem novo
 
-1. Registrar em `CHARACTERS` **e** em `ARCS` (senão não aparece no menu).
+1. Registrar em `CHARACTERS` **e** em `CHARACTER_RACE_TIER` (senão não aparece no menu).
 2. Criar os itens em `BP/items/*.json` (m1 leva `minecraft:damage: 0`).
 3. Desenhar as texturas em `tools/textures.py` (grid 16×16 + paleta) e rodar
    `gen_textures.py`.

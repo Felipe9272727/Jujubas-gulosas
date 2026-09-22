@@ -3,30 +3,49 @@
 Addon de PvP pra Minecraft Bedrock (BP + RP). Cada player escolhe um personagem
 num menu, ganha vida, itens e skills próprias, e luta contra os outros.
 
-O seletor é **separado por arcos**: ele mostra um arco por vez, e **agachar +
-usar o seletor** passa pro próximo (dá a volta no último).
+O seletor é **raça → tier → personagem**: agachar + usar o seletor troca a
+raça (Shinigami, Hollow, Quincy, Fullbringer, Híbrido), usar abre os 9 tiers, e
+o tier abre os personagens daquela raça naquele tier.
 
-### Invasão à Soul Society
+### Shinigami
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 2 | Byakuya Kuchiki (Shikai) | 700 | super: Kageyoshi ou Senkei |
+| 2 | Mayuri Kurotsuchi (Shikai) | 600 | super: Konjiki Ashisogi Jizō |
+| 2 | Rukia Kuchiki (Sode no Shirayuki) | 600 | super |
+| 3 | Zaraki Kenpachi | 1700 | Pressão (tapa-olho removido) |
+| 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000) |
+| 4 | Soi Fon (Suzumebachi) | 2000 | super: Jakuhō Raikōben |
+| 5 | Gin Ichimaru | 4000 | super: Kamishini no Yari |
+| 5 | Shunsui Kyoraku (Katen Kyokotsu) | 4500 | super: Karamatsu Shinjū |
+| 5 | Jūshiro Ukitake (Sōgyo no Kotowari) | 4400 | super |
+| 6 | **Sousuke Aizen (Captain's Fight)** | 5500 | super: Hadō #90 Kurohitsugi |
 
-| Personagem | Vida | Awakening |
-|---|---|---|
-| **Ichigo Kurosaki** (Shikai) | 200 | Tensa Zangetsu (troca os 5 itens) + Máscara Hollow |
-| **Byakuya Kuchiki** (Shikai) | 200 | Super ataque: Kageyoshi ou Senkei |
-| **Zaraki Kenpachi** | 300 | Pressão (tapa-olho removido): burst + 50% de dano |
-| **Mayuri Kurotsuchi** (Shikai) | 180 | Super ataque: Konjiki Ashisogi Jizō (Bankai) |
+### Hollow
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 2 | Grimmjow Jaegerjaquez | 800 | La Pantera (1200) |
+| 2 | Szayelaporro Granz | 750 (752) | Fornicarás (1000) |
+| 2 | Aaroniero Arruruerie (Espada 9) | 700 | Glotonería (1100) |
+| 3 | Nnoitra Gilga | 1300 | Santa Teresa (1600) |
+| 3 | Ulquiorra Cifer | 1600 | Murciélago (2000) → Segunda Etapa |
+| 3 | Tier Harribel | 2600 | Tiburón (3000) |
+| 4 | Barragan Louisenbairn | 3000 | Arrogante |
+| 4 | Coyote Starkk | 4000 | Los Lobos (4000) |
+| 5 | Yammy Llargo | 1000 | Ira (6000) |
 
-### Arrancar / Hueco Mundo
+### Híbrido
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 2 | Ichigo Kurosaki (Shikai) | 700 | Tensa Zangetsu (1100) + Máscara |
+| 3 | Kaname Tōsen (Suzumushi) | 1500 | super: Enma Kōrogi; Visored como forma alternativa |
+| 4 | Shinji Hirako | 2600 | Sakanade (em `shinji.js`) |
+| 4 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
 
-| Personagem | Vida | Awakening |
-|---|---|---|
-| **Grimmjow Jaegerjaquez** | 800 | Resurrección: La Pantera — "Mutile, Pantera" (1200 de vida, speed 5, regen 4) |
-| **Ulquiorra Cifer** | 1600 | Resurrección: Murciélago — "Confine, Murciélago" (2000 de vida) |
-| **Coyote Starkk** | 4000 | Resurrección: Los Lobos — "Kick About, Los Lobos" (alterna Starkk ↔ Lilynette) |
-| **Yammy Llargo** | 1000 | Resurrección: Ira (10000 de vida, lento e pesado, cura 100 a cada 4s) |
-| **Tier Harribel** | 2600 | Resurrección: Tiburón — "Reduce a cenizas, Tiburón" (3000 de vida) |
-| **Barragan Louisenbairn** | 3000 | Resurrección: Arrogante — "Envelhece, Arrogante!" (mesma vida) |
-| **Szayelaporro Granz** | 750 (752) | Resurrección: Fornicarás — "Sorva...Fornicarás" (1000, cura 40 a cada 6s) |
-| **Ichigo (pós-treino Vizard)** | 1500 | Hollowficação → **Vasto Lorde** aos 100 de vida (3000, troca a skin) |
+O **tier** não é só etiqueta: a Pressão Espiritual (skill genérica do slot 7)
+machuca quem está 2+ tiers abaixo e **mata na hora** quem está 5+ abaixo, e o
+Air Step exige tier 5+. O Aizen (6) apaga qualquer tier 1 dentro de 60 blocos
+com a pressão ligada.
 
 ## Layout
 
@@ -34,17 +53,23 @@ usar o seletor** passa pro próximo (dá a volta no último).
 BP/                     behavior pack
   manifest.json
   items/*.json          um arquivo por item (format_version 1.26.40)
+  entities/*.json       boneco de teste, clone do Aizen
   scripts/main.js       TODO o gameplay (@minecraft/server 2.0 + server-ui)
+  scripts/shinji.js     o Shinji Hirako (importado pelo main.js)
 RP/                     resource pack
   manifest.json
-  entity/               override do player (escala do modelo por Molang)
+  entity/               override do player (escala do modelo por Molang), boneco, clone
   particles/            partículas customizadas (sakura:leaf, mayuri:poison_fog, grimmjow:cero, ...)
   textures/items/*.png  uma textura por item
   textures/item_texture.json
 tools/
   textures.py           grids de caracteres + paletas = fonte das texturas
   gen_textures.py       renderiza os grids em PNG (upscale nearest 4x)
-  validate.py           JSON, itens, texturas, manifests, versões
+  hollow_model.py       modelo do Ichigo Vizard (attachable)
+  aizen_clone_model.py  modelo do clone do Aizen
+  gen_model.py          renderiza os modelos em .geo.json
+  vanilla_sounds.txt    IDs de som do Bedrock, pra validar os sons do script
+  validate.py           JSON, itens, texturas, manifests, versões, sons, entidades
   bump_version.py       sobe a versão dos packs e sincroniza as dependências
   build.py              roda tudo e empacota o .mcaddon
 sim/
@@ -152,11 +177,12 @@ executado), entidades que ficam inválidas quando morrem, inventário, efeitos,
 dynamic properties e formulários com resposta roteirizada.
 
 O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
-`entityHitEntity`, `entitySpawn`, `playerLeave`), usa todas as skills dos quatro
-personagens, ativa awakening/máscara/Kageyoshi/Senkei/Pressão, mata alvos no
-meio de um DoT, simula reload do mundo e desconexão, e roda 2000 ticks livres
-no fim. São
-428 checks — qualquer exceção em qualquer callback é capturada e reportada.
+`entityHitEntity`, `entityHitBlock`, `entitySpawn`, `playerLeave`...), usa as
+skills, ativa awakenings e supers, mata alvos no meio de um DoT, simula reload
+do mundo e desconexão, e roda 2000 ticks livres no fim. São 809 checks —
+qualquer exceção em qualquer callback é capturada e reportada, inclusive a que
+o anti-lag do `main.js` engole dentro dos loops. Os números vêm do próprio
+`main.js` (ele exporta o registro), então rebalancear não quebra a simulação.
 
 Foi assim que apareceram os bugs de cooldown pós-reload, a máscara que nunca
 era removida e o buraco na contenção do Senkei.
@@ -181,7 +207,7 @@ era removida e o buraco na contenção do Senkei.
 | `awakening.onActivate` | Efeito de entrada da forma desperta (`"pressure"` → Kenpachi, `"resurreccion"` → Grimmjow) |
 | `fireEnergySphere(player, opts)` | Esfera de energia que viaja pela direção da visão e some no primeiro alvo ou no fim do alcance (Gran Rey Cero) |
 | `reapplyFormEffects(player)` | Devolve os efeitos permanentes da forma atual. Buff temporário **sobrescreve** o permanente em vez de somar, então todo buff que mexe em speed/regen precisa chamar isso ao acabar |
-| `ARCS` | Agrupamento do seletor. Personagem que não estiver num arco **não aparece no menu** |
+| `CHARACTER_RACE_TIER` | Raça e tier de cada personagem. Quem não estiver aqui **não aparece no menu** |
 | `dealDamage(target, amount, source)` | Porta única de dano: aplica a escala de vida do alvo e a marca da Pesquisa. Nenhum `applyDamage` solto no código |
 | `activeZones` | Zonas com regras: `blocksSkills`, `blocksOwnerSkills`, `traps`, `blocksRegen`. Senkei e Enigma são a mesma estrutura com flags diferentes |
 | `entitiesInFrontBox(player, box)` / `drawSweep` | Caixa direcional e o corte desenhado em cima dela |
@@ -208,8 +234,8 @@ guardar um novo prazo em tick absoluto, use esses helpers.
 1. **Registrar em `CHARACTERS`** (`BP/scripts/main.js`) com `id`, `name`,
    `health`, `items` (slots 0–4) e, se tiver, `awakening` ou `superAttack`.
    O slot 8 é sempre do seletor.
-   **E registrar o id em `ARCS`**, no arco dele — quem fica fora de todo arco
-   não aparece no seletor. A simulação falha se alguém sumir do elenco.
+   **E registrar o id em `CHARACTER_RACE_TIER`** com raça e tier — quem fica
+   fora não aparece no seletor. A simulação falha se alguém sumir do elenco.
    Vida acima de **1044** entra no esquema de vida virtual descrito acima —
    funciona sozinho — o dano do m1 também escala.
 2. **Criar os itens** em `BP/items/<nome>.json` — copie um existente; o ícone é
@@ -229,5 +255,6 @@ guardar um novo prazo em tick absoluto, use esses helpers.
 8. `python3 tools/build.py`
 
 O `validate.py` pega item sem textura, textura sem arquivo, item citado no
-script sem definição no BP e ícone no formato antigo — rode antes de testar
-no jogo.
+script sem definição no BP, ícone no formato antigo, som que não existe no
+Bedrock e entidade apontando pra geometria/textura inexistente — rode antes de
+testar no jogo.

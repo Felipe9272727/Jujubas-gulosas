@@ -3091,6 +3091,250 @@ TEXTURES = {
             "................",
         ],
     },
+    # ------------------------------------------------------------------
+    # Sousuke Aizen (Captain's Fight)
+    # ------------------------------------------------------------------
+    # Kyoka Suigetsu: katana, tsuba dourada e cabo verde trancado
+    "items/aizen_m1_kyoka_suigetsu": {
+        "palette": {
+            "&": (18, 20, 26, 255),
+            "=": (234, 238, 246, 255),
+            "#": (160, 168, 186, 255),
+            "o": (216, 174, 60, 255),
+            "O": (150, 110, 28, 255),
+            "g": (52, 124, 80, 255),
+            "G": (24, 66, 42, 255),
+            "w": (224, 226, 206, 255),
+        },
+        "grid": [
+            "..............&=",
+            ".............&=#",
+            "............&=#&",
+            "...........&=#&.",
+            "..........&=#&..",
+            ".........&=#&...",
+            "........&=#&....",
+            "...&&..&=#&.....",
+            "..&oo&&=#&......",
+            "...&oo=#&.......",
+            "....&OO&........",
+            "...&Ggoo&.......",
+            "..&Gw&&o&.......",
+            ".&Gg&..&........",
+            "&ow&............",
+            "oO&.............",
+        ],
+    },
+    # a mesma Kyoka enquanto ele esta invisivel: vazia de proposito (a mao
+    # nao pode entregar onde o Aizen esta), igual ao marcador da Ira
+    "items/aizen_m1_kyoka_oculta": {
+        "palette": {
+        },
+        "grid": [
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+            "................",
+        ],
+    },
+    # Illusion's Mastery: tres clones em triangulo e o olho da hipnose
+    "items/aizen_illusions_mastery": {
+        "palette": {
+            "&": (30, 16, 44, 255),
+            "W": (244, 244, 240, 255),
+            "L": (196, 196, 204, 255),
+            "P": (150, 70, 200, 255),
+            "p": (86, 30, 126, 255),
+            "E": (236, 196, 255, 255),
+        },
+        "grid": [
+            "......&WW&......",
+            "......&WW&......",
+            ".....&WWWW&.....",
+            ".....&WLLW&.....",
+            "......&WW&......",
+            "......&W&W&.....",
+            ".......&.&......",
+            ".......&&.......",
+            "..&&..&PP&..&&..",
+            ".&WW&&PpEP&&WW&.",
+            ".&WW&&PEpP&&WW&.",
+            "&WWWW&&PP&&WWWW&",
+            "&WLLW&.&&.&WLLW&",
+            ".&WW&......&WW&.",
+            ".&W&W&.....&W&W&",
+            "..&.&.......&.&.",
+        ],
+    },
+    # Betrayal of the Illusioner: reaparecendo pelas costas, com rastro
+    "items/aizen_betrayal_of_the_illusioner": {
+        "palette": {
+            "&": (26, 14, 40, 255),
+            "W": (244, 244, 240, 255),
+            "L": (196, 196, 204, 255),
+            "P": (158, 84, 214, 255),
+            "p": (92, 40, 134, 255),
+            "=": (228, 232, 240, 255),
+            "s": (60, 40, 80, 255),
+        },
+        "grid": [
+            "................",
+            "................",
+            "...........&&..&",
+            "..........&WW&&=",
+            "......&&..&WW&=&",
+            ".....&PP&&WWWW&.",
+            ".&&..&PP&&WLLW&.",
+            "&pp&&PPPP&&WW&..",
+            "&pp&&PPPP&&W&W&.",
+            "pppp&&PP&s&&.&..",
+            "pppp&&P&P&s&....",
+            "&pp&s&&.&.&.....",
+            "&p&p&s&.........",
+            ".&.&.&..........",
+            "................",
+            "................",
+        ],
+    },
+    # Bakudo #61 Rikujokoro: seis barras de luz fechando no centro
+    "items/aizen_bakudo_61": {
+        "palette": {
+            "&": (70, 56, 10, 255),
+            "Y": (255, 248, 196, 255),
+            "y": (250, 214, 70, 255),
+            "k": (40, 36, 52, 255),
+        },
+        "grid": [
+            ".......&y&......",
+            ".......&y&......",
+            ".......&y&......",
+            ".&&....&Y&...&&.",
+            "&yy&&..&Y&.&&yy&",
+            ".&yyY&.&Y&&Yyy&.",
+            "..&&YY&kk&YY&&..",
+            "....&&&kk&&&....",
+            "....&&&kk&&&....",
+            "..&&YY&&&&YY&&..",
+            ".&yyY&&Y&.&Yyy&.",
+            "&yy&&.&Y&..&&yy&",
+            ".&&...&Y&....&&.",
+            "......&y&.......",
+            "......&y&.......",
+            ".......&........",
+        ],
+    },
+    # Fool's Trick: o espelho rachado (a ilusao se partindo)
+    "items/aizen_fools_trick": {
+        "palette": {
+            "&": (28, 12, 40, 255),
+            "F": (124, 54, 170, 255),
+            "G": (206, 236, 246, 255),
+            "g": (168, 214, 232, 255),
+            "c": (70, 40, 96, 255),
+            "C": (250, 250, 255, 255),
+        },
+        "grid": [
+            "...&&&&&&&&&&...",
+            "..&FFFFFFFFFF&..",
+            "..&FGGGGgGGGF&..",
+            "..&FGGGgGGGGF&..",
+            "..&FGGgcGGGgF&..",
+            "..&FGcGGcGgGF&..",
+            "..&FgGcGcgGGF&..",
+            "..&FGGGcCcGGF&..",
+            "..&FGGcgcGcGF&..",
+            "..&FGcgGcGcgF&..",
+            "..&FcgGGGGgGF&..",
+            "..&FgGGGGcGGF&..",
+            "..&FGGGGgcGGF&..",
+            "..&FGGGgGGGGF&..",
+            "..&FFFFFFFFFF&..",
+            "...&&&&&&&&&&...",
+        ],
+    },
+    # reiatsu roxa (aura da Kurohitsugi, carga falsa do Fool's Trick)
+    "particle/aizen_reiatsu": {
+        "palette": {
+            "p": (96, 40, 150, 110),
+            "P": (170, 90, 230, 200),
+            "E": (240, 214, 255, 250),
+        },
+        "grid": [
+            "........",
+            "...pp...",
+            "..pPPp..",
+            ".pPEEPp.",
+            ".pPEEPp.",
+            "..pPPp..",
+            "...pp...",
+            "........",
+        ],
+    },
+    # estilhaco de vidro da Kyoka quebrando
+    "particle/aizen_estilhaco": {
+        "palette": {
+            "W": (255, 255, 255, 250),
+            "G": (206, 238, 250, 220),
+            "b": (130, 190, 220, 200),
+        },
+        "grid": [
+            "........",
+            ".W......",
+            ".WG.....",
+            ".WGG....",
+            ".WGGG...",
+            ".WGGGb..",
+            ".bbbbbb.",
+            "........",
+        ],
+    },
+    # segmento das barras de luz do Rikujokoro
+    "particle/aizen_luz": {
+        "palette": {
+            "y": (250, 214, 70, 150),
+            "Y": (255, 240, 160, 230),
+            "W": (255, 255, 240, 255),
+        },
+        "grid": [
+            "........",
+            ".yyyyyy.",
+            ".yYYYYy.",
+            ".yYWWYy.",
+            ".yYWWYy.",
+            ".yYYYYy.",
+            ".yyyyyy.",
+            "........",
+        ],
+    },
+    # lanca negra das estocadas da Kurohitsugi
+    "particle/aizen_lanca": {
+        "palette": {
+            "k": (14, 10, 20, 240),
+            "P": (90, 30, 130, 240),
+        },
+        "grid": [
+            "...kk...",
+            "...kk...",
+            "..kPPk..",
+            "..kPPk..",
+            "..kPPk..",
+            ".kPPPPk.",
+            ".kkkkkk.",
+            "........",
+        ],
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -3105,3 +3349,9 @@ from hollow_model import TEXTURE_SPECS as _HOLLOW_TEXTURES  # noqa: E402
 
 TEXTURES["entity/hollow_ichigo"] = _HOLLOW_TEXTURES["hollow"]
 TEXTURES["entity/vasto_lorde"] = _HOLLOW_TEXTURES["vasto"]
+
+# o clone da Illusion's Mastery do Aizen: mesma logica, textura e geometria
+# saem de tools/aizen_clone_model.py
+from aizen_clone_model import TEXTURE_SPEC as _AIZEN_CLONE_TEXTURE  # noqa: E402
+
+TEXTURES["entity/aizen_clone"] = _AIZEN_CLONE_TEXTURE

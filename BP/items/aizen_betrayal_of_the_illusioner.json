@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "aizen:betrayal_of_the_illusioner",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "aizen:betrayal_of_the_illusioner",
+      "minecraft:display_name": {
+        "value": "Betrayal of the Illusioner"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "aizen_betrayal_of_the_illusioner",
+        "duration": 30
+      }
+    }
+  }
+}

@@ -622,8 +622,13 @@ export class Entity {
     if (!location || typeof location.x !== "number" || typeof location.y !== "number" || typeof location.z !== "number") {
       throw new Error("teleport com location invalida");
     }
+    if (options.dimension && options.dimension !== this.dimension) {
+      this.dimension._entities.delete(this);
+      this.dimension = options.dimension;
+      this.dimension._entities.add(this);
+    }
     this._location = { x: location.x, y: location.y, z: location.z };
-    log.teleports.push({ target: this.name, tick: currentTick });
+    log.teleports.push({ target: this.name, tick: currentTick, options });
     return true;
   }
 
@@ -652,6 +657,14 @@ export class Player extends Entity {
   constructor(opts = {}) {
     super({ ...opts, typeId: "minecraft:player" });
     this.inputPermissions = new PlayerInputPermissions(this);
+  }
+  // particula que so este player ve
+  spawnParticle(particleId, location) {
+    this._assertValid();
+    if (typeof particleId !== "string" || !particleId.includes(":")) {
+      throw new Error(`particula com id invalido: ${particleId}`);
+    }
+    log.particles.push({ particleId, location: { ...location }, onlyFor: this.name });
   }
 }
 
@@ -693,6 +706,18 @@ class Block {
   }
   get permutation() {
     return this._permutation;
+  }
+  get isLiquid() {
+    return /water|lava/.test(this.typeId);
+  }
+  above(steps = 1) {
+    return this.dimension.getBlock({ x: this.location.x, y: this.location.y + steps, z: this.location.z });
+  }
+  below(steps = 1) {
+    return this.dimension.getBlock({ x: this.location.x, y: this.location.y - steps, z: this.location.z });
+  }
+  setType(typeId) {
+    this.setPermutation(BlockPermutation.resolve(typeId));
   }
   setPermutation(permutation) {
     if (!(permutation instanceof BlockPermutation)) {
@@ -830,6 +855,9 @@ const afterEvents = {
   entityDie: new EventSignal("entityDie"),
   entityHurt: new EventSignal("entityHurt"),
   playerBreakBlock: new EventSignal("playerBreakBlock"),
+  entityHitBlock: new EventSignal("entityHitBlock"),
+  dataDrivenEntityTrigger: new EventSignal("dataDrivenEntityTrigger"),
+  playerButtonInput: new EventSignal("playerButtonInput"),
 };
 
 const beforeEvents = {
