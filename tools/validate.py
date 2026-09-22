@@ -387,6 +387,24 @@ for path in sorted(RP.glob("attachables/*.json")):
 
     notes.append(f"attachable ok: {identifier}")
 
+# Client entity com geometria ou textura errada nao da erro: a entidade existe
+# no mundo (leva golpe, tem nome) e simplesmente nao aparece. Vale pras entidades
+# do addon; as que apontam pra recurso vanilla (o boneco usa a skin do Steve)
+# ficam de fora porque o vanilla nao esta no repo.
+VANILLA_GEOMETRY = {"geometry.humanoid", "geometry.humanoid.custom", "geometry.humanoid.customSlim"}
+VANILLA_TEXTURES = {"textures/entity/steve", "textures/entity/alex"}
+for path in sorted(RP.glob("entity/*.json")):
+    if path.name == "player.entity.json":
+        continue  # override do vanilla, conferido acima
+    description = (parsed.get(path) or {}).get("minecraft:client_entity", {}).get("description", {})
+    identifier = description.get("identifier", path.name)
+    for geo in description.get("geometry", {}).values():
+        if geo not in geometry_ids and geo not in VANILLA_GEOMETRY:
+            fail(f"a entidade '{identifier}' usa a geometria '{geo}', que nao existe - ela fica invisivel")
+    for tex in description.get("textures", {}).values():
+        if tex not in VANILLA_TEXTURES and not (RP / f"{tex}.png").exists():
+            fail(f"a entidade '{identifier}' aponta pra textura inexistente {tex}.png - ela fica invisivel")
+
 # animacao citada pelo script tem que existir de verdade no RP
 animation_ids = set()
 for path in sorted(RP.glob("animations/*.json")):
@@ -444,9 +462,13 @@ for particle in sorted(particle_ids):
         notes.append(f"aviso: a particula {particle} esta definida mas o main.js nunca usa")
 
 bp_entities = set()
+entity_events = set()
 for path in sorted(BP.glob("entities/*.json")):
     data = parsed.get(path)
-    identifier = (data or {}).get("minecraft:entity", {}).get("description", {}).get("identifier")
+    entity = (data or {}).get("minecraft:entity", {})
+    identifier = entity.get("description", {}).get("identifier")
+    # eventos da entidade (o script escuta "aizen:golpeado") tambem nao sao item
+    entity_events |= set(entity.get("events", {}))
     if identifier:
         bp_entities.add(identifier)
         if not (RP / "entity" / f"{path.stem}.entity.json").exists() and not any(
@@ -460,7 +482,10 @@ if bp_entities:
 
 referenced_items = {
     i for i in referenced
-    if not i.startswith(("minecraft:", "mv:")) and i not in particle_refs and i not in bp_entities
+    if not i.startswith(("minecraft:", "mv:"))
+    and i not in particle_refs
+    and i not in bp_entities
+    and i not in entity_events
 }
 
 for identifier in sorted(referenced_items):
@@ -470,6 +495,40 @@ for identifier in sorted(referenced_items):
 unused = sorted(set(bp_items) - referenced_items)
 for identifier in unused:
     notes.append(f"aviso: {identifier} existe no BP mas o main.js nunca cita")
+
+# ---------------------------------------------------------------- sons
+# Som com ID errado nao da erro no jogo: toca silencio. Foi assim que a Soi Fon
+# (mob.enderman.teleport) e a Harribel (mob.guardian.attack/curse) ficaram
+# mudas. Todo ID citado nos scripts tem que existir no vanilla ou no RP.
+vanilla_sounds = {
+    line.strip()
+    for line in (ROOT / "tools" / "vanilla_sounds.txt").read_text(encoding="utf-8").splitlines()
+    if line.strip() and not line.startswith("#")
+}
+custom_sounds = set()
+custom_defs = RP / "sounds" / "sound_definitions.json"
+if custom_defs.exists():
+    custom_sounds = set((parsed.get(custom_defs) or {}).get("sound_definitions", {}))
+
+script_sources = {
+    path.name: path.read_text(encoding="utf-8") for path in sorted((BP / "scripts").glob("*.js"))
+}
+sound_refs = {}
+for name, source in script_sources.items():
+    found = set(re.findall(r'playSound\(\s*"([^"]+)"', source))
+    found |= set(re.findall(r'[pP]laySound\([^,()]+,\s*"([^"]+)"', source))
+    found |= set(re.findall(r'(?:sound|Sound)\s*:\s*"([^"]+)"', source))
+    # helper local do shinji.js: sound(p, "id", pitch, volume)
+    found |= set(re.findall(r'\bsound\(\s*[^,()]+,\s*"([^"]+)"', source))
+    # tabelas de som em camadas: [atraso, "id", pitch, volume] (a Kyoka quebrando)
+    found |= set(re.findall(r'\[\s*\d+\s*,\s*"([a-z_]+\.[a-z0-9_.]+)"\s*,', source))
+    found |= set(re.findall(r'"([a-z_]+\.[a-z0-9_.]+)"\s*,\s*(?:volume|\{\s*volume)', source))
+    for sound in found:
+        sound_refs.setdefault(sound, set()).add(name)
+for sound, where in sorted(sound_refs.items()):
+    if sound not in vanilla_sounds and sound not in custom_sounds:
+        fail(f"{', '.join(sorted(where))} toca o som '{sound}', que nao existe no Bedrock - fica mudo")
+notes.append(f"{len(sound_refs)} ids de som citados nos scripts, todos conferidos")
 
 # cooldown do item (visual) x cooldown do script
 for identifier, path in sorted(bp_items.items()):

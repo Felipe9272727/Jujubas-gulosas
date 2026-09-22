@@ -6665,7 +6665,7 @@ function castTiburonSlash(player) {
 
   world.sendMessage(`§b${player.name} §7usou §3Tiburon's Slash§7!`);
   try {
-    player.dimension.playSound("mob.guardian.attack", player.location, {
+    player.dimension.playSound("mob.guardian.attack_loop", player.location, {
       volume: 1.3,
       pitch: 1.2,
     });
@@ -6915,7 +6915,7 @@ function castVortice(player) {
     `§b${player.name} §7abriu um §3Vórtice de Agua §7em volta de §3${nameOf(victim)}§7!`
   );
   try {
-    dim.playSound("mob.guardian.curse", center, { volume: 1.5, pitch: 0.7 });
+    dim.playSound("mob.elderguardian.curse", center, { volume: 1.5, pitch: 0.7 });
   } catch (e) {}
 
   let elapsed = 0;
@@ -7020,7 +7020,7 @@ function castMalditaAgua(player) {
     `§b§l${player.name} amaldiçoou ${victimName}: §r§9ficou sem respirar§7.`
   );
   try {
-    player.dimension.playSound("mob.guardian.curse", player.location, {
+    player.dimension.playSound("mob.elderguardian.curse", player.location, {
       volume: 1.4,
       pitch: 0.5,
     });
@@ -11362,7 +11362,7 @@ function castKageoni(player) {
     player.teleport(dest, { facingLocation: { x: t.x, y: t.y + 1.2, z: t.z } });
     dim.spawnParticle("shunsui:sombra", { x: dest.x, y: dest.y + 1, z: dest.z });
   } catch (e) {}
-  ginPlaySound(player, "mob.enderman.teleport", 1, 1.4);
+  ginPlaySound(player, "mob.endermen.portal", 1, 1.4);
 
   // duplo corte em X: cada diagonal e um corte (metade do dano em cada)
   const perHit = (DAMAGE.kageoni / cfg.slashes) * dmgMultiplier(player);
@@ -12016,7 +12016,7 @@ function castShunpo(player) {
     } catch (e) { system.clearRun(dash); return; }
     if (step >= steps) system.clearRun(dash);
   }, 1);
-  ginPlaySound(player, "mob.enderman.teleport", 0.8, 1.8);
+  ginPlaySound(player, "mob.endermen.portal", 0.8, 1.8);
 }
 
 /* ---------- Stealthy ---------- */
@@ -12029,7 +12029,7 @@ function castStealthy(player) {
     player.addEffect("invisibility", cfg.ticks, { amplifier: 0, showParticles: false });
   } catch (e) {}
   soiSpeedBuff(player, cfg.speedAmplifier, cfg.ticks);
-  ginPlaySound(player, "mob.enderman.teleport", 0.6, 1.6);
+  ginPlaySound(player, "mob.endermen.portal", 0.6, 1.6);
 }
 
 /* ---------- Shunko ---------- */
