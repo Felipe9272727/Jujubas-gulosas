@@ -50,54 +50,60 @@ function noNewErrors(label, mark) {
   );
 }
 
-// espelho do registro ARCS do main.js: o menu so mostra o arco atual, entao o
-// indice do botao e relativo ao arco, nao ao CHARACTERS inteiro
+// O seletor e raca -> tier -> personagem. O main.js exporta o registro e os
+// numeros de balanceamento (ver o fim do arquivo), entao a simulacao le tudo de
+// la em vez de espelhar na mao e divergir do jogo em silencio.
+let game;
+let RACES;
+let TIERS;
+let RACE_TIER;
+
 const CERO_METRALLETA_BULLETS = 6; // balas por fileira (espelho do main.js)
 const CERO_METRALLETA_ROWS = 4; // fileiras por disparo (espelho do main.js)
 
-const ROSTER = [
-  { name: "Invasão à Soul Society", ids: ["ichigo", "byakuya", "kenpachi", "mayuri"] },
-  { name: "Arrancar / Hueco Mundo", ids: [
-      "grimmjow",
-      "ulquiorra",
-      "starkk",
-      "yammy",
-      "harribel",
-      "barragan",
-      "szayelaporro",
-      "ichigo_vizard",
-    ],
-  },
-];
-
-function locate(id) {
-  for (let arcIndex = 0; arcIndex < ROSTER.length; arcIndex++) {
-    const buttonIndex = ROSTER[arcIndex].ids.indexOf(id);
-    if (buttonIndex !== -1) return { arcIndex, buttonIndex };
-  }
-  throw new Error(`personagem fora de qualquer arco: ${id}`);
+// personagens de uma raca+tier, na ordem em que o menu mostra os botoes
+function rosterOf(raceId, tierId) {
+  return Object.entries(RACE_TIER)
+    .filter(([, data]) => data.race === raceId && data.tier === tierId)
+    .map(([id]) => id);
 }
 
-// leva o player ate o arco certo (agachar + seletor) e escolhe o personagem
+function locate(id) {
+  const entry = RACE_TIER[id];
+  if (!entry) throw new Error(`personagem fora do seletor: ${id}`);
+  const raceIndex = RACES.findIndex((r) => r.id === entry.race);
+  const tierIndex = TIERS.findIndex((t) => t.id === entry.tier);
+  const buttonIndex = rosterOf(entry.race, entry.tier).indexOf(id);
+  if (raceIndex === -1 || tierIndex === -1 || buttonIndex === -1) {
+    throw new Error(`raca/tier invalidos para ${id}: ${JSON.stringify(entry)}`);
+  }
+  return { raceIndex, tierIndex, buttonIndex };
+}
+
+// microtarefas pra cadeia form.show().then(...) de dois menus terminar
+async function settleForms() {
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+}
+
+// gira a raca (agachar + seletor) e responde o menu de tiers e o de personagens
 async function pickCharacter(player, id) {
-  const { arcIndex, buttonIndex } = locate(id);
-  const current = player.getDynamicProperty("mv:arc") ?? 0;
-  const steps = (arcIndex - current + ROSTER.length) % ROSTER.length;
+  const { raceIndex, tierIndex, buttonIndex } = locate(id);
+  const current = player.getDynamicProperty("mv:race") ?? 0;
+  const steps = (raceIndex - current + RACES.length) % RACES.length;
 
   player.isSneaking = true;
   for (let i = 0; i < steps; i++) useItem(player, "multiversal:character_selector");
   player.isSneaking = false;
 
+  queueFormResponse(tierIndex);
   queueFormResponse(buttonIndex);
   useItem(player, "multiversal:character_selector");
-  await Promise.resolve();
-  await Promise.resolve();
+  await settleForms();
 }
 
-// o botao "Desativar" fica logo depois dos personagens do arco atual
-function deactivateButtonIndex(player) {
-  const arcIndex = player.getDynamicProperty("mv:arc") ?? 0;
-  return ROSTER[arcIndex].ids.length;
+// com personagem ativo, o menu de tiers ganha "Desativar" depois dos tiers
+function deactivateButtonIndex() {
+  return TIERS.length;
 }
 
 const DP = {
@@ -160,8 +166,13 @@ function hitWith(attacker, target, typeId) {
 
 scenario("Carregar main.js");
 let bootMark = errors.length;
-await import("../BP/scripts/main.js");
+game = await import("../BP/scripts/main.js");
+({ RACES, TIERS, CHARACTER_RACE_TIER: RACE_TIER } = game);
 noNewErrors("main.js importa sem lancar", bootMark);
+check(
+  "main.js exporta o registro e o balanceamento",
+  !!game.CHARACTERS && !!game.DAMAGE && !!game.SKILL_COOLDOWN_TICKS && Array.isArray(RACES) && Array.isArray(TIERS)
+);
 check(
   "handlers registrados (playerSpawn/itemUse/entityHitEntity/entitySpawn)",
   world.afterEvents.playerSpawn.listenerCount === 1 &&
@@ -202,18 +213,21 @@ await pickCharacter(ichigo, "ichigo");
 advanceTicks(20, "ativar ichigo");
 noNewErrors("abrir menu + escolher personagem sem erro", mark);
 check(
-  "form lista só os personagens do arco atual",
-  shownForms.length === 1 && shownForms[0].buttons.length === ROSTER[0].ids.length,
-  `${shownForms[0]?.buttons.length} botões`
+  "primeiro menu lista os tiers, o segundo os personagens do tier",
+  shownForms.length === 2 &&
+    shownForms[0].buttons.length === TIERS.length &&
+    shownForms[1].buttons.length === rosterOf(RACE_TIER.ichigo.race, RACE_TIER.ichigo.tier).length + 1,
+  shownForms.map((f) => f.buttons.length).join(" / ")
 );
 check(
-  "form mostra o nome do arco",
-  (shownForms[0]?.body ?? "").includes(ROSTER[0].name),
+  "menu de tiers mostra a raça atual",
+  (shownForms[0]?.body ?? "").includes(RACES[locate("ichigo").raceIndex].name),
   shownForms[0]?.body
 );
 check("personagem salvo", ichigo.getDynamicProperty(DP.character) === "ichigo");
-check("vida maxima 200", virtualMax(ichigo) === 200, `${virtualMax(ichigo)}`);
-check("vida cheia apos ativar", hp(ichigo).currentValue === 200, `${hp(ichigo).currentValue}`);
+const ICHIGO_HP = game.CHARACTERS.ichigo.health;
+check(`vida maxima ${ICHIGO_HP}`, virtualMax(ichigo) === ICHIGO_HP, `${virtualMax(ichigo)}`);
+check("vida cheia apos ativar", virtualHp(ichigo) === ICHIGO_HP, `${virtualHp(ichigo)}`);
 check(
   "5 itens do Ichigo travados nos slots 0-4",
   JSON.stringify(slotIds(ichigo, 5)) ===
@@ -269,9 +283,10 @@ for (let i = 0; i < 10; i++) hitWith(ichigo, dummy, "ichigo:m1_zangetsu");
 advanceTicks(5, "m1");
 noNewErrors("m1 sem erro", mark);
 check("m1 acumula awakening (+1 por hit)", ichigo.getDynamicProperty(DP.awakening) === 10, String(ichigo.getDynamicProperty(DP.awakening)));
+const ICHIGO_M1 = game.MELEE_WEAPONS["ichigo:m1_zangetsu"].baseDamage;
 check(
-  "m1 aplica o dano base inteiro pelo script (8), não parcial pelo item",
-  log.damages.slice(-10).every((d) => d.target === "Dummy" && d.amount === 8),
+  `m1 aplica o dano base inteiro pelo script (${ICHIGO_M1}), não parcial pelo item`,
+  log.damages.slice(-10).every((d) => d.target === "Dummy" && d.amount === ICHIGO_M1),
   JSON.stringify(log.damages.slice(-10).map((d) => d.amount))
 );
 
@@ -286,7 +301,8 @@ advanceTicks(20, "awakening");
 ichigo.isSneaking = false;
 noNewErrors("ativar awakening sem erro", mark);
 check("awakened = true", ichigo.getDynamicProperty(DP.awakened) === true);
-check("vida maxima 400", virtualMax(ichigo) === 400, `${virtualMax(ichigo)}`);
+const TENSA_HP = game.CHARACTERS.ichigo.awakening.health;
+check(`vida maxima ${TENSA_HP}`, virtualMax(ichigo) === TENSA_HP, `${virtualMax(ichigo)}`);
 check(
   "itens trocados pelos da bankai",
   JSON.stringify(slotIds(ichigo, 5)) ===
@@ -377,7 +393,7 @@ hp(ichigo).setCurrentValue(150);
 advanceTicks(120, "drenagem");
 noNewErrors("drenagem + reversão sem erro", mark);
 check("awakened = false", ichigo.getDynamicProperty(DP.awakened) === false);
-check("vida maxima de volta pra 200", virtualMax(ichigo) === 200, `${virtualMax(ichigo)}`);
+check(`vida maxima de volta pra ${ICHIGO_HP}`, virtualMax(ichigo) === ICHIGO_HP, `${virtualMax(ichigo)}`);
 check("NAO curou ao reverter (só clampou)", hp(ichigo).currentValue <= 150, `${hp(ichigo).currentValue}`);
 check(
   "itens base restaurados",
@@ -395,7 +411,7 @@ check(
 /* ================= Byakuya ================= */
 
 scenario("Skills do Byakuya");
-for (const skill of ["byakuya:tripleshot", "byakuya:disperse", "byakuya:bloodshed", "byakuya:coating"]) {
+for (const skill of ["byakuya:tripleshot", "byakuya:disperse", "byakuya:bloodshed"]) {
   mark = errors.length;
   byakuya.teleport({ x: 40, y: 64, z: 40 });
   dummy2.teleport({ x: 40, y: 64, z: 43 });
@@ -403,9 +419,22 @@ for (const skill of ["byakuya:tripleshot", "byakuya:disperse", "byakuya:bloodshe
   useItem(byakuya, skill);
   advanceTicks(60, skill);
   noNewErrors(`${skill} executa limpo`, mark);
-  if (skill !== "byakuya:coating") check(`${skill} causou dano`, log.damages.length > dmgBefore);
+  check(`${skill} causou dano`, log.damages.length > dmgBefore);
 }
-check("Sakura's Coating ativo", (byakuya.getDynamicProperty(DP.coatingEnd) ?? 0) > system.currentTick);
+
+// Sakura's Distraction (substituiu o Coating): so pega player ou o Boneco de Teste
+mark = errors.length;
+const distraido = createPlayer("Distraido", { x: 40, y: 64, z: 46 }, 700);
+emit("playerSpawn", { player: distraido, initialSpawn: true });
+byakuya.teleport({ x: 40, y: 64, z: 40 });
+dummy2.teleport({ x: 60, y: 64, z: 60 }); // tira o zumbi da mira
+useItem(byakuya, "byakuya:sakura_distraction");
+advanceTicks(20, "sakura-distraction");
+noNewErrors("byakuya:sakura_distraction executa limpo", mark);
+check("Sakura's Distraction cega o player mirado", !!distraido.getEffect("blindness"));
+advanceTicks(200, "sakura-distraction-fim");
+distraido.kill();
+dummy2.teleport({ x: 40, y: 64, z: 43 });
 
 mark = errors.length;
 hitWith(byakuya, dummy2, "byakuya:m1_senbonzakura");
@@ -528,7 +557,9 @@ scenario("Zaraki Kenpachi: ativação");
 const kenpachi = createPlayer("KenpachiPlayer", { x: -80, y: 64, z: -80 });
 // longe do caminho dos avancos e com vida alta: e alvo de teste, nao saco de pancada
 const victim = createPlayer("Vítima", { x: -80, y: 64, z: -60 }, 4000);
-const prey = createDummy("Presa", { x: -77, y: 64, z: -80 }, 5000);
+const prey = createDummy("Presa", { x: -77, y: 64, z: -80 }, 500000);
+const KENPACHI = game.CHARACTERS.kenpachi;
+const KENPACHI_BUFF = KENPACHI.awakening.damageMultiplier;
 
 mark = errors.length;
 emit("playerSpawn", { player: kenpachi, initialSpawn: true });
@@ -538,7 +569,7 @@ await pickCharacter(kenpachi, "kenpachi");
 advanceTicks(20, "ativar-kenpachi");
 noNewErrors("ativar Kenpachi sem erro", mark);
 check("personagem salvo", kenpachi.getDynamicProperty(DP.character) === "kenpachi");
-check("vida maxima 300", virtualMax(kenpachi) === 300, `${virtualMax(kenpachi)}`);
+check(`vida maxima ${KENPACHI.health}`, virtualMax(kenpachi) === KENPACHI.health, `${virtualMax(kenpachi)}`);
 check(
   "5 itens do Kenpachi travados nos slots 0-4",
   JSON.stringify(slotIds(kenpachi, 5)) ===
@@ -552,22 +583,22 @@ check(
   JSON.stringify(slotIds(kenpachi, 5))
 );
 
-scenario("Flash Slash: 3 avanços de 30");
+scenario("Flash Slash: 3 avanços");
 mark = errors.length;
 kenpachi.teleport({ x: -80, y: 64, z: -80 });
 prey.teleport({ x: -77, y: 64, z: -80 });
 kenpachi._view = { x: 1, y: 0, z: 0 }; // olhando pro +x
 // cada avanco cobre 6 blocos, entao um alvo em cada trecho testa os tres
-const alvoA = createDummy("AlvoA", { x: -77, y: 64, z: -80 }, 500);
-const alvoB = createDummy("AlvoB", { x: -71, y: 64, z: -80 }, 500);
-const alvoC = createDummy("AlvoC", { x: -65, y: 64, z: -80 }, 500);
+const alvoA = createDummy("AlvoA", { x: -77, y: 64, z: -80 }, 50000);
+const alvoB = createDummy("AlvoB", { x: -71, y: 64, z: -80 }, 50000);
+const alvoC = createDummy("AlvoC", { x: -65, y: 64, z: -80 }, 50000);
 let dmgBefore = log.damages.length;
 useItem(kenpachi, "kenpachi:flash_slash");
 advanceTicks(80, "flash-slash");
 noNewErrors("Flash Slash executa limpo", mark);
-const flashHits = log.damages.slice(dmgBefore).filter((d) => d.amount === 30);
+const flashHits = log.damages.slice(dmgBefore).filter((d) => d.amount === game.DAMAGE.flashSlash);
 check(
-  "os 3 avanços acertam, 30 de dano cada",
+  `os 3 avanços acertam, ${game.DAMAGE.flashSlash} de dano cada`,
   ["AlvoA", "AlvoB", "AlvoC"].every(
     (name) => flashHits.filter((d) => d.target === name).length === 1
   ),
@@ -580,7 +611,7 @@ check(
   `x=${kenpachi.location.x.toFixed(1)}`
 );
 
-scenario("Stomp: 45 de dano em 6x6 (alcance dobrado)");
+scenario("Stomp: dano em 6x6 (alcance dobrado)");
 mark = errors.length;
 kenpachi.teleport({ x: -80, y: 64, z: -80 });
 prey.teleport({ x: -79, y: 64, z: -80 }); // 1 bloco: dentro
@@ -590,13 +621,14 @@ useItem(kenpachi, "kenpachi:stomp");
 advanceTicks(10, "stomp");
 noNewErrors("Stomp executa limpo", mark);
 check(
-  "45 de dano em quem está na área",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 45)
+  `${game.DAMAGE.stomp} de dano em quem está na área`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === game.DAMAGE.stomp)
 );
+// o anti-lag do main.js so deixa passar 1 em cada 3 explosoes grandes
 const stompParticles = log.particles.slice(partBefore);
 check(
   "solta partícula de explosão",
-  stompParticles.length >= 10 &&
+  stompParticles.length >= 3 &&
     stompParticles.every((p) => p.particleId === "minecraft:large_explosion"),
   `${stompParticles.length} partículas`
 );
@@ -610,7 +642,7 @@ useItem(kenpachi, "kenpachi:stomp");
 advanceTicks(10, "stomp-alcance-novo");
 check(
   "alcance dobrado: pega a 2.5 blocos (antes não pegava)",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 45)
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === game.DAMAGE.stomp)
 );
 
 prey.teleport({ x: -74, y: 64, z: -80 }); // 6 blocos: fora
@@ -663,11 +695,11 @@ useItem(kenpachi, "kenpachi:hells_cut");
 advanceTicks(30, "hells-cut");
 noNewErrors("Hell's Cut executa limpo", mark);
 check(
-  "75 de dano (mesmo do Getsuga Tenshou)",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 75)
+  `${game.DAMAGE.hellsCut} de dano`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === game.DAMAGE.hellsCut)
 );
 
-const farPrey = createDummy("Longe", { x: -65, y: 64, z: -80 }, 500); // 15 blocos
+const farPrey = createDummy("Longe", { x: -65, y: 64, z: -80 }, 50000); // 15 blocos
 dmgBefore = log.damages.length;
 kenpachi.setDynamicProperty("mv:cd_kenpachi_hells_cut", undefined);
 useItem(kenpachi, "kenpachi:hells_cut");
@@ -691,7 +723,7 @@ kenpachi.isSneaking = false;
 advanceTicks(2, "pressao-inicio");
 noNewErrors("ativar Pressão sem erro", mark);
 check("awakened = true", kenpachi.getDynamicProperty(DP.awakened) === true);
-check("vida máxima continua 300", virtualMax(kenpachi) === 300, `${virtualMax(kenpachi)}`);
+check(`vida máxima continua ${KENPACHI.health}`, virtualMax(kenpachi) === KENPACHI.health, `${virtualMax(kenpachi)}`);
 check("awakening NÃO cura (vida continua 200)", hp(kenpachi).currentValue <= 200, `${hp(kenpachi).currentValue}`);
 check(
   "itens continuam os mesmos",
@@ -729,7 +761,7 @@ check(
   `x=${victim.location.x.toFixed(2)}`
 );
 
-scenario("Pressão: +50% de dano");
+scenario("Pressão: buff de dano da forma desperta");
 mark = errors.length;
 kenpachi.teleport({ x: -80, y: 64, z: -80 });
 prey.teleport({ x: -79, y: 64, z: -80 });
@@ -738,16 +770,16 @@ dmgBefore = log.damages.length;
 useItem(kenpachi, "kenpachi:stomp");
 advanceTicks(10, "stomp-buffado");
 check(
-  "Stomp com +50%: 45 → 67.5",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && Math.abs(d.amount - 67.5) < 0.01),
+  `Stomp com o buff: ${game.DAMAGE.stomp} x${KENPACHI_BUFF}`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && Math.abs(d.amount - game.DAMAGE.stomp * KENPACHI_BUFF) < 0.01),
   JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.amount))
 );
 
 dmgBefore = log.damages.length;
 hitWith(kenpachi, prey, "kenpachi:m1_zanpakuto");
 check(
-  "m1 com +50%: 14 vira 21, dano inteiro pelo script",
-  log.damages.slice(dmgBefore).some((d) => d.amount === 21),
+  `m1 com o buff: ${game.DAMAGE.kenpachiM1} x${KENPACHI_BUFF}, dano inteiro pelo script`,
+  log.damages.slice(dmgBefore).some((d) => d.amount === game.DAMAGE.kenpachiM1 * KENPACHI_BUFF),
   JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.amount))
 );
 noNewErrors("dano buffado sem erro", mark);
@@ -762,17 +794,20 @@ dmgBefore = log.damages.length;
 useItem(kenpachi, "kenpachi:hells_cut");
 advanceTicks(30, "hells-cut-normal");
 const normalHit = log.damages.slice(dmgBefore).find((d) => d.target === "Presa");
-check("com vida alta: dano normal (75 x1.5 = 112.5)", normalHit && Math.abs(normalHit.amount - 112.5) < 0.01, `${normalHit?.amount}`);
+const HELLS_BUFFED = game.DAMAGE.hellsCut * KENPACHI_BUFF;
+check(`com vida alta: dano normal (${HELLS_BUFFED})`, normalHit && Math.abs(normalHit.amount - HELLS_BUFFED) < 0.01, `${normalHit?.amount}`);
 
-hp(kenpachi).setCurrentValue(55); // abaixo do limite de 60
+// 1700 de vida passa do teto do Bedrock: o limite de 60 e de vida VIRTUAL
+setVirtualHp(kenpachi, 55); // abaixo do limite de 60
 kenpachi.setDynamicProperty("mv:cd_kenpachi_hells_cut", undefined);
 dmgBefore = log.damages.length;
 useItem(kenpachi, "kenpachi:hells_cut");
 advanceTicks(30, "hells-cut-desespero");
 const desperateHit = log.damages.slice(dmgBefore).find((d) => d.target === "Presa");
+const HELLS_DESPERATE = HELLS_BUFFED * KENPACHI.awakening.desperation.damageFactor;
 check(
-  "com vida ≤60: dano base triplica (225 x1.5 = 337.5)",
-  desperateHit && Math.abs(desperateHit.amount - 337.5) < 0.01,
+  `com vida ≤60: dano base triplica (${HELLS_DESPERATE})`,
+  desperateHit && Math.abs(desperateHit.amount - HELLS_DESPERATE) < 0.01,
   `${desperateHit?.amount}`
 );
 noNewErrors("golpe de desespero sem erro", mark);
@@ -784,7 +819,7 @@ hp(kenpachi).setCurrentValue(120);
 advanceTicks(90, "drenar-pressao");
 noNewErrors("reversão sem erro", mark);
 check("awakened = false", kenpachi.getDynamicProperty(DP.awakened) === false);
-check("vida máxima continua 300", virtualMax(kenpachi) === 300);
+check(`vida máxima continua ${KENPACHI.health}`, virtualMax(kenpachi) === KENPACHI.health);
 check("NÃO curou ao reverter", hp(kenpachi).currentValue <= 120, `${hp(kenpachi).currentValue}`);
 
 kenpachi.teleport({ x: -80, y: 64, z: -80 });
@@ -794,8 +829,8 @@ dmgBefore = log.damages.length;
 useItem(kenpachi, "kenpachi:stomp");
 advanceTicks(10, "stomp-sem-buff");
 check(
-  "sem awakening o dano volta pra 45",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === 45),
+  `sem awakening o dano volta pra ${game.DAMAGE.stomp}`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === game.DAMAGE.stomp),
   JSON.stringify(log.damages.slice(dmgBefore).map((d) => d.amount))
 );
 
@@ -812,51 +847,54 @@ await pickCharacter(mayuri, "mayuri");
 advanceTicks(20, "ativar-mayuri");
 noNewErrors("ativar Mayuri sem erro", mark);
 check("personagem salvo", mayuri.getDynamicProperty(DP.character) === "mayuri");
-check("vida maxima 180", virtualMax(mayuri) === 180, `${virtualMax(mayuri)}`);
+const MAYURI = game.CHARACTERS.mayuri;
+check(`vida maxima ${MAYURI.health}`, virtualMax(mayuri) === MAYURI.health, `${virtualMax(mayuri)}`);
 check(
-  "3 itens nos slots 0-2",
-  JSON.stringify(slotIds(mayuri, 3)) ===
-    JSON.stringify(["mayuri:m1_ashisogi_jizo", "mayuri:poison_slash", "mayuri:toxic_fog"]),
-  JSON.stringify(slotIds(mayuri, 3))
-);
-check(
-  "slots 3 e 4 ficam livres",
-  inv(mayuri).getItem(3) === undefined && inv(mayuri).getItem(4) === undefined
+  "itens do registro nos slots 0-4",
+  JSON.stringify(slotIds(mayuri, 5)) === JSON.stringify([0, 1, 2, 3, 4].map((i) => MAYURI.items[i])),
+  JSON.stringify(slotIds(mayuri, 5))
 );
 
-scenario("Ashisogi Jizō: lentidão a cada 3 hits");
+// o veneno da Mayuri e um DoT proprio (nao o efeito vanilla): 1 golpe por segundo
+function mayuriPoisonTicks(targetName, since, perSecond) {
+  return log.damages
+    .slice(since)
+    .filter((d) => d.target === targetName && d.by === "MayuriPlayer" && d.amount === perSecond).length;
+}
+
+const ASHISOGI_COMBO = game.MELEE_WEAPONS["mayuri:m1_ashisogi_jizo"].combo;
+scenario(`Ashisogi Jizō: lentidão a cada ${ASHISOGI_COMBO.everyHits} hits`);
 mark = errors.length;
 mayuri.teleport({ x: 200, y: 64, z: 200 });
 cobaia.teleport({ x: 201, y: 64, z: 200 });
+for (let i = 1; i < ASHISOGI_COMBO.everyHits; i++) {
+  hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
+  check(`${i}º hit: sem lentidão`, !cobaia.getEffect(ASHISOGI_COMBO.effect));
+}
 hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
-check("1º hit: sem lentidão", !cobaia.getEffect("slowness"));
-hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
-check("2º hit: sem lentidão", !cobaia.getEffect("slowness"));
-hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
-check("3º hit: aplica lentidão", !!cobaia.getEffect("slowness"));
+check(`${ASHISOGI_COMBO.everyHits}º hit: aplica lentidão`, !!cobaia.getEffect(ASHISOGI_COMBO.effect));
 check(
-  "lentidão dura 3 segundos",
-  (cobaia.getEffect("slowness")?.endTick ?? 0) - system.currentTick === 60,
-  `${(cobaia.getEffect("slowness")?.endTick ?? 0) - system.currentTick} ticks`
+  `lentidão dura ${ASHISOGI_COMBO.durationTicks} ticks`,
+  (cobaia.getEffect(ASHISOGI_COMBO.effect)?.endTick ?? 0) - system.currentTick === ASHISOGI_COMBO.durationTicks,
+  `${(cobaia.getEffect(ASHISOGI_COMBO.effect)?.endTick ?? 0) - system.currentTick} ticks`
 );
 
-cobaia.removeEffect("slowness");
+cobaia.removeEffect(ASHISOGI_COMBO.effect);
+for (let i = 1; i < ASHISOGI_COMBO.everyHits; i++) hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
+check("contador reiniciou (sem lentidão antes do próximo ciclo)", !cobaia.getEffect(ASHISOGI_COMBO.effect));
 hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
-hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
-check("contador reiniciou (4º e 5º hit sem lentidão)", !cobaia.getEffect("slowness"));
-hitWith(mayuri, cobaia, "mayuri:m1_ashisogi_jizo");
-check("6º hit: aplica de novo", !!cobaia.getEffect("slowness"));
+check("fim do ciclo seguinte: aplica de novo", !!cobaia.getEffect(ASHISOGI_COMBO.effect));
 noNewErrors("combo do m1 sem erro", mark);
-cobaia.removeEffect("slowness");
+cobaia.removeEffect(ASHISOGI_COMBO.effect);
 
 scenario("Poison Slash: caixa de 4 pra frente x 3 de largura");
 mark = errors.length;
 mayuri.teleport({ x: 200, y: 64, z: 200 });
 mayuri._view = { x: 1, y: 0, z: 0 }; // olhando pro +x
-const naFrente = createDummy("NaFrente", { x: 203, y: 64, z: 200 }, 500);
-const longeDemais = createDummy("LongeDemais", { x: 206, y: 64, z: 200 }, 500);
-const deLado = createDummy("DeLado", { x: 202, y: 64, z: 203 }, 500);
-const atras = createDummy("Atras", { x: 198, y: 64, z: 200 }, 500);
+const naFrente = createDummy("NaFrente", { x: 203, y: 64, z: 200 }, 500000);
+const longeDemais = createDummy("LongeDemais", { x: 206, y: 64, z: 200 }, 500000);
+const deLado = createDummy("DeLado", { x: 202, y: 64, z: 203 }, 500000);
+const atras = createDummy("Atras", { x: 198, y: 64, z: 200 }, 500000);
 cobaia.teleport({ x: 500, y: 64, z: 500 });
 
 dmgBefore = log.damages.length;
@@ -865,35 +903,40 @@ advanceTicks(10, "poison-slash");
 noNewErrors("Poison Slash executa limpo", mark);
 const slashHits = log.damages.slice(dmgBefore);
 check(
-  "20 de dano em quem está na frente",
-  slashHits.some((d) => d.target === "NaFrente" && d.amount === 20)
+  `${game.DAMAGE.poisonSlash} de dano em quem está na frente`,
+  slashHits.some((d) => d.target === "NaFrente" && d.amount === game.DAMAGE.poisonSlash)
 );
 check("não pega a 6 blocos (limite é 4)", !slashHits.some((d) => d.target === "LongeDemais"));
 check("não pega a 3 blocos de lado (largura é 3 total)", !slashHits.some((d) => d.target === "DeLado"));
 check("não pega quem está atrás", !slashHits.some((d) => d.target === "Atras"));
-check(
-  "aplica lentidão máxima por 2 segundos",
-  naFrente.getEffect("slowness")?.amplifier === 255 &&
-    (naFrente.getEffect("slowness")?.endTick ?? 0) - system.currentTick <= 40,
-  `amp=${naFrente.getEffect("slowness")?.amplifier}`
-);
+dmgBefore = log.damages.length;
+advanceTicks(60, "poison-slash-veneno");
+check("envenena quem levou o corte (DoT da Mayuri)", mayuriPoisonTicks("NaFrente", dmgBefore, 10) >= 2);
 for (const d of [longeDemais, deLado, atras]) d.kill();
 
-scenario("Toxic Fog: 10x10, poison 10 + slowness 3 por 15s");
+const TOXIC = game.TOXIC_FOG;
+scenario("Toxic Fog: 10x10, veneno + slowness 3 por 15s");
 mark = errors.length;
 mayuri.teleport({ x: 200, y: 64, z: 200 });
 naFrente.teleport({ x: 203, y: 64, z: 200 }); // 3 blocos: dentro do raio 5
-const foraDaNevoa = createDummy("ForaDaNevoa", { x: 208, y: 64, z: 200 }, 500);
+const foraDaNevoa = createDummy("ForaDaNevoa", { x: 208, y: 64, z: 200 }, 500000);
 naFrente.removeEffect("slowness");
 
 const partBeforeFog = log.particles.length;
+dmgBefore = log.damages.length;
 useItem(mayuri, "mayuri:toxic_fog");
-advanceTicks(30, "fog-inicio");
+advanceTicks(50, "fog-inicio");
 noNewErrors("Toxic Fog executa limpo", mark);
-check("poison 10 (amplifier 9) em quem está na neblina", naFrente.getEffect("poison")?.amplifier === 9);
-check("slowness 3 (amplifier 2) em quem está na neblina", naFrente.getEffect("slowness")?.amplifier === 2);
-check("quem está fora do 10x10 não é afetado", !foraDaNevoa.getEffect("poison"));
-check("Mayuri não se envenena", !mayuri.getEffect("poison"));
+check(
+  `veneno de ${TOXIC.mayuriPoison.damagePerSecond}/s em quem está na neblina`,
+  mayuriPoisonTicks("NaFrente", dmgBefore, TOXIC.mayuriPoison.damagePerSecond) >= 1
+);
+check(
+  `slowness ${TOXIC.slownessAmplifier + 1} em quem está na neblina`,
+  naFrente.getEffect("slowness")?.amplifier === TOXIC.slownessAmplifier
+);
+check("quem está fora do 10x10 não é afetado", mayuriPoisonTicks("ForaDaNevoa", dmgBefore, TOXIC.mayuriPoison.damagePerSecond) === 0);
+check("Mayuri não se envenena", !log.damages.slice(dmgBefore).some((d) => d.target === "MayuriPlayer"));
 const fogParticles = log.particles.slice(partBeforeFog);
 check(
   "neblina roxa desenhada com a partícula customizada",
@@ -908,8 +951,10 @@ check(
   "neblina acaba sozinha",
   log.worldMessages.some((m) => m.to === "MayuriPlayer" && m.message.includes("se dissipou"))
 );
-advanceTicks(40, "fog-efeitos-expiram");
-check("efeitos param de ser renovados depois que a neblina acaba", !naFrente.getEffect("poison"));
+advanceTicks(TOXIC.mayuriPoison.durationSeconds * 20 + 40, "fog-efeitos-expiram");
+dmgBefore = log.damages.length;
+advanceTicks(60, "fog-depois");
+check("veneno para depois que a neblina acaba", mayuriPoisonTicks("NaFrente", dmgBefore, TOXIC.mayuriPoison.damagePerSecond) === 0);
 
 scenario("Mayuri não herda o carregamento do Senkei");
 mark = errors.length;
@@ -935,37 +980,37 @@ mark = errors.length;
 mayuri.teleport({ x: 200, y: 64, z: 200 });
 naFrente.teleport({ x: 218, y: 64, z: 200 }); // 18 blocos: dentro do 50x50
 foraDaNevoa.teleport({ x: 240, y: 64, z: 200 }); // 40 blocos: fora
-naFrente.removeEffect("poison");
 naFrente.removeEffect("slowness");
+const KONJIKI = MAYURI.superAttack.konjiki;
 
 // sem o medidor cheio a Bankai não sai
 mayuri.setDynamicProperty(DP.awakening, 40);
 mayuri.isSneaking = true;
 useItem(mayuri, "mayuri:m1_ashisogi_jizo");
 advanceTicks(15, "bankai-sem-medidor");
-check("sem 100% de medidor a Bankai não sai", !naFrente.getEffect("poison"));
+check("sem 100% de medidor a Bankai não sai", naFrente.getEffect("slowness")?.amplifier !== KONJIKI.slownessAmplifier);
 check("e o medidor não é consumido", mayuri.getDynamicProperty(DP.awakening) === 40);
 
 mayuri.setDynamicProperty(DP.awakening, 100);
 const partBeforeBankai = log.particles.length;
+dmgBefore = log.damages.length;
 useItem(mayuri, "mayuri:m1_ashisogi_jizo");
 mayuri.isSneaking = false;
-advanceTicks(30, "bankai");
+advanceTicks(50, "bankai");
 noNewErrors("Konjiki executa limpo", mark);
 check("consumiu o medidor", mayuri.getDynamicProperty(DP.awakening) === 0);
 check(
-  "poison 20 (amplifier 19)",
-  naFrente.getEffect("poison")?.amplifier === 19,
-  `${naFrente.getEffect("poison")?.amplifier}`
+  `veneno de ${KONJIKI.mayuriPoison.damagePerSecond}/s`,
+  mayuriPoisonTicks("NaFrente", dmgBefore, KONJIKI.mayuriPoison.damagePerSecond) >= 1
 );
 check(
   "lentidão máxima (amplifier 255)",
   naFrente.getEffect("slowness")?.amplifier === 255,
   `${naFrente.getEffect("slowness")?.amplifier}`
 );
-check("alcança 18 blocos (área 50x50)", !!naFrente.getEffect("poison"));
-check("não alcança 40 blocos", !foraDaNevoa.getEffect("poison"));
-check("Mayuri não se envenena", !mayuri.getEffect("poison"));
+check("alcança 18 blocos (área 50x50)", mayuriPoisonTicks("NaFrente", dmgBefore, KONJIKI.mayuriPoison.damagePerSecond) >= 1);
+check("não alcança 40 blocos", mayuriPoisonTicks("ForaDaNevoa", dmgBefore, KONJIKI.mayuriPoison.damagePerSecond) === 0);
+check("Mayuri não se envenena", !log.damages.slice(dmgBefore).some((d) => d.target === "MayuriPlayer"));
 const bankaiParticles = log.particles
   .slice(partBeforeBankai)
   .filter((p) => p.particleId === "mayuri:poison_fog");
@@ -984,16 +1029,18 @@ check(
     (m) => m.to === "MayuriPlayer" && m.message.includes("Konjiki Ashisogi Jizō se dissipou")
   )
 );
-advanceTicks(40, "bankai-efeitos-expiram");
-check("efeitos param de ser renovados quando a neblina acaba", !naFrente.getEffect("poison"));
+advanceTicks(KONJIKI.mayuriPoison.durationSeconds * 20 + 40, "bankai-efeitos-expiram");
+dmgBefore = log.damages.length;
+advanceTicks(60, "bankai-depois");
+check("veneno para quando a neblina acaba", mayuriPoisonTicks("NaFrente", dmgBefore, KONJIKI.mayuriPoison.damagePerSecond) === 0);
 check("Mayuri não vira forma persistente", !mayuri.getDynamicProperty(DP.awakened));
-check("vida maxima continua 180", virtualMax(mayuri) === 180);
+check(`vida maxima continua ${MAYURI.health}`, virtualMax(mayuri) === MAYURI.health);
 naFrente.kill();
 foraDaNevoa.kill();
 
-/* ================= arcos do seletor ================= */
+/* ================= raca -> tier -> personagem ================= */
 
-scenario("Seletor separado por arcos");
+scenario("Seletor por raça e tier");
 const explorador = createPlayer("Explorador", { x: -300, y: 64, z: -300 }, 400);
 emit("playerSpawn", { player: explorador, initialSpawn: true });
 advanceTicks(20, "spawn-explorador");
@@ -1001,58 +1048,49 @@ advanceTicks(20, "spawn-explorador");
 mark = errors.length;
 useItem(explorador, "multiversal:character_selector"); // sem resposta na fila = cancela
 let shown = shownForms[shownForms.length - 1];
-check("começa no primeiro arco", shown.body.includes(ROSTER[0].name), shown.body);
+check("começa na primeira raça", shown.body.includes(RACES[0].name), shown.body);
 check(
-  `primeiro arco lista ${ROSTER[0].ids.length} personagens`,
-  shown.buttons.length === ROSTER[0].ids.length,
+  `menu de tiers tem os ${TIERS.length} tiers`,
+  shown.buttons.length === TIERS.length,
   `${shown.buttons.length} botões`
 );
 
 explorador.isSneaking = true;
 useItem(explorador, "multiversal:character_selector");
 explorador.isSneaking = false;
-check("agachar + seletor avança pro próximo arco", explorador.getDynamicProperty("mv:arc") === 1);
+check("agachar + seletor avança pra próxima raça", explorador.getDynamicProperty("mv:race") === 1);
 check(
-  "avisa em qual arco entrou",
-  log.worldMessages.some((m) => m.to === "Explorador" && m.message.includes(ROSTER[1].name))
-);
-
-useItem(explorador, "multiversal:character_selector");
-shown = shownForms[shownForms.length - 1];
-check(
-  `segundo arco lista ${ROSTER[1].ids.length} personagem`,
-  shown.buttons.length === ROSTER[1].ids.length,
-  `${shown.buttons.length} botões`
-);
-check(
-  "segundo arco traz os Arrancar",
-  ["Grimmjow", "Ulquiorra", "Starkk", "Yammy", "Harribel", "Barragan", "Szayelaporro", "Vizard"].every((n) =>
-    shown.buttons.join(" ").includes(n)
-  ),
-  shown.buttons.join(", ")
+  "avisa em qual raça entrou",
+  log.worldMessages.some((m) => m.to === "Explorador" && m.message.includes(RACES[1].name))
 );
 
 explorador.isSneaking = true;
-useItem(explorador, "multiversal:character_selector");
+for (let i = 1; i < RACES.length; i++) useItem(explorador, "multiversal:character_selector");
 explorador.isSneaking = false;
-check("dá a volta depois do último arco", explorador.getDynamicProperty("mv:arc") === 0);
-noNewErrors("trocar de arco sem erro", mark);
+check("dá a volta depois da última raça", explorador.getDynamicProperty("mv:race") === 0);
+noNewErrors("trocar de raça sem erro", mark);
 
-// varre todos os arcos: ninguém pode ficar de fora nem aparecer duas vezes
+// varre raca x tier: todo personagem do registro aparece exatamente uma vez
 const todosOsBotoes = [];
-for (let a = 0; a < ROSTER.length; a++) {
-  useItem(explorador, "multiversal:character_selector");
-  todosOsBotoes.push(...shownForms[shownForms.length - 1].buttons);
+for (let r = 0; r < RACES.length; r++) {
+  for (let t = 0; t < TIERS.length; t++) {
+    queueFormResponse(t);
+    useItem(explorador, "multiversal:character_selector");
+    await settleForms();
+    const menu = shownForms[shownForms.length - 1];
+    todosOsBotoes.push(...menu.buttons.slice(0, -1)); // o ultimo e "Voltar"
+  }
   explorador.isSneaking = true;
   useItem(explorador, "multiversal:character_selector");
   explorador.isSneaking = false;
 }
-const totalEsperado = ROSTER.reduce((n, arc) => n + arc.ids.length, 0);
+const totalEsperado = Object.keys(RACE_TIER).length;
 check(
-  "os arcos juntos cobrem todo o elenco, sem repetição",
+  "raças x tiers cobrem todo o elenco, sem repetição",
   todosOsBotoes.length === totalEsperado && new Set(todosOsBotoes).size === totalEsperado,
-  `${todosOsBotoes.length} botões, ${new Set(todosOsBotoes).size} únicos`
+  `${todosOsBotoes.length} botões, ${new Set(todosOsBotoes).size} únicos, esperado ${totalEsperado}`
 );
+noNewErrors("varrer todos os menus sem erro", mark);
 
 /* ================= Grimmjow Jaegerjaquez ================= */
 
@@ -2112,7 +2150,8 @@ check(
     .slice(msgsBeforeIra)
     .some((m) => m.message === "<YammyPlayer> Os Espadas são numerados de 0-9, não de 1-10!")
 );
-check("vida maxima 10000", virtualMax(yammy) === 10000, `${virtualMax(yammy)}`);
+const IRA_HP = game.CHARACTERS.yammy.awakening.health;
+check(`vida maxima ${IRA_HP}`, virtualMax(yammy) === IRA_HP, `${virtualMax(yammy)}`);
 check("speed 1 (amplifier 0)", yammy.getEffect("speed")?.amplifier === 0, `${yammy.getEffect("speed")?.amplifier}`);
 check("lentidão 1 (amplifier 0)", yammy.getEffect("slowness")?.amplifier === 0, `${yammy.getEffect("slowness")?.amplifier}`);
 check("fadiga 2 (amplifier 1)", yammy.getEffect("mining_fatigue")?.amplifier === 1, `${yammy.getEffect("mining_fatigue")?.amplifier}`);
@@ -2664,9 +2703,11 @@ noNewErrors("dois personagens ativados sem erro", mark);
 // sem guarda: dano cheio
 dmgBefore = log.damages.length;
 hitWith(agressor, guardiao, "kenpachi:m1_zanpakuto");
+const KEN_M1 = game.DAMAGE.kenpachiM1;
+const HALF = game.BLOCK.damageMultiplier;
 check(
-  "sem guarda o m1 do Kenpachi dá 14 cheios",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === 14),
+  `sem guarda o m1 do Kenpachi dá ${KEN_M1} cheios`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === KEN_M1),
   JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Guardiao"))
 );
 
@@ -2679,8 +2720,8 @@ check("guarda levantada", guardiao.getDynamicProperty("mv:block_end") > 0);
 dmgBefore = log.damages.length;
 hitWith(agressor, guardiao, "kenpachi:m1_zanpakuto");
 check(
-  "bloqueando, o mesmo golpe dá metade (7)",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === 7),
+  `bloqueando, o mesmo golpe dá metade (${KEN_M1 * HALF})`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === KEN_M1 * HALF),
   JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Guardiao"))
 );
 
@@ -2692,8 +2733,8 @@ dmgBefore = log.damages.length;
 useItem(agressor, "kenpachi:stomp");
 advanceTicks(5, "stomp-bloqueado");
 check(
-  "a guarda vale pra skill também (Stomp de 45 vira 22.5)",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === 22.5),
+  `a guarda vale pra skill também (Stomp de ${game.DAMAGE.stomp} vira ${game.DAMAGE.stomp * HALF})`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === game.DAMAGE.stomp * HALF),
   JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Guardiao"))
 );
 
@@ -2711,7 +2752,7 @@ dmgBefore = log.damages.length;
 hitWith(agressor, guardiao, "kenpachi:m1_zanpakuto");
 check(
   "sem guarda o dano volta a ser cheio",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === 14)
+  log.damages.slice(dmgBefore).some((d) => d.target === "Guardiao" && d.amount === KEN_M1)
 );
 
 // o cooldown conta a partir de quando a guarda CAIU, nao da ativacao
@@ -3159,12 +3200,14 @@ dmgBefore = log.damages.length;
 useItem(szayel, "szayel:carbon_copy");
 advanceTicks(120, "carbon-copy");
 noNewErrors("Carbon-Copy executa limpo", mark);
+// o Copiado e um Kenpachi de 1700: acima do teto do Bedrock, o log guarda o
+// dano REAL e a comparacao tem que ser feita na escala virtual
 const golpesDaCopia = log.damages.slice(dmgBefore).filter((d) => d.target === "Copiado");
 check(
-  "a cópia bate no alvo com o m1 do próprio alvo (14 do Kenpachi)",
-  golpesDaCopia.length >= 1 && golpesDaCopia.every((d) => d.amount === 14),
+  `a cópia bate no alvo com o m1 do próprio alvo (${game.DAMAGE.kenpachiM1} do Kenpachi)`,
+  golpesDaCopia.length >= 1 && golpesDaCopia.every((d) => virtualDamage(copiado, d) === game.DAMAGE.kenpachiM1),
   `${golpesDaCopia.length} golpes de ${JSON.stringify([
-    ...new Set(golpesDaCopia.map((d) => d.amount)),
+    ...new Set(golpesDaCopia.map((d) => virtualDamage(copiado, d))),
   ])}`
 );
 check(
@@ -3188,9 +3231,10 @@ advanceTicks(5, "learn-and-adapt");
 noNewErrors("Learn and Adapt executa limpo", mark);
 dmgBefore = log.damages.length;
 hitWith(szayel, copiado, "szayel:m1_zanpakuto");
+const SZ_M1 = game.DAMAGE.szayelM1;
 check(
-  "o m1 de 17 vira 34 no alvo estudado",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Copiado" && d.amount === 34),
+  `o m1 de ${SZ_M1} vira ${SZ_M1 * 2} no alvo estudado`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "Copiado" && virtualDamage(copiado, d) === SZ_M1 * 2),
   JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Copiado"))
 );
 // a marca da Pesquisa do Ulquiorra continua sendo 1.5x, não 2x
@@ -3199,7 +3243,7 @@ dmgBefore = log.damages.length;
 hitWith(szayel, copiado, "szayel:m1_zanpakuto");
 check(
   "passados os 15s o dano volta ao normal",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Copiado" && d.amount === 17)
+  log.damages.slice(dmgBefore).some((d) => d.target === "Copiado" && virtualDamage(copiado, d) === SZ_M1)
 );
 
 scenario("Resurrección: Fornicarás");
@@ -3438,7 +3482,8 @@ mark = errors.length;
 await pickCharacter(vizard, "ichigo_vizard");
 advanceTicks(20, "ativar-vizard");
 noNewErrors("ativar Ichigo Vizard sem erro", mark);
-check("vida maxima 1500", virtualMax(vizard) === 1500, `${virtualMax(vizard)}`);
+const VIZARD = game.CHARACTERS.ichigo_vizard;
+check(`vida maxima ${VIZARD.health}`, virtualMax(vizard) === VIZARD.health, `${virtualMax(vizard)}`);
 check(
   "5 itens base nos slots 0-4",
   JSON.stringify(slotIds(vizard, 5)) ===
@@ -3455,8 +3500,8 @@ dmgBefore = log.damages.length;
 const animBefore = log.animations.length;
 hitWith(vizard, alvoV, "vizard:m1_bankai");
 check(
-  "m1 dá 40 de dano",
-  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 40)
+  `m1 dá ${game.DAMAGE.vizardM1} de dano`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === game.DAMAGE.vizardM1)
 );
 const animDoM1 = log.animations
   .slice(animBefore)
@@ -3470,7 +3515,7 @@ check(
   JSON.stringify(animDoM1?.options)
 );
 
-scenario("Dash 'n Slash: 20 por tick avançando");
+scenario("Dash 'n Slash: dano por tick avançando");
 mark = errors.length;
 vizard.teleport({ x: 5000, y: 64, z: 5000 });
 vizard._view = { x: 1, y: 0, z: 0 };
@@ -3481,13 +3526,13 @@ advanceTicks(30, "dash-n-slash");
 noNewErrors("Dash 'n Slash executa limpo", mark);
 const cortesV = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV");
 check(
-  "bate várias vezes, 20 por tick",
-  cortesV.length >= 3 && cortesV.every((d) => d.amount === 20),
+  `bate várias vezes, ${game.DAMAGE.dashNSlashTick} por tick`,
+  cortesV.length >= 3 && cortesV.every((d) => d.amount === game.DAMAGE.dashNSlashTick),
   `${cortesV.length} ticks de ${JSON.stringify([...new Set(cortesV.map((d) => d.amount))])}`
 );
 check("e avança de verdade", vizard.location.x > 5010, `x=${vizard.location.x.toFixed(1)}`);
 
-scenario("Getsuga Barrage: 6 getsugas de 100");
+scenario("Getsuga Barrage: 6 getsugas");
 mark = errors.length;
 vizard.teleport({ x: 5100, y: 64, z: 5100 });
 vizard._view = { x: 1, y: 0, z: 0 };
@@ -3498,8 +3543,8 @@ advanceTicks(90, "getsuga-barrage");
 noNewErrors("Getsuga Barrage executa limpo", mark);
 const getsugas = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV");
 check(
-  "6 getsugas de 100",
-  getsugas.length === 6 && getsugas.every((d) => d.amount === 100),
+  `6 getsugas de ${game.DAMAGE.vizardBarrage}`,
+  getsugas.length === 6 && getsugas.every((d) => d.amount === game.DAMAGE.vizardBarrage),
   `${getsugas.length} getsugas de ${JSON.stringify([...new Set(getsugas.map((d) => d.amount))])}`
 );
 
@@ -3514,8 +3559,8 @@ useItem(vizard, "vizard:descent_tensho");
 advanceTicks(20, "descent-tensho");
 noNewErrors("Descent Tenshō executa limpo", mark);
 check(
-  "200 de dano em quem está perto do impacto",
-  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 200),
+  `${game.DAMAGE.descentTensho} de dano em quem está perto do impacto`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === game.DAMAGE.descentTensho),
   JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV"))
 );
 check(
@@ -3535,8 +3580,8 @@ useItem(vizard, "vizard:super_nuke");
 advanceTicks(3, "super-nuke-rapido");
 noNewErrors("Super Nuke executa limpo", mark);
 check(
-  "600 de dano e já chega em 3 ticks (velocidade 6)",
-  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 600),
+  `${game.DAMAGE.superNuke} de dano e já chega em 3 ticks (velocidade 6)`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === game.DAMAGE.superNuke),
   JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV"))
 );
 
@@ -3575,7 +3620,8 @@ const invV = () => inv(vizard);
 // tirar a peça e guardar na mochila: o loop devolve pro peito E some com a cópia
 equipV().setEquipment("Chest", undefined);
 invV().setItem(20, new ItemStack("vizard:hollow_chest", 1));
-advanceTicks(15, "tentar-tirar-peitoral");
+// a varredura da mochila roda no maximo a cada 40 ticks (por desempenho)
+advanceTicks(45, "tentar-tirar-peitoral");
 noNewErrors("a varredura roda limpo", mark);
 check(
   "a peça volta pro peito sozinha",
@@ -3594,7 +3640,7 @@ vizard.teleport({ x: 5400, y: 64, z: 5400 });
 vizard._view = { x: 1, y: 0, z: 0 };
 // fora do alcance do getsuga normal (raio 3.4), dentro do aumentado (x1.6)
 const naBordaViz = createDummy("NaBorda", { x: 5408, y: 64, z: 5404.6 }, 500000);
-advanceTicks(600, "cooldown-getsuga-barrage"); // a Barrage ainda estava recarregando
+vizard.setDynamicProperty("mv:cd_vizard_getsuga_barrage", undefined); // a Barrage ainda estava recarregando
 dmgBefore = log.damages.length;
 useItem(vizard, "vizard:getsuga_barrage");
 advanceTicks(90, "getsuga-maior");
@@ -3650,13 +3696,7 @@ check(
     "vizard:vasto_chest",
   String(vizard.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId)
 );
-const auraBefore = log.particles.length;
-advanceTicks(20, "aura-do-vasto");
-check(
-  "e solta aura constante em volta",
-  log.particles.slice(auraBefore).filter((p) => p.particleId === "vizard:cero").length > 30,
-  `${log.particles.slice(auraBefore).filter((p) => p.particleId === "vizard:cero").length} partículas`
-);
+// (a aura constante saiu na 1.19: o main.js diz "o Vasto Lorde nao tem aura")
 check(
   "4 skills novas + m1 do Vasto Lorde",
   JSON.stringify(slotIds(vizard, 5)) ===
@@ -3670,7 +3710,7 @@ check(
   JSON.stringify(slotIds(vizard, 5))
 );
 
-scenario("Vasto Lorde: m1 de 90 com hit explosivo");
+scenario("Vasto Lorde: m1 com hit explosivo");
 mark = errors.length;
 vizard.teleport({ x: 5500, y: 64, z: 5500 });
 alvoV.teleport({ x: 5502, y: 64, z: 5500 });
@@ -3680,12 +3720,12 @@ hitWith(vizard, alvoV, "vizard:m1_vasto");
 advanceTicks(2, "m1-vasto");
 noNewErrors("o m1 explosivo executa limpo", mark);
 check(
-  "90 no alvo",
-  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 90)
+  `${game.DAMAGE.vastoM1} no alvo`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === game.DAMAGE.vastoM1)
 );
 check(
   "e o estouro pega quem está do lado",
-  log.damages.slice(dmgBefore).some((d) => d.target === "Respingo" && d.amount === 40),
+  log.damages.slice(dmgBefore).some((d) => d.target === "Respingo" && d.amount === game.DAMAGE.vastoM1Blast),
   JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "Respingo"))
 );
 respingo.kill();
@@ -3727,12 +3767,12 @@ useItem(vizard, "vizard:bullet_hell");
 advanceTicks(60, "bullet-hell");
 noNewErrors("Bullet Hell executa limpo", mark);
 check(
-  "os ceros acertam de 75",
-  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === 75)
+  `os ceros acertam de ${game.DAMAGE.bulletHell}`,
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoV" && d.amount === game.DAMAGE.bulletHell)
 );
 check(
   "e o estouro pega quem está fora do cero",
-  log.damages.slice(dmgBefore).some((d) => d.target === "NaExplosao" && d.amount === 75),
+  log.damages.slice(dmgBefore).some((d) => d.target === "NaExplosao" && d.amount === game.DAMAGE.bulletHell),
   JSON.stringify(log.damages.slice(dmgBefore).filter((d) => d.target === "NaExplosao"))
 );
 mark = errors.length;
@@ -3751,9 +3791,9 @@ dmgBefore = log.damages.length;
 useItem(vizard, "vizard:everything_but_the_rain");
 advanceTicks(260, "chuva-de-cero");
 noNewErrors("Everything But the Rain executa limpo", mark);
-const pingos = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV" && d.amount === 20);
+const pingos = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoV" && d.amount === game.DAMAGE.ceroRain);
 check(
-  "vários pingos de 20 caem do céu",
+  `vários pingos de ${game.DAMAGE.ceroRain} caem do céu`,
   pingos.length >= 4,
   `${pingos.length} pingos`
 );
@@ -3761,7 +3801,7 @@ mark = errors.length;
 advanceTicks(200, "chuva-fim");
 noNewErrors("a chuva acaba sozinha", mark);
 
-scenario("Grito del Diablo: 10 por tick por 10s, alcance absurdo");
+scenario("Grito del Diablo: dano por tick por 10s, alcance absurdo");
 mark = errors.length;
 vizard.teleport({ x: 5900, y: 64, z: 5900 });
 // 35 blocos de distância: dentro do raio 45
@@ -3773,8 +3813,8 @@ advanceTicks(210, "grito");
 noNewErrors("Grito del Diablo executa limpo", mark);
 const grito = log.damages.slice(dmgBefore).filter((d) => d.target === "BemLonge");
 check(
-  "10 por tick durante 10 segundos (200 ticks)",
-  grito.length === 200 && grito.every((d) => d.amount === 10),
+  `${game.DAMAGE.gritoDiabloTick} por tick durante 10 segundos (200 ticks)`,
+  grito.length === 200 && grito.every((d) => d.amount === game.DAMAGE.gritoDiabloTick),
   `${grito.length} ticks de ${JSON.stringify([...new Set(grito.map((d) => d.amount))])}`
 );
 check(
@@ -3948,7 +3988,11 @@ emit("playerSpawn", { player: ichigo, initialSpawn: false });
 advanceTicks(20, "respawn");
 noNewErrors("respawn sem erro", mark);
 check("awakening cancelado no respawn", ichigo.getDynamicProperty(DP.awakened) === false);
-check("vida do personagem reaplicada", virtualMax(ichigo) === 200 && hp(ichigo).currentValue === 200);
+check(
+  "vida do personagem reaplicada",
+  virtualMax(ichigo) === ICHIGO_HP && virtualHp(ichigo) === ICHIGO_HP,
+  `${virtualHp(ichigo)}/${virtualMax(ichigo)}`
+);
 
 scenario("Alvo morrendo no meio de um DoT");
 mark = errors.length;

@@ -29,6 +29,16 @@ function record(err, phase) {
   errors.push({ phase, message: err?.message ?? String(err), stack: err?.stack });
 }
 
+// O main.js embrulha todo runInterval num try/catch "anti-lag" que troca a
+// excecao por um console.warn. No jogo isso evita spam no log; aqui cegaria a
+// simulacao, que reprova justamente por excecao. O aviso volta a ser erro.
+const rawWarn = console.warn.bind(console);
+console.warn = (...args) => {
+  const text = args.map((a) => String(a)).join(" ");
+  if (text.startsWith("[anti-lag]")) record(new Error(text), "loop engolido pelo anti-lag");
+  else rawWarn(...args);
+};
+
 /* ---------------- scheduler ---------------- */
 
 let currentTick = 0;
@@ -105,6 +115,39 @@ export const EquipmentSlot = {
 
 export const GameMode = { survival: "survival", creative: "creative" };
 
+export const InputPermissionCategory = {
+  Camera: 1,
+  Movement: 2,
+  LateralMovement: 4,
+  Sneak: 5,
+  Jump: 6,
+  Mount: 7,
+  Dismount: 8,
+  MoveForward: 9,
+  MoveBackward: 10,
+  MoveLeft: 11,
+  MoveRight: 12,
+};
+
+class PlayerInputPermissions {
+  constructor(entity) {
+    this.entity = entity;
+    this.disabled = new Set();
+  }
+  isPermissionCategoryEnabled(category) {
+    this.entity._assertValid();
+    return !this.disabled.has(category);
+  }
+  setPermissionCategory(category, isEnabled) {
+    this.entity._assertValid();
+    if (!Object.values(InputPermissionCategory).includes(category)) {
+      throw new Error(`categoria de input desconhecida: ${category}`);
+    }
+    if (isEnabled) this.disabled.delete(category);
+    else this.disabled.add(category);
+  }
+}
+
 export class ItemStack {
   constructor(typeId, amount = 1) {
     if (typeof typeId !== "string" || !typeId.includes(":")) {
@@ -160,6 +203,45 @@ class Container {
   addItem(item) {
     const idx = this.slots.findIndex((s) => s === undefined);
     if (idx !== -1) this.slots[idx] = item;
+  }
+  getSlot(slot) {
+    if (slot < 0 || slot >= this.size) throw new Error(`slot fora do range: ${slot}`);
+    return new ContainerSlot(this, slot);
+  }
+}
+
+// Referencia viva pra uma slot (API 2.0). Ler dado de item numa slot vazia
+// lanca no jogo, por isso quem usa pergunta hasItem() antes.
+class ContainerSlot {
+  constructor(container, slot) {
+    this.container = container;
+    this.slot = slot;
+  }
+  hasItem() {
+    return this.container.slots[this.slot] !== undefined;
+  }
+  getItem() {
+    return this.container.slots[this.slot];
+  }
+  setItem(item) {
+    this.container.slots[this.slot] = item;
+  }
+  _item() {
+    const item = this.container.slots[this.slot];
+    if (!item) throw new Error(`ContainerSlot ${this.slot} vazia: nao tem item pra ler`);
+    return item;
+  }
+  get typeId() {
+    return this._item().typeId;
+  }
+  get amount() {
+    return this._item().amount;
+  }
+  get nameTag() {
+    return this._item().nameTag;
+  }
+  get isValid() {
+    return true;
   }
 }
 
@@ -569,6 +651,7 @@ export class Entity {
 export class Player extends Entity {
   constructor(opts = {}) {
     super({ ...opts, typeId: "minecraft:player" });
+    this.inputPermissions = new PlayerInputPermissions(this);
   }
 }
 
@@ -624,7 +707,7 @@ class Block {
   }
 }
 
-class Dimension {
+export class Dimension {
   constructor(id) {
     this.id = id;
     this._entities = new Set();
@@ -751,6 +834,7 @@ const afterEvents = {
 
 const beforeEvents = {
   itemUse: new EventSignal("before:itemUse"),
+  playerBreakBlock: new EventSignal("before:playerBreakBlock"),
   playerLeave: new EventSignal("before:playerLeave"),
   chatSend: new EventSignal("before:chatSend"),
 };

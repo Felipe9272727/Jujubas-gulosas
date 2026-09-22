@@ -6,7 +6,7 @@ Por padrao roda o pipeline inteiro antes de empacotar e se recusa a gerar o
 arquivo se alguma etapa falhar:
 
     1. tools/validate.py          - JSON, itens, texturas, manifests
-    2. node --check               - sintaxe do main.js
+    2. node --check               - sintaxe de cada BP/scripts/*.js
     3. tools/gen_textures.py      - texturas batem com os grids de origem
     4. sim/run.mjs                - simulacao completa fora do jogo
 
@@ -31,7 +31,11 @@ EXCLUDE_SUFFIXES = {".pyc"}
 
 STEPS = [
     ("validacao estatica", [sys.executable, "tools/validate.py"]),
-    ("sintaxe do main.js", ["node", "--check", "BP/scripts/main.js"]),
+    # todo modulo do BP, nao so o main.js (o shinji.js e importado por ele)
+    *[
+        (f"sintaxe do {script.name}", ["node", "--check", str(script.relative_to(ROOT))])
+        for script in sorted((ROOT / "BP" / "scripts").glob("*.js"))
+    ],
     ("texturas x grids", [sys.executable, "tools/gen_textures.py", "--check"]),
     ("geometria x modelo", [sys.executable, "tools/gen_model.py", "--check"]),
     ("simulacao no Node", ["node", "--import", "./sim/register.mjs", "sim/run.mjs"]),

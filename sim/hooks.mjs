@@ -18,8 +18,9 @@ export async function resolve(specifier, context, nextResolve) {
 }
 
 export async function load(url, context, nextLoad) {
-  // main.js usa sintaxe ESM mas tem extensao .js sem package.json "type": "module"
-  if (url.endsWith("/BP/scripts/main.js")) {
+  // os scripts do BP (main.js, shinji.js) usam ESM com extensao .js e sem
+  // package.json "type": "module"
+  if (/\/BP\/scripts\/[^/]+\.js$/.test(url)) {
     const { readFile } = await import("node:fs/promises");
     const source = await readFile(fileURLToPath(url), "utf8");
     return { format: "module", source, shortCircuit: true };

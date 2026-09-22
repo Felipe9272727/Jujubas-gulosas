@@ -167,6 +167,12 @@ notes.append(f"{len(bp_items)} itens definidos no BP")
 tex_json = parsed.get(RP / "textures" / "item_texture.json")
 texture_data = (tex_json or {}).get("texture_data", {})
 
+try:
+    sys.path.insert(0, str(ROOT / "tools"))
+    from textures import TEXTURES as GRID_TEXTURES  # noqa: E402
+except ImportError:
+    GRID_TEXTURES = {}
+
 for identifier, path in sorted(bp_items.items()):
     icon = parsed[path]["minecraft:item"]["components"].get("minecraft:icon")
     if isinstance(icon, str) and icon not in texture_data:
@@ -185,11 +191,15 @@ for key, entry in sorted(texture_data.items()):
         fail(f"{png.relative_to(ROOT)} nao e um PNG valido")
     elif size[0] != size[1]:
         fail(f"{png.relative_to(ROOT)} nao e quadrada ({size[0]}x{size[1]})")
-    elif size != (ITEM_TEXTURE_PX, ITEM_TEXTURE_PX):
+    elif rel.removeprefix("textures/") in GRID_TEXTURES and size != (ITEM_TEXTURE_PX, ITEM_TEXTURE_PX):
+        # textura gerada dos grids: o gen_textures sempre escreve 64x64
         fail(
             f"{png.relative_to(ROOT)} tem {size[0]}x{size[1]}, esperado "
             f"{ITEM_TEXTURE_PX}x{ITEM_TEXTURE_PX} (grid {ITEM_GRID}x{ITEM_GRID} com upscale 4x)"
         )
+    elif size[0] & (size[0] - 1) or not 16 <= size[0] <= 256:
+        # textura feita fora dos grids: qualquer quadrado potencia de 2 serve
+        fail(f"{png.relative_to(ROOT)} tem {size[0]}x{size[1]}: use 16, 32, 64, 128 ou 256")
 
 orphan_textures = sorted(
     p for p in (RP / "textures" / "items").glob("*.png")
@@ -433,9 +443,24 @@ for particle in sorted(particle_ids):
     if particle not in particle_refs:
         notes.append(f"aviso: a particula {particle} esta definida mas o main.js nunca usa")
 
+bp_entities = set()
+for path in sorted(BP.glob("entities/*.json")):
+    data = parsed.get(path)
+    identifier = (data or {}).get("minecraft:entity", {}).get("description", {}).get("identifier")
+    if identifier:
+        bp_entities.add(identifier)
+        if not (RP / "entity" / f"{path.stem}.entity.json").exists() and not any(
+            (parsed.get(c) or {}).get("minecraft:client_entity", {}).get("description", {}).get("identifier")
+            == identifier
+            for c in RP.glob("entity/*.json")
+        ):
+            fail(f"a entidade {identifier} nao tem client entity no RP - fica invisivel")
+if bp_entities:
+    notes.append(f"entidades customizadas: {', '.join(sorted(bp_entities))}")
+
 referenced_items = {
     i for i in referenced
-    if not i.startswith(("minecraft:", "mv:")) and i not in particle_refs
+    if not i.startswith(("minecraft:", "mv:")) and i not in particle_refs and i not in bp_entities
 }
 
 for identifier in sorted(referenced_items):

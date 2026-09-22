@@ -902,6 +902,15 @@ const CHARACTER_RACE_TIER = {
   ichigo_vizard: { race: "hybrid", tier: 4 },
 };
 
+// Tier do personagem ATIVO (0 sem personagem). A Pressao Espiritual, o Air Step,
+// a troca de skill generica e as skills do Gin e do Shunsui comparam tiers por
+// aqui. A funcao era chamada em dez lugares e nao existia: cada chamada lancava
+// ReferenceError, que o anti-lag dos loops engolia em silencio.
+function tierOfPlayer(entity) {
+  const id = entity?.getDynamicProperty?.(DP.character);
+  return CHARACTER_RACE_TIER[id]?.tier ?? 0;
+}
+
 const SPIRITUAL_PRESSURE = { durationTicks: 200, cooldownTicks: 600, intervalTicks: 60, effectDurationTicks: 70, radii: {1:10,2:15,3:20,4:30,5:40,6:60,7:80,8:100,9:200}, effects: {2:{amplifier:1,damage:10},3:{amplifier:2,damage:20},4:{amplifier:3,damage:50}} };
 function isSpiritualPressureEnabled(player){ return player.getDynamicProperty(DP.pressureEnabled)!==false; }
 function setSpiritualPressureEnabled(player,enabled){ player.setDynamicProperty(DP.pressureEnabled,!!enabled); }
@@ -14988,3 +14997,21 @@ const shinji = createShinji({
   dealDamage, dmgMultiplier, entitiesInFrontBox, nearestTarget,
   isFrozen, trappingZoneFor, skillBlockingZoneFor, isRespiring, showRespiraGuard,
 });
+
+/* ---------------------------------------------------------
+   Registro exposto pra simulacao
+   --------------------------------------------------------- */
+// sim/run.mjs le os numeros daqui em vez de copiar: rebalancear nao quebra a
+// simulacao, e ela continua provando que o numero configurado e o que chega no
+// alvo. No jogo ninguem importa o main.js, entao exportar nao muda nada.
+export {
+  CHARACTERS,
+  CHARACTER_RACE_TIER,
+  RACES,
+  TIERS,
+  DAMAGE,
+  SKILL_COOLDOWN_TICKS,
+  MELEE_WEAPONS,
+  BLOCK,
+  TOXIC_FOG,
+};
