@@ -16,6 +16,8 @@ segue o tamanho real da caixa), origin pode ser fracionario.
 """
 from __future__ import annotations
 
+from boxmodel import BoxModel, faces
+
 TEXTURE_SIZE = 64
 IDENTIFIER = "geometry.aizen_clone"
 
@@ -59,77 +61,16 @@ BONES = {
     "leftleg":   ("body",      [1.9, 12, 0]),
 }
 
-FACE_SHADE = {
-    "top": "", "bottom": "_deep", "north": "",
-    "south": "_dark", "east": "_dark", "west": "_dark",
-}
-
-
-def _shade(color: str, face: str) -> str:
-    suffix = FACE_SHADE[face]
-    return color + suffix if suffix and color + suffix in PALETTE else color
-
-
-def _faces(u, v, w, h, d):
-    """as seis faces de um cubo no layout de UV do Bedrock (north = frente)"""
-    return {
-        "top":    (u + d, v, w, d),
-        "bottom": (u + d + w, v, w, d),
-        "east":   (u, v + d, d, h),
-        "north":  (u + d, v + d, w, h),
-        "west":   (u + d + w, v + d, d, h),
-        "south":  (u + d + w + d, v + d, w, h),
-    }
+_MODEL = BoxModel(IDENTIFIER, CUBES, BONES, PALETTE, TEXTURE_SIZE, bounds=(2, 3, 1.25))
+_faces = faces
 
 
 def pack_uvs():
-    """shelf packing: uma linha de caixas ate encher a largura do atlas"""
-    placements = []
-    x, y, row = 0, 0, 0
-    for index, (_, _, size, _, _) in enumerate(CUBES):
-        w, h, d = size
-        fw, fh = 2 * (w + d), h + d
-        if x + fw > TEXTURE_SIZE:
-            x, y, row = 0, y + row, 0
-        if y + fh > TEXTURE_SIZE:
-            raise ValueError(f"o atlas do clone encheu na caixa {index}")
-        placements.append((x, y))
-        x += fw
-        row = max(row, fh)
-    return placements
+    return _MODEL.pack_uvs()
 
 
 def build_geometry() -> dict:
-    by_bone = {name: [] for name in BONES}
-    for (bone, origin, size, _color, inflate), (u, v) in zip(CUBES, pack_uvs()):
-        cube = {"origin": origin, "size": size, "uv": [u, v]}
-        if inflate:
-            cube["inflate"] = inflate
-        by_bone[bone].append(cube)
-
-    bones = []
-    for name, (parent, pivot) in BONES.items():
-        bone = {"name": name, "pivot": pivot}
-        if parent:
-            bone["parent"] = parent
-        if by_bone[name]:
-            bone["cubes"] = by_bone[name]
-        bones.append(bone)
-
-    return {
-        "format_version": "1.12.0",
-        "minecraft:geometry": [{
-            "description": {
-                "identifier": IDENTIFIER,
-                "texture_width": TEXTURE_SIZE,
-                "texture_height": TEXTURE_SIZE,
-                "visible_bounds_width": 2,
-                "visible_bounds_height": 3,
-                "visible_bounds_offset": [0, 1.25, 0],
-            },
-            "bones": bones,
-        }],
-    }
+    return _MODEL.build_geometry()
 
 
 def _front(placement, size):
@@ -139,10 +80,7 @@ def _front(placement, size):
 
 def build_texture_rects():
     placements = pack_uvs()
-    rects = []
-    for (_bone, _origin, size, color, _inflate), (u, v) in zip(CUBES, placements):
-        for face, (x, y, fw, fh) in _faces(u, v, *size).items():
-            rects.append([x, y, fw, fh, _shade(color, face)])
+    rects = _MODEL.base_rects()
 
     # base: borda escura em cima, como a laje do armor stand
     (u, v), (w, _h, d) = placements[0], CUBES[0][2]
@@ -214,13 +152,4 @@ def _grain(rects):
     return rects + grain
 
 
-for _bone, _origin, _size, _color, _inflate in CUBES:
-    for _value in _size:
-        if float(_value) != int(_value):
-            raise ValueError(f"clone/{_bone}: tamanho de caixa tem que ser INTEIRO ({_size})")
-
-TEXTURE_SPEC = {
-    "size": (TEXTURE_SIZE, TEXTURE_SIZE),
-    "palette": PALETTE,
-    "rects": build_texture_rects(),
-}
+TEXTURE_SPEC = _MODEL.texture_spec(build_texture_rects())

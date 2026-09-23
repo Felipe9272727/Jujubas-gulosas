@@ -174,6 +174,9 @@ const DP = {
   noDash: "mv:cd_nodash", // Ice Age do Hitsugaya: sem dash por um tempo
   kyokaMark: "mv:kyoka_mark", // viu a Kyōka Suigetsu (m1 do Aizen): pra sempre sob as ilusões
   kyokaBlock: "mv:kyoka_block", // bloco marcado pela Kyōka ({x,y,z,dim}), destino do agachar duplo
+  evolution: "mv:evolution", // Evolution do Aizen Hōgyoku (0-100)
+  aizenIllusion: "mv:aizen_illusion", // ilusao escolhida no item Illusions (0-2)
+  monsterResist: "mv:monster_resist", // passos de 5% de resistencia do Monster Aizen
 };
 
 // Paralisia do Piercing Shinso do Gin: id da entidade -> tick limite. O isFrozen()
@@ -619,6 +622,7 @@ const CHARACTERS = {
       healPerInterval: { amount: 30, ticks: 100 }, // 30 a cada 5s
       waveScale: 1.6, // getsugas maiores
       armorPiece: "vizard:hollow_chest", // peitoral que troca a skin
+      armorMessage: "§8§lA hollowficação tomou seu corpo. §r§7(máscara, chifres e shihakusho)",
       onActivate: "battlecry",
       chatLine: "Não me subestime.",
       cryParticle: "vizard:cero",
@@ -713,6 +717,9 @@ const CHARACTERS = {
       health: 3000,
       triggerItem: "hitsugaya:m1_hyorinmaru",
       canFly: true, // asas de gelo: voa (mesmo mecanismo do Ulquiorra)
+      // asas, cauda e braco do dragao em modelo 3D (attachable no peitoral);
+      // as particulas de gelo continuam por cima
+      armorPiece: "hitsugaya:daiguren_chest",
       onActivate: "battlecry",
       chatLine: "Bankai: Daiguren Hyōrinmaru",
       cryParticle: "hitsugaya:gelo",
@@ -845,6 +852,33 @@ const CHARACTERS = {
       triggerItem: "aizen:m1_kyoka_suigetsu",
     },
   },
+  aizen_hogyoku: {
+    id: "aizen_hogyoku",
+    name: "Sousuke Aizen (Hōgyoku)",
+    health: 7000,
+    items: {
+      0: "aizen:m1_kyoka_suigetsu",
+      1: "aizen:illusions",
+      2: "aizen:kurohitsugi_encantado",
+      3: "aizen:fragor",
+    },
+    // A Metamorfose nao vem do medidor: a Evolution chega a 100%, o casulo
+    // fecha por 5s e ela entra sozinha. Sem triggerItem (agachar + m1 nao
+    // desperta) e permanente (nao drena).
+    awakening: {
+      name: "Monster Aizen (Metamorfose)",
+      health: 8000,
+      permanent: true,
+      onActivate: "metamorphosis",
+      aura: { particle: "aizen:reiatsu", radius: 1.3, height: 2.6, perTick: 3 },
+      items: {
+        0: "aizen:m1_kyoka_suigetsu",
+        1: "aizen:illusions",
+        2: "aizen:fragor_barrage",
+        3: "aizen:ultra_fragor",
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -862,6 +896,7 @@ const EXTRA_OWNED_ITEMS = {
   "vizard:hollow_chest": "ichigo_vizard",
   "vizard:vasto_chest": "ichigo_vizard",
   "ulquiorra:segunda_chest": "ulquiorra",
+  "hitsugaya:daiguren_chest": "hitsugaya",
   // a Kyōka "oculta" (textura vazia) fica no slot 0 enquanto o Aizen esta invisivel
   "aizen:m1_kyoka_oculta": "aizen",
 };
@@ -910,6 +945,7 @@ const CHARACTER_RACE_TIER = {
   shinji: { race: "hybrid", tier: 4 },
   tosen: { race: "hybrid", tier: 3 },
   aizen: { race: "shinigami", tier: 6 },
+  aizen_hogyoku: { race: "hybrid", tier: 8 },
 
   grimmjow: { race: "hollow", tier: 2 },
   szayelaporro: { race: "hollow", tier: 2 },
@@ -1302,6 +1338,14 @@ const SKILL_COOLDOWN_TICKS = {
   "aizen:betrayal_of_the_illusioner": 600, // 30s
   "aizen:bakudo_61": 500, // 25s
   "aizen:fools_trick": 700, // 35s
+  // Aizen (Hōgyoku): as tres ilusoes tem cooldown proprio dentro do item Illusions
+  "aizen:illusions.switch": 600, // 30s
+  "aizen:illusions.false_skill": 500, // 25s
+  "aizen:illusions.kanzen_saimin": 900, // 45s
+  "aizen:kurohitsugi_encantado": 1400, // 70s
+  "aizen:fragor": 1000, // 50s
+  "aizen:ultra_fragor": 1200, // 60s
+  "aizen:fragor_barrage": 1200, // 60s
 };
 
 const SKILL_NAMES = {
@@ -1443,6 +1487,13 @@ const SKILL_NAMES = {
   "aizen:betrayal_of_the_illusioner": "Betrayal of the Illusioner",
   "aizen:bakudo_61": "Bakudō #61: Rikujōkōrō",
   "aizen:fools_trick": "Fool's Trick",
+  "aizen:illusions.switch": "Switch",
+  "aizen:illusions.false_skill": "False Skill",
+  "aizen:illusions.kanzen_saimin": "Kanzen Saimin",
+  "aizen:kurohitsugi_encantado": "Hadō #90: Kurohitsugi (Encantado)",
+  "aizen:fragor": "Fragor",
+  "aizen:ultra_fragor": "UltraFragor",
+  "aizen:fragor_barrage": "Fragor Barrage",
 };
 
 // dano aumentado
@@ -1619,6 +1670,16 @@ const DAMAGE = {
   aizenCloneBacklash: 50, // quem acerta um clone
   aizenFoolsTrick: 400, // o corte do Fool's Trick
   aizenKurohitsugiHit: 50, // por ataque; 50 ataques
+  // Sousuke Aizen (Hōgyoku)
+  aizenHogyokuM1: 160,
+  aizenMonsterM1: 320, // Monster Aizen: Kyōka em dobro
+  hogyokuKurohitsugiHit: 90, // por ataque; 40 ataques = 3600
+  fragor: 1000,
+  fragorFragment: 100, // por estilhaco, 30 estilhacos
+  ultraFragor: 2000,
+  ultraFragorFragment: 200,
+  fragorBarrage: 500, // metade do Fragor, 5 explosoes
+  fragorBarrageFragment: 50,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -2418,6 +2479,8 @@ function dmgMultiplier(player) {
   if (awakenedBonus && isAwakened(player)) {
     multiplier *= awakenedBonus;
   }
+  // Evolution do Aizen Hōgyoku: +5% a cada 20%
+  if (character?.id === "aizen_hogyoku") multiplier *= hogyokuDamageBonus(player);
 
   return multiplier;
 }
@@ -2651,6 +2714,15 @@ function toggleStarkkForm(player) {
 
 // decide quais itens devem estar travados nos slots do player nesse momento
 function getActiveItemsForPlayer(player, character) {
+  // Aizen invisivel (Illusion's Mastery / Kanzen Saimin): a Kyōka da mao vira
+  // a oculta, em qualquer forma
+  if (
+    (character.id === "aizen" && aizenIllusions.has(player.id)) ||
+    (character.id === "aizen_hogyoku" && hogyokuKanzen.has(player.id))
+  ) {
+    const form = activeFormOf(player, character);
+    return { ...(form?.items ?? character.items), 0: AIZEN.kyokaHidden };
+  }
   const form = activeFormOf(player, character);
   if (form) {
     if (form.altForm && getStarkkForm(player) === "lilynette") {
@@ -2660,9 +2732,6 @@ function getActiveItemsForPlayer(player, character) {
   }
   if (character.id === "tosen" && isTosenVisored(player)) {
     return TOSEN_VISORED.items;
-  }
-  if (character.id === "aizen" && aizenIllusions.has(player.id)) {
-    return { ...character.items, 0: AIZEN.kyokaHidden };
   }
   if (character.superAttack) {
     const weaponState = getByakuyaWeaponState(player);
@@ -2685,6 +2754,7 @@ function activateCharacter(player, characterId) {
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
   player.setDynamicProperty(DP.starkkForm, "starkk");
   if (characterId === "aaroniero") { clearAaronieroDevoured(player); player.setDynamicProperty("mv:aaroniero_selected", 0); player.setDynamicProperty(DP.aaronieroMaskEnd, 0); }
+  if (characterId === "aizen_hogyoku") resetHogyoku(player);
   clearComboCounters(player);
 
   applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
@@ -2713,7 +2783,8 @@ function deactivateCharacter(player) {
   soiClearNigeki(player.id);
   const character = getActiveCharacter(player);
   if (!character) return;
-  if (character.id === "aizen") aizenCleanup(player.id);
+  if (character.id === "aizen" || character.id === "aizen_hogyoku") aizenCleanup(player.id);
+  if (character.id === "aizen_hogyoku") resetHogyoku(player);
 
   if (isMasked(player)) {
     try {
@@ -2840,8 +2911,8 @@ function activateAwakening(player, character) {
   // o marcador da offhand e o que faz o modelo ficar gigante no cliente
   if (form.offhandMarker) setOffhandMarker(player, form.offhandMarker);
   // e o peitoral e o que troca a skin
-  if (form.armorPiece && equipArmorPiece(player, form.armorPiece)) {
-    player.sendMessage("§8§lA hollowficação tomou seu corpo. §r§7(máscara, chifres e shihakusho)");
+  if (form.armorPiece && equipArmorPiece(player, form.armorPiece) && form.armorMessage) {
+    player.sendMessage(form.armorMessage);
   }
 
   if (form.canFly) setUlquiorraFlight(player, true);
@@ -2852,6 +2923,9 @@ function activateAwakening(player, character) {
       break;
     case "battlecry":
       announceBattleCry(player, form);
+      break;
+    case "metamorphosis":
+      world.sendMessage("§5§lAizen atingiu sua Metamorfose...");
       break;
   }
 }
@@ -3167,6 +3241,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
   } else {
     soiClearNigeki(player.id);
     aizenCleanup(player.id);
+    if (getActiveCharacter(player)?.id === "aizen_hogyoku") resetHogyoku(player);
     ukitakeAbsorb.delete(player.id);
     player.setDynamicProperty(UKITAKE_STORED, 0);
     // respawn depois de morrer: reaplica personagem se tinha um ativo
@@ -3218,7 +3293,10 @@ function openCheatOptionsMenu(player) {
       openCheatOptionsMenu(player);
     } else if (res.selection === 1) {
       const awkCharacter = getActiveCharacter(player);
-      if (!awkCharacter?.awakening && !awkCharacter?.superAttack) {
+      if (awkCharacter?.id === "aizen_hogyoku") {
+        player.setDynamicProperty(DP.evolution, 100);
+        player.sendMessage("§aEvolution preenchida em 100%!");
+      } else if (!awkCharacter?.awakening && !awkCharacter?.superAttack) {
         player.sendMessage("§cVocê precisa estar usando um personagem com Awakening ou Super.");
       } else {
         player.setDynamicProperty(DP.awakening, 100);
@@ -3856,6 +3934,22 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "aizen:fools_trick":
       castFoolsTrick(player);
+      break;
+    case "aizen:illusions":
+      if (player.isSneaking) openIllusionsMenu(player);
+      else castSelectedIllusion(player);
+      break;
+    case "aizen:kurohitsugi_encantado":
+      castKurohitsugiEncantado(player);
+      break;
+    case "aizen:fragor":
+      castFragor(player);
+      break;
+    case "aizen:ultra_fragor":
+      castUltraFragor(player);
+      break;
+    case "aizen:fragor_barrage":
+      castFragorBarrage(player);
       break;
   }
 });
@@ -8891,6 +8985,7 @@ function damageTakenMultiplierOf(entity) {
       multiplier *= form.awakeningDamageTakenMultiplier;
     }
     if (isHierro(entity)) multiplier *= HIERRO.damageTakenMultiplier;
+    if (character?.id === "aizen_hogyoku") multiplier *= hogyokuResistMultiplier(entity);
     return multiplier;
   } catch (e) {
     return 1;
@@ -14089,11 +14184,14 @@ const AIZEN = {
     // total (50 x 50) chega igual
     damageEveryTicks: 10,
     buildTicks: 10,
+    hitDamage: DAMAGE.aizenKurohitsugiHit,
   },
 };
 
 const aizenIllusions = new Map(); // id do Aizen -> ilusao ativa
 const aizenCloneOwner = new Map(); // id do clone -> id do Aizen
+// id do clone -> "mastery" (Captain's Fight), "switch" ou "kanzen" (Hōgyoku)
+const aizenCloneKind = new Map();
 const aizenCloneHitTick = new Map(); // id do clone -> tick do ultimo golpe visto
 const aizenBetrayals = new Map(); // id do Aizen -> { until, timer }
 const aizenTricks = new Map(); // id do Aizen -> Fool's Trick em andamento
@@ -14245,6 +14343,16 @@ function aizenSpotBehind(target, distance) {
   return { x: t.x, y: t.y, z: t.z };
 }
 
+// Rotacao olhando reto pro alvo: so o giro horizontal, inclinacao zero. O
+// facingLocation mira a partir dos PES de quem teleporta, entao apontar pro
+// peito do alvo deixava o Aizen olhando pra cima depois de cada teleporte.
+function levelRotationToward(from, to) {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  // yaw do Bedrock: 0 = +Z (sul), 90 = -X (oeste); direcao = (-sin, cos)
+  return { x: 0, y: (Math.atan2(-dx, dz) * 180) / Math.PI };
+}
+
 function aizenBlinkBehind(player, target, distance) {
   const from = player.location;
   const spot = aizenSpotBehind(target, distance);
@@ -14252,7 +14360,7 @@ function aizenBlinkBehind(player, target, distance) {
   player.teleport(spot, {
     dimension: target.dimension,
     keepVelocity: false,
-    facingLocation: { x: t.x, y: t.y + 1.2, z: t.z },
+    rotation: levelRotationToward(spot, t),
   });
   aizenPuff(player.dimension, from, 6, 0.4);
   aizenPuff(target.dimension, spot, 6, 0.4);
@@ -14378,7 +14486,7 @@ function aizenReveal(player, state) {
     player.nameTag = state.nameTag || player.name;
   } catch (e) {}
   try {
-    if (isAizen(player)) forceGiveLockedItem(getInv(player), 0, AIZEN.kyoka);
+    if (isAnyAizen(player)) forceGiveLockedItem(getInv(player), 0, AIZEN.kyoka);
   } catch (e) {}
 }
 
@@ -14418,6 +14526,7 @@ function castIllusionsMastery(player) {
       clone.nameTag = player.name;
       state.clones.push({ entity: clone, id: clone.id, popped: false });
       aizenCloneOwner.set(clone.id, player.id);
+      aizenCloneKind.set(clone.id, "mastery");
       aizenPuff(dim, spot, 8, 0.4);
     } catch (e) {}
   }
@@ -14434,6 +14543,7 @@ function endIllusion(state, reason) {
   aizenIllusions.delete(state.aizenId);
   for (const clone of state.clones) {
     aizenCloneOwner.delete(clone.id);
+    aizenCloneKind.delete(clone.id);
     if (clone.popped) continue;
     try {
       aizenPuff(state.dim, clone.entity.location, 6, 0.3);
@@ -14441,7 +14551,6 @@ function endIllusion(state, reason) {
     } catch (e) {}
   }
   aizenReveal(state.aizen, state);
-  if (reason === "strike") aizenSay(state.aizen, "Tolo, caiu em minha ilusão");
   let center;
   try {
     center = state.target.location;
@@ -14471,14 +14580,11 @@ function stepIllusion(state, now) {
   }
   state.angle = (state.angle + AIZEN.mastery.spinPerTick) % 360;
   const t = target.location;
-  const look = { x: t.x, y: t.y + 1.4, z: t.z };
   state.clones.forEach((clone, index) => {
     if (clone.popped) return;
     try {
-      clone.entity.teleport(aizenCloneSpot(target, index, state.angle), {
-        keepVelocity: false,
-        facingLocation: look,
-      });
+      const spot = aizenCloneSpot(target, index, state.angle);
+      clone.entity.teleport(spot, { keepVelocity: false, rotation: levelRotationToward(spot, t) });
     } catch (e) {
       clone.popped = true; // sumiu por fora (chunk, /kill): conta como desfeito
     }
@@ -14490,6 +14596,11 @@ function stepIllusion(state, now) {
 function aizenCloneStruck(entity, attacker) {
   const id = entity.id;
   aizenCloneHitTick.set(id, system.currentTick);
+  const kind = aizenCloneKind.get(id);
+  if (kind === "switch" || kind === "kanzen") {
+    hogyokuCloneStruck(entity, attacker, kind);
+    return;
+  }
   const state = aizenIllusions.get(aizenCloneOwner.get(id));
   const clone = state?.clones.find((c) => c.id === id);
   if (!state || !clone) {
@@ -14506,6 +14617,7 @@ function popClone(state, clone, attacker) {
   if (clone.popped) return;
   clone.popped = true;
   aizenCloneOwner.delete(clone.id);
+  aizenCloneKind.delete(clone.id);
   let loc;
   try {
     loc = clone.entity.location;
@@ -14525,7 +14637,6 @@ function popClone(state, clone, attacker) {
       dealDamage(attacker, DAMAGE.aizenCloneBacklash);
     } catch (e2) {}
   }
-  aizenSay(state.aizen, "Errou...tente novamente");
   if (state.clones.every((c) => c.popped)) endIllusion(state, "clones");
 }
 
@@ -14542,6 +14653,12 @@ function aizenCloneSensorHit(entity) {
   const seenAt = system.currentTick;
   system.runTimeout(() => {
     if ((aizenCloneHitTick.get(id) ?? -1000) >= seenAt - 1) return;
+    const kind = aizenCloneKind.get(id);
+    if (kind === "switch" || kind === "kanzen") {
+      const hogyoku = hogyokuStateOfClone(id);
+      if (hogyoku) hogyokuCloneStruck(entity, hogyoku.target, kind);
+      return;
+    }
     const state = aizenIllusions.get(aizenCloneOwner.get(id));
     const clone = state?.clones.find((c) => c.id === id);
     if (state && clone) popClone(state, clone, state.target);
@@ -14552,6 +14669,13 @@ function aizenCloneSensorHit(entity) {
 
 function aizenKyokaStrike(aizen, target) {
   markWithKyoka(aizen, target);
+  if (isHogyoku(aizen)) {
+    let damage = isAwakened(aizen) ? DAMAGE.aizenMonsterM1 : DAMAGE.aizenHogyokuM1;
+    // Kanzen Saimin: o primeiro m1 dobra e desfaz a ilusao
+    const kanzen = hogyokuKanzen.get(aizen.id);
+    if (kanzen) damage *= HOGYOKU.kanzen.m1Multiplier;
+    return { damage, kanzen };
+  }
   let damage = DAMAGE.aizenM1;
   const illusion = aizenIllusions.get(aizen.id);
   const caught = illusion && illusion.target.id === target.id ? illusion : undefined;
@@ -14562,6 +14686,7 @@ function aizenKyokaStrike(aizen, target) {
 }
 
 function aizenAfterKyokaStrike(aizen, target, strike) {
+  if (strike.kanzen) endKanzen(strike.kanzen);
   if (!strike.illusion) return;
   try {
     target.addEffect("slowness", AIZEN.mastery.strikeSlownessTicks, {
@@ -14629,7 +14754,7 @@ function castBakudo61(player) {
   if (!tryUseSkill(player, "aizen:bakudo_61")) return;
 
   const cfg = AIZEN.bakudo;
-  aizenSay(player, "Bakudō #61: Rikujōkōrō", true);
+  world.sendMessage(`§5${player.name} usou §lBakudō #61: Rikujōkōrō§r§5!`);
   // kido de longe: a Respira do Barragan e o Intocable do Nnoitra seguram
   if (isRespiring(target)) {
     showRespiraGuard(target);
@@ -14691,8 +14816,9 @@ function castFoolsTrick(player) {
   if (!tryUseSkill(player, "aizen:fools_trick")) return;
 
   const cfg = AIZEN.foolsTrick;
-  // o awakening falso: fala, barulho alto e a carga de reiatsu, tudo de mentira
-  aizenSay(player, "AWAKENING: Hadō 99: Goryūtenmetsu", true);
+  // o awakening falso: no formato de anuncio de awakening (nao e fala), com
+  // barulho alto e a carga de reiatsu - tudo de mentira
+  world.sendMessage(`§d§l${player.name} despertou: AWAKENING: Hadō 99: Goryūtenmetsu!`);
   const origin = player.location;
   player.dimension.playSound("mob.wither.spawn", origin, { volume: 4, pitch: 0.6 });
   player.dimension.playSound("ambient.weather.thunder", origin, { volume: 3, pitch: 0.7 });
@@ -14735,7 +14861,6 @@ function castFoolsTrick(player) {
       aizenBlinkBehind(player, target, 1.3);
     } catch (e) {}
     if (!isIntocable(target)) paralyzeFor(target, cfg.paralysisTicks, "§5Você não consegue se mexer...");
-    aizenSay(player, "Achou mesmo ser digno?");
     kyokaShatter(target.dimension, target.location);
 
     state.slash = system.runTimeout(() => {
@@ -14802,7 +14927,6 @@ function triggerAizenCounter(aizen, attacker, since) {
   try {
     setVirtualHealth(aizen, best);
   } catch (e) {}
-  aizenSay(aizen, "Você vencer sempre foi uma ilusão");
   kyokaShatter(aizen.dimension, aizen.location);
 }
 
@@ -14816,12 +14940,12 @@ function tryTriggerKurohitsugi(player) {
   const target = aizenTargetInView(player, 40);
   if (!target) return false;
   player.setDynamicProperty(DP.awakening, 0);
-  runKurohitsugi(player, target);
+  world.sendMessage(`§5${player.name} usou §lHadō #90: Kurohitsugi§r§5!`);
+  runKurohitsugi(player, target, AIZEN.kurohitsugi);
   return true;
 }
 
-function runKurohitsugi(player, target) {
-  const cfg = AIZEN.kurohitsugi;
+function runKurohitsugi(player, target, cfg) {
   const dim = target.dimension;
   const t = target.location;
   const half = Math.floor(cfg.size / 2);
@@ -14843,12 +14967,12 @@ function runKurohitsugi(player, target) {
   }
   cells.sort((a, b) => a[1] - b[1]);
   const perTick = Math.ceil(cells.length / cfg.buildTicks);
+  const auraPerTick = Math.round(18 * (cfg.size / 10) ** 2);
   const ledger = iceTrack([]);
   const cache = new Map();
   const state = { ledger, dim, min, max };
   aizenCoffins.set(player.id, state);
 
-  aizenSay(player, "Hadō #90: Kurohitsugi", true);
   dim.playSound("block.end_portal.spawn", t, { volume: 2, pitch: 0.5 });
   dim.playSound("beacon.activate", t, { volume: 2, pitch: 0.5 });
 
@@ -14890,7 +15014,7 @@ function runKurohitsugi(player, target) {
   state.run = system.runInterval(() => {
     tick++;
     try {
-      if (isDownOrGone(player) || !isAizen(player)) {
+      if (isDownOrGone(player) || !isAnyAizen(player)) {
         finish();
         return;
       }
@@ -14900,7 +15024,7 @@ function runKurohitsugi(player, target) {
         if (ginBlockInfo(dim, cache, x, y, z).passable) iceSet(ledger, dim, x, y, z, "minecraft:black_concrete");
       }
       // aura roxa colada por fora das paredes
-      for (let i = 0; i < 18; i++) {
+      for (let i = 0; i < auraPerTick; i++) {
         const face = Math.floor(Math.random() * 5); // 4 paredes + teto
         const u = min.x + Math.random() * cfg.size;
         const v = min.y + Math.random() * cfg.size;
@@ -14924,7 +15048,7 @@ function runKurohitsugi(player, target) {
           const l = entity.location;
           if (!inside(l)) continue;
           const entry = pending.get(entity.id) ?? { entity, amount: 0 };
-          entry.amount += DAMAGE.aizenKurohitsugiHit;
+          entry.amount += cfg.hitDamage;
           pending.set(entity.id, entry);
           // lanca negra vindo de um ponto aleatorio na direcao do peito
           const a = Math.random() * Math.PI * 2;
@@ -15060,6 +15184,692 @@ function aizenCleanup(playerId) {
   aizenCounterHits.delete(playerId);
   for (const perAttacker of aizenCounterHits.values()) perAttacker.delete(playerId);
   aizenTrack.delete(playerId);
+  hogyokuCleanup(playerId);
+}
+
+/* ---------------------------------------------------------
+   Sousuke Aizen (Hōgyoku) - Tier 8 (Híbrido)
+
+   7000 de vida, cura 300 a cada 4s. A Kyōka (160) tambem marca o alvo, e as
+   tres ilusões do item Illusions (Switch, False Skill, Kanzen Saimin) seguem
+   a mesma regra do outro Aizen: exigem a marca e terminam com a Kyōka
+   quebrando pra todo mundo.
+
+   Evolution no lugar do Awakening: +10% a cada 30s. Cada 20% da +20 de cura e
+   +5% de dano. Em 100% o Hōgyoku fecha um casulo em volta dele por 5s e ele
+   sai na Metamorfose (Monster Aizen): 8000 de vida, cura 400, Kyōka em dobro,
+   UltraFragor e Fragor Barrage, e a cada 60s 5% a menos de dano recebido (ate
+   50%). A Metamorfose usa o awakening do addon, mas nao drena e nao dispara
+   por agachar + m1: so pela Evolution.
+   --------------------------------------------------------- */
+
+const HOGYOKU = {
+  regen: { everyTicks: 80, base: 300, monster: 400 },
+  evolution: { stepPercent: 10, stepSeconds: 30, bonusEvery: 20, regenPerBonus: 20, damagePerBonus: 0.05 },
+  cocoonTicks: 100,
+  monsterResist: { everySeconds: 60, step: 0.05, max: 0.5 },
+  illusions: [
+    { key: "aizen:illusions.switch", name: "Switch" },
+    { key: "aizen:illusions.false_skill", name: "False Skill" },
+    { key: "aizen:illusions.kanzen_saimin", name: "Kanzen Saimin" },
+  ],
+  switch: { durationTicks: 300, behind: 1.6, frontHoldTicks: 30 },
+  falseSkill: { hitDelayTicks: 10, paralysisTicks: 20 },
+  kanzen: { durationTicks: 300, clones: 8, radius: 3.2, spinPerTick: 2, m1Multiplier: 2 },
+  chant:
+    "Ó rei das trevas, cubra os céus. Que o silêncio engula a luz e que o abismo aprisione tudo diante de mim... Hadō #90: Kurohitsugi.",
+  kurohitsugi: {
+    size: 14, // maior que a do outro Aizen (10)
+    hits: 40,
+    strikeEveryTicks: 2,
+    damageEveryTicks: 10,
+    buildTicks: 12,
+    hitDamage: DAMAGE.hogyokuKurohitsugiHit,
+  },
+  // Fragor: a maior explosao do addon (a Quebramundos do Yammy tem raio 26)
+  fragor: { label: "Fragor", radius: 30, damage: DAMAGE.fragor, fragments: 30, fragmentDamage: DAMAGE.fragorFragment, fragmentRange: 45 },
+  ultraFragor: { label: "UltraFragor", radius: 40, damage: DAMAGE.ultraFragor, fragments: 30, fragmentDamage: DAMAGE.ultraFragorFragment, fragmentRange: 60 },
+  fragorBarrage: { label: "Fragor Barrage", blasts: 5, gapTicks: 12, radius: 15, damage: DAMAGE.fragorBarrage, fragments: 30, fragmentDamage: DAMAGE.fragorBarrageFragment, fragmentRange: 22 },
+};
+
+const hogyokuSwitches = new Map(); // id do Aizen -> Switch ativo
+const hogyokuKanzen = new Map(); // id do Aizen -> Kanzen Saimin ativo
+const hogyokuCocoons = new Map(); // id do Aizen -> casulo fechado
+const hogyokuClock = new Map(); // id do Aizen -> segundos contados (Evolution, cura, resistencia)
+
+function isHogyoku(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === "aizen_hogyoku";
+  } catch (e) {
+    return false;
+  }
+}
+
+function isAnyAizen(entity) {
+  return isAizen(entity) || isHogyoku(entity);
+}
+
+function evolutionOf(player) {
+  const value = Number(player.getDynamicProperty(DP.evolution));
+  return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+}
+
+function evolutionBonusSteps(player) {
+  return Math.floor(evolutionOf(player) / HOGYOKU.evolution.bonusEvery);
+}
+
+// chamada pelo dmgMultiplier: +5% de dano a cada 20% de Evolution
+function hogyokuDamageBonus(player) {
+  return 1 + evolutionBonusSteps(player) * HOGYOKU.evolution.damagePerBonus;
+}
+
+// chamada pelo damageTakenMultiplierOf: a resistencia que o Monster acumula
+function hogyokuResistMultiplier(player) {
+  if (!isAwakened(player)) return 1;
+  const steps = Number(player.getDynamicProperty(DP.monsterResist)) || 0;
+  return 1 - Math.min(HOGYOKU.monsterResist.max, steps * HOGYOKU.monsterResist.step);
+}
+
+function spawnAizenClone(aizen, dim, spot, kind, facing) {
+  const clone = dim.spawnEntity(AIZEN.cloneType, spot);
+  clone.nameTag = aizen.name;
+  aizenCloneOwner.set(clone.id, aizen.id);
+  aizenCloneKind.set(clone.id, kind);
+  if (facing) {
+    try {
+      clone.teleport(spot, { keepVelocity: false, rotation: levelRotationToward(spot, facing) });
+    } catch (e) {}
+  }
+  aizenPuff(dim, spot, 6, 0.4);
+  return { entity: clone, id: clone.id, popped: false };
+}
+
+function removeAizenClone(dim, clone) {
+  aizenCloneOwner.delete(clone.id);
+  aizenCloneKind.delete(clone.id);
+  if (clone.popped) return;
+  clone.popped = true;
+  try {
+    aizenPuff(dim, clone.entity.location, 5, 0.3);
+    clone.entity.remove();
+  } catch (e) {}
+}
+
+/* ---------- Illusions: agachar abre o menu, usar lanca a escolhida ---------- */
+
+function selectedIllusion(player) {
+  const index = Number(player.getDynamicProperty(DP.aizenIllusion));
+  return index >= 0 && index < HOGYOKU.illusions.length ? index : 0;
+}
+
+function openIllusionsMenu(player) {
+  const current = selectedIllusion(player);
+  const now = system.currentTick;
+  const form = new ActionFormData()
+    .title("Illusions")
+    .body("§5Escolha a ilusão.§r\n§7Usar o item lança a escolhida; agachar + usar abre este menu.");
+  HOGYOKU.illusions.forEach((mode, index) => {
+    const key = cdKeyForSkill(mode.key);
+    const duration = SKILL_COOLDOWN_TICKS[mode.key];
+    const last = tickOf(player, key);
+    const waiting = onCooldown(player, key, duration, now)
+      ? `§c${Math.ceil((duration - (now - (last ?? now))) / 20)}s`
+      : "§apronta";
+    form.button(`${index === current ? "§5▶ " : ""}${mode.name}\n§8${duration / 20}s • ${waiting}`);
+  });
+  form.show(player).then((res) => {
+    if (res.canceled || res.selection === undefined) return;
+    const mode = HOGYOKU.illusions[res.selection];
+    if (!mode) return;
+    player.setDynamicProperty(DP.aizenIllusion, res.selection);
+    player.sendMessage(`§5Ilusão escolhida: §d${mode.name}`);
+  });
+}
+
+function castSelectedIllusion(player) {
+  if (isFrozen(player) || isMayuriParalyzed(player)) {
+    player.sendMessage("§7Você está paralisado e não consegue usar skills.");
+    return;
+  }
+  const blocking = skillBlockingZoneFor(player);
+  if (blocking) {
+    player.sendMessage(blocking.blockMessage);
+    return;
+  }
+  const mode = HOGYOKU.illusions[selectedIllusion(player)];
+  const target = aizenTargetInView(player);
+  if (!target) {
+    player.sendMessage(`§5Mire em alguém pra usar ${mode.name}.`);
+    return;
+  }
+  if (!hasKyokaMark(target)) {
+    player.sendMessage(
+      `§5${nameOf(target)} nunca viu a Kyōka Suigetsu: acerte com a m1 primeiro pra ele cair nas ilusões.`
+    );
+    return;
+  }
+  if (mode.key === "aizen:illusions.switch") castSwitch(player, target);
+  else if (mode.key === "aizen:illusions.false_skill") castFalseSkill(player, target);
+  else castKanzenSaimin(player, target);
+}
+
+/* ---------- 1 - Switch ---------- */
+
+function castSwitch(player, target) {
+  if (hogyokuSwitches.has(player.id)) {
+    player.sendMessage("§5O Switch já está de pé.");
+    return;
+  }
+  if (!tryUseSkill(player, "aizen:illusions.switch")) return;
+  const cfg = HOGYOKU.switch;
+  const dim = target.dimension;
+  const spot = aizenSpotBehind(target, cfg.behind);
+  const state = {
+    aizen: player,
+    aizenId: player.id,
+    target,
+    dim,
+    clone: spawnAizenClone(player, dim, spot, "switch", target.location),
+    until: system.currentTick + cfg.durationTicks,
+    frontUntil: 0,
+    frontSpot: undefined,
+  };
+  hogyokuSwitches.set(player.id, state);
+  world.sendMessage(`§5${player.name} usou §lSwitch§r§5 em ${nameOf(target)}.`);
+  dim.playSound("mob.evocation_illager.prepare_summon", spot, { volume: 1, pitch: 1.5 });
+}
+
+// o alvo tentou bater no Aizen: ele troca de lugar com o clone (e o golpe nao conta)
+function aizenSwitchIntercept(aizen, attacker) {
+  const state = hogyokuSwitches.get(aizen?.id);
+  if (!state || state.ended || state.target.id !== attacker?.id || state.clone.popped) return false;
+  let aizenAt;
+  let cloneAt;
+  try {
+    aizenAt = aizen.location;
+    cloneAt = state.clone.entity.location;
+  } catch (e) {
+    return false;
+  }
+  const t = attacker.location;
+  try {
+    aizen.teleport(cloneAt, { dimension: state.dim, keepVelocity: false, rotation: levelRotationToward(cloneAt, t) });
+    state.clone.entity.teleport(aizenAt, { keepVelocity: false, rotation: levelRotationToward(aizenAt, t) });
+  } catch (e) {
+    return false;
+  }
+  state.frontSpot = aizenAt;
+  state.frontUntil = system.currentTick + HOGYOKU.switch.frontHoldTicks;
+  try {
+    state.dim.playSound("random.glass", aizenAt, { volume: 0.5, pitch: 1.7 });
+  } catch (e) {}
+  return true;
+}
+
+function stepSwitch(state, now) {
+  const { aizen, target } = state;
+  if (isDownOrGone(aizen) || !isHogyoku(aizen) || isDownOrGone(target) || now >= state.until) {
+    endSwitch(state);
+    return;
+  }
+  try {
+    const t = target.location;
+    const spot = now < state.frontUntil ? state.frontSpot : aizenSpotBehind(target, HOGYOKU.switch.behind);
+    state.clone.entity.teleport(spot, { keepVelocity: false, rotation: levelRotationToward(spot, t) });
+  } catch (e) {
+    endSwitch(state);
+  }
+}
+
+function endSwitch(state) {
+  if (state.ended) return;
+  state.ended = true;
+  hogyokuSwitches.delete(state.aizenId);
+  let center;
+  try {
+    center = state.clone.entity.location;
+  } catch (e) {}
+  removeAizenClone(state.dim, state.clone);
+  kyokaShatter(state.dim, center);
+}
+
+/* ---------- 2 - False Skill ---------- */
+
+function drawCoffinOutline(dim, t, size) {
+  const half = size / 2;
+  for (let i = 0; i <= 12; i++) {
+    const k = -half + (size * i) / 12;
+    for (const [x, z] of [[k, -half], [k, half], [-half, k], [half, k]]) {
+      for (const y of [0, size - 1]) {
+        try {
+          dim.spawnParticle("aizen:lanca", { x: t.x + x, y: t.y + y, z: t.z + z });
+        } catch (e) {}
+      }
+    }
+  }
+}
+
+function castFalseSkill(player, target) {
+  if (!tryUseSkill(player, "aizen:illusions.false_skill")) return;
+  const cfg = HOGYOKU.falseSkill;
+  // finge uma das skills que NAO sao ilusao, igualzinha a de verdade
+  const options = isAwakened(player) ? ["ultraFragor", "fragorBarrage"] : ["fragor", "kurohitsugi"];
+  const fake = options[Math.floor(Math.random() * options.length)];
+  const dim = player.dimension;
+  const origin = player.location;
+  let reach = Infinity;
+  if (fake === "kurohitsugi") {
+    aizenSay(player, HOGYOKU.chant);
+    drawCoffinOutline(target.dimension, target.location, HOGYOKU.kurohitsugi.size);
+  } else {
+    const blast = HOGYOKU[fake];
+    reach = blast.radius;
+    world.sendMessage(`§5${player.name} usou §l${blast.label}§r§5!`);
+    fragorBlast(player, origin, blast, true);
+  }
+  system.runTimeout(() => {
+    if (isDownOrGone(player) || !isHogyoku(player) || isDownOrGone(target)) return;
+    let distance = Infinity;
+    try {
+      const l = target.location;
+      distance = Math.hypot(l.x - origin.x, l.y - origin.y, l.z - origin.z);
+    } catch (e) {}
+    // "ao ela acertar": sem dano; ele aparece atras e o alvo trava 1s
+    if (distance <= reach) {
+      try {
+        aizenBlinkBehind(player, target, 1.4);
+      } catch (e) {}
+      if (!isIntocable(target)) paralyzeFor(target, cfg.paralysisTicks, "§5Era uma ilusão: você não consegue se mexer!");
+    }
+    kyokaShatter(dim, target.location);
+  }, cfg.hitDelayTicks);
+}
+
+/* ---------- 3 - Kanzen Saimin ---------- */
+
+function castKanzenSaimin(player, target) {
+  if (hogyokuKanzen.has(player.id)) {
+    player.sendMessage("§5A ilusão já está de pé.");
+    return;
+  }
+  if (!tryUseSkill(player, "aizen:illusions.kanzen_saimin")) return;
+  const cfg = HOGYOKU.kanzen;
+  const dim = target.dimension;
+  const state = {
+    aizen: player,
+    aizenId: player.id,
+    target,
+    dim,
+    clones: [],
+    angle: 0,
+    until: system.currentTick + cfg.durationTicks,
+  };
+  for (let i = 0; i < cfg.clones; i++) {
+    try {
+      state.clones.push(spawnAizenClone(player, dim, kanzenSpot(target, i, 0), "kanzen", target.location));
+    } catch (e) {}
+  }
+  hogyokuKanzen.set(player.id, state);
+  aizenHide(player, state, cfg.durationTicks);
+  aizenSay(player, "Encontre-me, se puder...");
+  dim.playSound("mob.evocation_illager.prepare_summon", target.location, { volume: 1.3, pitch: 1.1 });
+}
+
+function kanzenSpot(target, index, angle) {
+  const cfg = HOGYOKU.kanzen;
+  const a = ((angle + (index * 360) / cfg.clones) * Math.PI) / 180;
+  const t = target.location;
+  return { x: t.x + Math.cos(a) * cfg.radius, y: t.y, z: t.z + Math.sin(a) * cfg.radius };
+}
+
+function stepKanzen(state, now) {
+  const { aizen, target } = state;
+  if (isDownOrGone(aizen) || !isHogyoku(aizen) || isDownOrGone(target) || now >= state.until) {
+    endKanzen(state);
+    return;
+  }
+  state.angle = (state.angle + HOGYOKU.kanzen.spinPerTick) % 360;
+  const t = target.location;
+  state.clones.forEach((clone, index) => {
+    if (clone.popped) return;
+    try {
+      const spot = kanzenSpot(target, index, state.angle);
+      clone.entity.teleport(spot, { keepVelocity: false, rotation: levelRotationToward(spot, t) });
+    } catch (e) {
+      clone.popped = true;
+    }
+  });
+}
+
+function endKanzen(state) {
+  if (state.ended) return;
+  state.ended = true;
+  hogyokuKanzen.delete(state.aizenId);
+  for (const clone of state.clones) removeAizenClone(state.dim, clone);
+  aizenReveal(state.aizen, state);
+  let center;
+  try {
+    center = state.target.location;
+  } catch (e) {}
+  kyokaShatter(state.dim, center);
+}
+
+function hogyokuStateOfClone(id) {
+  const ownerId = aizenCloneOwner.get(id);
+  return hogyokuSwitches.get(ownerId) ?? hogyokuKanzen.get(ownerId);
+}
+
+function hogyokuCloneStruck(entity, attacker, kind) {
+  const ownerId = aizenCloneOwner.get(entity.id);
+  if (attacker?.id === ownerId) return; // o proprio Aizen nao desfaz
+  if (kind === "switch") {
+    // acertar o clone desfaz o Switch
+    const state = hogyokuSwitches.get(ownerId);
+    if (state) endSwitch(state);
+    else {
+      try {
+        entity.remove();
+      } catch (e) {}
+    }
+    return;
+  }
+  const state = hogyokuKanzen.get(ownerId);
+  const clone = state?.clones.find((c) => c.id === entity.id);
+  if (!state || !clone) {
+    try {
+      entity.remove();
+    } catch (e) {}
+    return;
+  }
+  if (clone.popped) return;
+  let loc;
+  try {
+    loc = entity.location;
+  } catch (e) {}
+  removeAizenClone(state.dim, clone);
+  if (loc) {
+    try {
+      state.dim.spawnParticle("aizen:estilhaco", { x: loc.x, y: loc.y + 1.1, z: loc.z });
+      state.dim.playSound("random.glass", loc, { volume: 0.7, pitch: 1.4 });
+    } catch (e) {}
+  }
+  if (state.clones.every((c) => c.popped)) endKanzen(state);
+}
+
+/* ---------- Hadō #90 Kurohitsugi (Encantado) ---------- */
+
+function castKurohitsugiEncantado(player) {
+  const target = aizenTargetInView(player, 40);
+  if (!target) {
+    player.sendMessage("§5Mire em alguém pra fechar a Kurohitsugi.");
+    return;
+  }
+  if (aizenCoffins.has(player.id)) return;
+  if (!tryUseSkill(player, "aizen:kurohitsugi_encantado")) return;
+  aizenSay(player, HOGYOKU.chant);
+  runKurohitsugi(player, target, HOGYOKU.kurohitsugi);
+}
+
+/* ---------- Fragor, UltraFragor, Fragor Barrage ---------- */
+
+// estilhacos roxos pra todo lado: um loop so pra todos, com uma busca de
+// entidades por tick (e nao uma por estilhaco)
+function launchFragments(player, center, cfg, harmless) {
+  const dim = player.dimension;
+  const shards = [];
+  for (let i = 0; i < cfg.fragments; i++) {
+    // espiral de fibonacci: direcoes espalhadas por igual, mais pro alto e pros
+    // lados do que pro chao
+    const y = 0.85 - ((i + 0.5) / cfg.fragments) * 1.15;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const phi = i * 2.39996;
+    shards.push({
+      pos: { x: center.x, y: center.y + 1.2, z: center.z },
+      dir: { x: Math.cos(phi) * r, y, z: Math.sin(phi) * r },
+      travelled: 0,
+      alive: true,
+    });
+  }
+  const cache = new Map();
+  const run = system.runInterval(() => {
+    let candidates = [];
+    if (!harmless) {
+      try {
+        candidates = dim
+          .getEntities({ location: center, maxDistance: cfg.fragmentRange + 3 })
+          .filter(
+            (e) =>
+              e.id !== player.id &&
+              e.typeId !== AIZEN.cloneType &&
+              e.getComponent("minecraft:health") &&
+              !isDownOrGone(e)
+          );
+      } catch (e) {}
+    }
+    let alive = 0;
+    for (const shard of shards) {
+      if (!shard.alive) continue;
+      for (let sub = 0; sub < 3 && shard.alive; sub++) {
+        shard.pos.x += shard.dir.x * 0.5;
+        shard.pos.y += shard.dir.y * 0.5;
+        shard.pos.z += shard.dir.z * 0.5;
+        shard.travelled += 0.5;
+        if (shard.travelled >= cfg.fragmentRange) {
+          shard.alive = false;
+          break;
+        }
+        const bx = Math.floor(shard.pos.x);
+        const by = Math.floor(shard.pos.y);
+        const bz = Math.floor(shard.pos.z);
+        if (!ginBlockInfo(dim, cache, bx, by, bz).passable) {
+          shard.alive = false; // bateu em bloco
+          break;
+        }
+        const victim = candidates.find((e) => {
+          const l = e.location;
+          return Math.hypot(l.x - shard.pos.x, l.y + 1 - shard.pos.y, l.z - shard.pos.z) < 1.3;
+        });
+        if (victim) {
+          shard.alive = false;
+          if (isRespiring(victim)) showRespiraGuard(victim);
+          else dealDamage(victim, cfg.fragmentDamage * dmgMultiplier(player), player);
+        }
+      }
+      if (shard.alive) {
+        alive++;
+        try {
+          dim.spawnParticle("aizen:fragmento", shard.pos);
+        } catch (e) {}
+      }
+    }
+    if (!alive) system.clearRun(run);
+  }, 1);
+}
+
+function fragorBlast(player, center, cfg, harmless = false) {
+  const dim = player.dimension;
+  try {
+    dim.playSound("mob.warden.sonic_boom", center, { volume: 4, pitch: cfg.radius > 30 ? 0.45 : 0.6 });
+    dim.playSound("random.explode", center, { volume: 4, pitch: 0.5 });
+  } catch (e) {}
+  // aneis roxos subindo: explosao de energia, nao de TNT
+  for (let ring = 1; ring <= 5; ring++) {
+    const radius = (cfg.radius * ring) / 5;
+    const points = 12 + ring * 4;
+    for (let i = 0; i < points; i++) {
+      const angle = (i / points) * Math.PI * 2 + ring * 0.3;
+      for (const height of [0.4, 2.2 + ring * 0.5]) {
+        try {
+          dim.spawnParticle("aizen:explosao", {
+            x: center.x + Math.cos(angle) * radius,
+            y: center.y + height,
+            z: center.z + Math.sin(angle) * radius,
+          });
+        } catch (e) {}
+      }
+    }
+  }
+  try {
+    dim.spawnParticle("minecraft:large_explosion", { x: center.x, y: center.y + 1, z: center.z });
+  } catch (e) {}
+  if (!harmless) damageNearbyEntities(player, center, cfg.radius, cfg.damage);
+  launchFragments(player, center, cfg, harmless);
+}
+
+function castFragor(player) {
+  if (!tryUseSkill(player, "aizen:fragor")) return;
+  world.sendMessage(`§5${player.name} usou §lFragor§r§5!`);
+  fragorBlast(player, player.location, HOGYOKU.fragor);
+}
+
+function castUltraFragor(player) {
+  if (!tryUseSkill(player, "aizen:ultra_fragor")) return;
+  world.sendMessage(`§5${player.name} usou §lUltraFragor§r§5!`);
+  fragorBlast(player, player.location, HOGYOKU.ultraFragor);
+}
+
+function castFragorBarrage(player) {
+  if (!tryUseSkill(player, "aizen:fragor_barrage")) return;
+  const cfg = HOGYOKU.fragorBarrage;
+  world.sendMessage(`§5${player.name} usou §lFragor Barrage§r§5!`);
+  for (let i = 0; i < cfg.blasts; i++) {
+    system.runTimeout(() => {
+      if (isDownOrGone(player) || !isHogyoku(player)) return;
+      fragorBlast(player, player.location, cfg);
+    }, 1 + i * cfg.gapTicks);
+  }
+}
+
+/* ---------- Evolution, casulo e Metamorfose ---------- */
+
+function startHogyokuCocoon(player) {
+  const character = CHARACTERS.aizen_hogyoku;
+  const dim = player.dimension;
+  const l = player.location;
+  const bx = Math.floor(l.x);
+  const by = Math.floor(l.y);
+  const bz = Math.floor(l.z);
+  try {
+    player.teleport({ x: bx + 0.5, y: by, z: bz + 0.5 }, { keepVelocity: false });
+  } catch (e) {}
+  // casca 3x4x3 em volta dele (o espaco de dentro e so o dele)
+  const ledger = iceTrack([]);
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 2; dy++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (dx === 0 && dz === 0 && (dy === 0 || dy === 1)) continue;
+        iceSet(ledger, dim, bx + dx, by + dy, bz + dz, "minecraft:white_concrete");
+      }
+    }
+  }
+  paralyzeFor(player, HOGYOKU.cocoonTicks, "§5O Hōgyoku fecha um casulo em volta de você...");
+  const center = { x: bx + 0.5, y: by + 1, z: bz + 0.5 };
+  let tick = 0;
+  const state = { ledger };
+  hogyokuCocoons.set(player.id, state);
+  const finish = (transform) => {
+    system.clearRun(state.run);
+    iceRestore(ledger);
+    hogyokuCocoons.delete(player.id);
+    if (!transform) return;
+    try {
+      activateAwakening(player, character);
+      aizenPuff(dim, center, 20, 1.2);
+    } catch (e) {}
+  };
+  state.finish = finish;
+  state.run = system.runInterval(() => {
+    tick += 5;
+    if (isDownOrGone(player) || !isHogyoku(player)) {
+      finish(false);
+      return;
+    }
+    try {
+      if (tick % 20 === 0) dim.playSound("mob.warden.heartbeat", center, { volume: 2, pitch: 0.8 });
+      aizenPuff(dim, { x: center.x, y: by, z: center.z }, 6, 1.4);
+    } catch (e) {}
+    if (tick >= HOGYOKU.cocoonTicks) finish(true);
+  }, 5);
+}
+
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    if (!isHogyoku(player)) {
+      hogyokuClock.delete(player.id);
+      continue;
+    }
+    if (isDownOrGone(player)) continue;
+    const clock = hogyokuClock.get(player.id) ?? { evolution: 0, regen: 0, resist: 0 };
+    hogyokuClock.set(player.id, clock);
+    const monster = isAwakened(player);
+
+    // cura: 300 a cada 4s (+20 por 20% de Evolution); Monster: 400
+    clock.regen += 20;
+    if (clock.regen >= HOGYOKU.regen.everyTicks) {
+      clock.regen = 0;
+      const amount = monster
+        ? HOGYOKU.regen.monster
+        : HOGYOKU.regen.base + evolutionBonusSteps(player) * HOGYOKU.evolution.regenPerBonus;
+      try {
+        const hp = player.getComponent("minecraft:health");
+        const max = hp.effectiveMax * healthScaleOf(player);
+        setVirtualHealth(player, Math.min(max, virtualHealth(player) + amount));
+      } catch (e) {}
+    }
+
+    if (monster) {
+      // Monster: 5% a menos de dano recebido a cada 60s, ate 50%
+      clock.resist++;
+      const steps = Number(player.getDynamicProperty(DP.monsterResist)) || 0;
+      const maxSteps = Math.round(HOGYOKU.monsterResist.max / HOGYOKU.monsterResist.step);
+      if (clock.resist >= HOGYOKU.monsterResist.everySeconds && steps < maxSteps) {
+        clock.resist = 0;
+        player.setDynamicProperty(DP.monsterResist, steps + 1);
+        world.sendMessage(
+          `§5§lAizen evolui: §r§d${Math.round((steps + 1) * HOGYOKU.monsterResist.step * 100)}% §5a menos de dano recebido.`
+        );
+      }
+      continue;
+    }
+    if (hogyokuCocoons.has(player.id)) continue;
+
+    // Evolution: +10% a cada 30s; em 100% vem o casulo
+    if (evolutionOf(player) >= 100) {
+      startHogyokuCocoon(player);
+      continue;
+    }
+    clock.evolution++;
+    if (clock.evolution >= HOGYOKU.evolution.stepSeconds) {
+      clock.evolution = 0;
+      player.setDynamicProperty(DP.evolution, Math.min(100, evolutionOf(player) + HOGYOKU.evolution.stepPercent));
+    }
+  }
+
+}, 20);
+
+// Switch e Kanzen reposicionam os clones todo tick (o de cima so conta tempo)
+system.runInterval(() => {
+  const now = system.currentTick;
+  for (const state of [...hogyokuSwitches.values()]) stepSwitch(state, now);
+  for (const state of [...hogyokuKanzen.values()]) stepKanzen(state, now);
+}, 1);
+
+// Evolution, resistencia e ilusao escolhida voltam ao zero (ativar, morrer, desativar)
+function resetHogyoku(player) {
+  try {
+    player.setDynamicProperty(DP.evolution, 0);
+    player.setDynamicProperty(DP.monsterResist, 0);
+  } catch (e) {}
+  hogyokuClock.delete(player.id);
+}
+
+function hogyokuCleanup(playerId) {
+  const sw = hogyokuSwitches.get(playerId);
+  if (sw) endSwitch(sw);
+  const kanzen = hogyokuKanzen.get(playerId);
+  if (kanzen) endKanzen(kanzen);
+  hogyokuCocoons.get(playerId)?.finish?.(false);
+  hogyokuClock.delete(playerId);
 }
 
 /* ---------------------------------------------------------
@@ -15321,11 +16131,13 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
   // preso no Teatro de Títeres: o golpe nao sai (vale pros dois lados)
   if (isFrozen(damagingEntity) || isMayuriParalyzed(damagingEntity)) return;
 
-  // bater num clone da Illusion's Mastery (ate de mao vazia) e errar o golpe
+  // bater num clone do Aizen (ate de mao vazia) e errar o golpe
   if (hitEntity?.typeId === AIZEN.cloneType) {
     aizenCloneStruck(hitEntity, damagingEntity);
     return;
   }
+  // Switch (Aizen Hōgyoku): quem esta na ilusao acerta o clone, nao o Aizen
+  if (aizenSwitchIntercept(hitEntity, damagingEntity)) return;
 
   const equip = damagingEntity.getComponent("minecraft:equippable");
   const held = equip?.getEquipment(EquipmentSlot.Mainhand);
@@ -15841,9 +16653,15 @@ system.runInterval(() => {
     // quem nao tem awakening nem super ataque (o Nnoitra) nao ganha medidor
     const character = getActiveCharacter(player);
     const canAwaken = !character || !!character.awakening || !!character.superAttack;
-    const awakeningPart = canAwaken
+    let awakeningPart = canAwaken
       ? `   §b⚡ Awakening: ${awakening}%${awakenedTag}${senkeiTag}`
       : "";
+    if (character?.id === "aizen_hogyoku") {
+      const resist = Number(player.getDynamicProperty(DP.monsterResist)) || 0;
+      awakeningPart = isAwakened(player)
+        ? `   §5✦ Metamorfose${resist ? ` §d-${Math.round(resist * HOGYOKU.monsterResist.step * 100)}% dano` : ""}`
+        : `   §5🧬 Evolution: ${evolutionOf(player)}%${hogyokuCocoons.has(player.id) ? " §d✦casulo" : ""}`;
+    }
 
     // so manda pro cliente quando o texto muda (ou a cada 1,5s pra nao sumir)
     const barText =
@@ -16027,6 +16845,8 @@ system.runInterval(() => {
 system.runInterval(() => {
   for (const player of world.getPlayers()) {
     if (!isAwakened(player)) continue;
+    // Metamorfose do Aizen Hōgyoku: dura ate morrer ou desativar
+    if (getActiveCharacter(player)?.awakening?.permanent) continue;
 
     if (isInfiniteAwakening(player)) {
       player.setDynamicProperty(DP.awakening, 100);
@@ -16057,10 +16877,14 @@ system.runInterval(() => {
    mexe - so protege o que esta de fato marcado como temporario.
    --------------------------------------------------------- */
 
+// blocos de skill que ninguem quebra enquanto o livro-caixa estiver aberto:
+// a Enma Kōrogi e a Kurohitsugi (concreto preto) e o casulo do Hōgyoku (branco)
+const LEDGER_PROTECTED_BLOCKS = new Set(["minecraft:black_concrete", "minecraft:white_concrete"]);
+
 world.beforeEvents.playerBreakBlock.subscribe((ev) => {
   try {
     const block = ev.block;
-    if (!block || block.typeId !== "minecraft:black_concrete") return;
+    if (!block || !LEDGER_PROTECTED_BLOCKS.has(block.typeId)) return;
     const dim = ev.dimension;
     const { x, y, z } = block.location;
     for (const ledger of iceRegistry) {
@@ -16122,4 +16946,5 @@ export {
   BLOCK,
   TOXIC_FOG,
   AIZEN,
+  HOGYOKU,
 };

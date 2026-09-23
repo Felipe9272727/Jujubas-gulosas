@@ -3091,6 +3091,31 @@ TEXTURES = {
             "................",
         ],
     },
+    # Daiguren Hyorinmaru: o peitoral (invisivel no corpo) que carrega as asas
+    "items/hitsugaya_daiguren_chest": {
+        "palette": {
+            "#": (82, 140, 204, 255),
+            "=": (206, 238, 252, 255),
+        },
+        "grid": [
+            "................",
+            ".#............#.",
+            ".##..........##.",
+            "#=##........##=#",
+            "#==##......##==#",
+            "#=#=##....##=#=#",
+            "#==#=##..##=#==#",
+            ".#=#==#..#==#=#.",
+            ".#==#=#..#=#==#.",
+            "..#=#=#..#=#=#..",
+            "..#==#....#==#..",
+            "...#=#....#=#...",
+            "...#=#....#=#...",
+            "....#......#....",
+            "................",
+            "................",
+        ],
+    },
     # ------------------------------------------------------------------
     # Sousuke Aizen (Captain's Fight)
     # ------------------------------------------------------------------
@@ -3335,6 +3360,182 @@ TEXTURES = {
             "........",
         ],
     },
+    # ------------------------------------------------------------------
+    # Sousuke Aizen (Hogyoku)
+    # ------------------------------------------------------------------
+    # Illusions (Aizen Hogyoku): a flor no espelho da Kyoka com o olho da hipnose
+    "items/aizen_illusions": {
+        "palette": {
+            "&": (26, 10, 38, 255),
+            "F": (124, 54, 170, 255),
+            "G": (210, 236, 248, 255),
+            "p": (150, 80, 210, 255),
+            "E": (90, 30, 130, 255),
+            "W": (255, 255, 255, 255),
+        },
+        "grid": [
+            "......&&&&......",
+            "....&&FFFF&&....",
+            "...&FFFGGFFF&...",
+            "..&FFGGGGGGFF&..",
+            ".&FFGGGpGGGGFF&.",
+            ".&FGGGGpGGGGGF&.",
+            "&FFGppGEEGppGFF&",
+            "&FGGGGEWEEGGGGF&",
+            "&FGGGGEEEEGGGGF&",
+            "&FFGppGEEGppGFF&",
+            ".&FGGGGGpGGGGF&.",
+            ".&FFGGGGpGGGFF&.",
+            "..&FFGGGGGGFF&..",
+            "...&FFFGGFFF&...",
+            "....&&FFFF&&....",
+            "......&&&&......",
+        ],
+    },
+    # Kurohitsugi encantada: a caixa negra com aura roxa
+    "items/aizen_kurohitsugi_encantado": {
+        "palette": {
+            "&": (12, 6, 18, 255),
+            "k": (16, 14, 22, 255),
+            "K": (60, 30, 90, 255),
+            "P": (170, 90, 230, 255),
+            "s": (120, 60, 170, 255),
+        },
+        "grid": [
+            ".&....&P&.....&.",
+            "&P&....&P&...&P&",
+            ".&P&&&&&&&&&&P&.",
+            "..&KKKKKKKKKK&..",
+            "..&KkkkkkkkkK&..",
+            "..&KkkkkkkkkK&..",
+            "..&KkkskkskkK&.&",
+            "&.&KkkkskkkkK&&P",
+            "P&&KkkkkskkkK&.&",
+            "&.&KkkskkskkK&..",
+            "..&KkkkkkkkkK&..",
+            "..&KkkkkkkkkK&..",
+            "..&KKKKKKKKKK&..",
+            ".&P&&&&&&&&&&P&.",
+            "&P&..........&P&",
+            ".&............&.",
+        ],
+    },
+    # Fragor: explosao roxa soltando estilhacos
+    "items/aizen_fragor": {
+        "palette": {
+            "&": (40, 12, 60, 255),
+            "B": (150, 70, 210, 255),
+            "C": (236, 200, 255, 255),
+            "S": (190, 120, 240, 255),
+        },
+        "grid": [
+            "......&S&.......",
+            "..&...&S&....&..",
+            ".&S&..&S&...&S&.",
+            "..&S&.&S&&.&S&..",
+            "...&S&BBBB&S&...",
+            "....&SBBBBS&....",
+            "...&BBCCCCBB&...",
+            "&&&&BBCCCCBB&&&&",
+            "SSSSBBCCCCBBSSSS",
+            "&&&&BBCCCCBB&&&&",
+            "....&SBBBBS&....",
+            "...&S&BBBB&S&...",
+            "..&S&.&&S&.&S&..",
+            ".&S&...&S&..&S&.",
+            "..&....&S&...&..",
+            ".......&S&......",
+        ],
+    },
+    # UltraFragor (Monster Aizen): o Fragor maior
+    "items/aizen_ultra_fragor": {
+        "palette": {
+            "&": (50, 8, 70, 255),
+            "B": (180, 60, 230, 255),
+            "C": (255, 236, 255, 255),
+            "S": (220, 150, 255, 255),
+        },
+        "grid": [
+            "....&.&S&..&....",
+            "...&S&&S&.&S&...",
+            "...&SS&S&&SS&...",
+            ".&&.&SBBBBS&.&&.",
+            "&SS&BBBBBBBB&SS&",
+            ".&SSBBCCCCBBSS&.",
+            "..&BBCCCCCCBB&..",
+            "&&&BBCCCCCCBB&&&",
+            "SSSBBCCCCCCBBSSS",
+            "&&&BBCCCCCCBB&&&",
+            ".&SSBBCCCCBBSS&.",
+            "&SS&BBBBBBBB&SS&",
+            ".&&.&SBBBBS&.&&.",
+            "...&SS&&S&SS&...",
+            "...&S&.&S&&S&...",
+            "....&..&S&.&....",
+        ],
+    },
+    # Fragor Barrage (Monster Aizen): cinco explosoes
+    "items/aizen_fragor_barrage": {
+        "palette": {
+            "&": (40, 12, 60, 255),
+            "B": (160, 76, 220, 255),
+            "C": (244, 214, 255, 255),
+        },
+        "grid": [
+            "...&&......&&...",
+            "..&BB&....&BB&..",
+            ".&BBBB&..&BBBB&.",
+            "&BBCCBB&&BBCCBB&",
+            "&BBCCBB&&BBCCBB&",
+            ".&BBBB&BB&BBBB&.",
+            "..&BB&BBBB&BB&..",
+            "...&&BBCCBB&&...",
+            "...&&BBCCBB&&...",
+            "..&BB&BBBB&BB&..",
+            ".&BBBB&BB&BBBB&.",
+            "&BBCCBB&&BBCCBB&",
+            "&BBCCBB&&BBCCBB&",
+            ".&BBBB&..&BBBB&.",
+            "..&BB&....&BB&..",
+            "...&&......&&...",
+        ],
+    },
+    # estilhaco roxo dos Fragors
+    "particle/aizen_fragmento": {
+        "palette": {
+            "P": (150, 60, 220, 230),
+            "E": (240, 200, 255, 255),
+        },
+        "grid": [
+            "........",
+            "....P...",
+            "...PEP..",
+            "..PEEP..",
+            "..PEP...",
+            ".PEP....",
+            ".PP.....",
+            "........",
+        ],
+    },
+    # a explosao roxa dos Fragors
+    "particle/aizen_explosao": {
+        "palette": {
+            "p": (110, 40, 170, 120),
+            "P": (170, 80, 235, 200),
+            "E": (225, 170, 255, 240),
+            "W": (255, 245, 255, 255),
+        },
+        "grid": [
+            "..pppp..",
+            ".pPPPPp.",
+            "pPPEEPPp",
+            "pPEWWEPp",
+            "pPEWWEPp",
+            "pPPEEPPp",
+            ".pPPPPp.",
+            "..pppp..",
+        ],
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -3355,3 +3556,8 @@ TEXTURES["entity/vasto_lorde"] = _HOLLOW_TEXTURES["vasto"]
 from aizen_clone_model import TEXTURE_SPEC as _AIZEN_CLONE_TEXTURE  # noqa: E402
 
 TEXTURES["entity/aizen_clone"] = _AIZEN_CLONE_TEXTURE
+
+# asas, cauda e braco de gelo da Daiguren Hyorinmaru (tools/daiguren_model.py)
+from daiguren_model import TEXTURE_SPEC as _DAIGUREN_TEXTURE  # noqa: E402
+
+TEXTURES["entity/daiguren"] = _DAIGUREN_TEXTURE

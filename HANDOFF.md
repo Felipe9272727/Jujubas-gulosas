@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 809 checks na simulação, zero exceções. Packs na versão 1.20.0.
+- **Estado**: 915 checks na simulação, zero exceções. Packs na versão 1.21.0.
 - **Base**: a partir da 1.20.0 o repo parte da **1.19.25 (TosenVisored)** que o
   usuário mandou em `.mcaddon` — ela descende da 1.14.0 daqui (mesmos UUIDs) e foi
   desenvolvida fora deste branch. Foi importada byte a byte no commit
@@ -17,7 +17,7 @@ commitado e enviado.
 python3 tools/build.py          # valida + simula + empacota (falha se algo quebrar)
 python3 tools/validate.py       # JSON, itens, texturas, manifests, sons, entidades
 python3 tools/gen_textures.py   # renderiza os grids de tools/textures.py em PNG
-python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen)
+python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen, Daiguren)
 python3 tools/bump_version.py minor   # OBRIGATÓRIO a cada release de conteúdo
 node --import ./sim/register.mjs sim/run.mjs   # só a simulação
 ```
@@ -29,9 +29,9 @@ O `build.py` roda tudo e **se recusa a empacotar** se qualquer etapa falhar.
 ```
 BP/                     behavior pack
   manifest.json         versão dos packs (ver "cache de pack" abaixo)
-  items/*.json          190 itens, um arquivo cada (format_version 1.26.40)
+  items/*.json          196 itens, um arquivo cada (format_version 1.26.40)
   entities/*.json       boneco de teste, clone do Aizen
-  scripts/main.js       ~16 mil linhas: TODO o gameplay (menos o Shinji)
+  scripts/main.js       ~17 mil linhas: TODO o gameplay (menos o Shinji)
   scripts/shinji.js     o Shinji Hirako, importado pelo main.js
 RP/                     resource pack
   particles/*.json      partículas customizadas (uma por arquivo)
@@ -39,8 +39,10 @@ RP/                     resource pack
   textures/...          itens, partículas, entidades
 tools/
   textures.py           grids de caracteres + paletas = FONTE das texturas do addon
+  boxmodel.py           base comum dos modelos de caixa (rig do player, UV, textura)
   hollow_model.py       modelo dos attachables do Ichigo Vizard
-  aizen_clone_model.py  modelo do clone da Illusion's Mastery
+  aizen_clone_model.py  modelo do clone dos dois Aizen
+  daiguren_model.py     asas, cauda e braço de gelo da Daiguren Hyōrinmaru
   gen_textures.py       grids -> PNG (e --check)
   gen_model.py          modelos -> .geo.json (e --check)
   vanilla_sounds.txt    IDs de som do Bedrock (Mojang/bedrock-samples)
@@ -49,7 +51,7 @@ tools/
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~4750 linhas, 809 checks
+  run.mjs               ~5200 linhas, 915 checks
 ```
 
 ### A simulação
@@ -88,7 +90,7 @@ menu**. Tabela gerada do registro do `main.js`:
 | 2 | Mayuri Kurotsuchi (Shikai) | 600 | super: Konjiki Ashisogi Jizō |
 | 2 | Rukia Kuchiki (Sode no Shirayuki) | 600 | super |
 | 3 | Zaraki Kenpachi | 1700 | Pressão (tapa-olho removido) |
-| 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000) |
+| 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000), asas/cauda em attachable |
 | 4 | Soi Fon (Suzumebachi) | 2000 | super: Jakuhō Raikōben |
 | 5 | Gin Ichimaru | 4000 | super: Kamishini no Yari |
 | 5 | Shunsui Kyoraku (Katen Kyokotsu) | 4500 | super: Karamatsu Shinjū |
@@ -115,11 +117,12 @@ menu**. Tabela gerada do registro do `main.js`:
 | 3 | Kaname Tōsen (Suzumushi) | 1500 | super: Enma Kōrogi; Visored como forma alternativa |
 | 4 | Shinji Hirako | 2600 | Sakanade (em `shinji.js`) |
 | 4 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
+| 8 | **Sousuke Aizen (Hōgyoku)** | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
 
 O **tier** não é só etiqueta: a Pressão Espiritual (skill genérica do slot 7)
 machuca quem está 2+ tiers abaixo e **mata na hora** quem está 5+ abaixo, e o
 Air Step exige tier 5+. O Aizen (6) apaga qualquer tier 1 dentro de 60 blocos
-com a pressão ligada.
+com a pressão ligada; o Aizen Hōgyoku (8) apaga até o tier 3.
 
 ## Sistemas genéricos (reusar, não duplicar)
 
@@ -232,6 +235,15 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
 16. **Client entity com geometria/textura errada fica invisível** e a entidade
    continua existindo (leva golpe, tem nome). O `validate.py` confere toda
    entidade do addon.
+17. **`teleport` com `facingLocation` mira a partir dos PÉS.** Apontar pro peito
+   do alvo fazia o Aizen aparecer olhando pra cima em todo teleporte. Pra
+   aparecer com a mira reta, passar `rotation: levelRotationToward(de, para)`
+   (pitch 0, yaw = `atan2(-dx, dz)`); o stub da simulação respeita os dois e
+   os checks conferem "olhando reto pro alvo".
+18. **Partícula não substitui modelo.** A Daiguren era só geada de partícula:
+   com qualquer outro resource pack por cima (ou partículas no mínimo) as asas
+   e a cauda simplesmente não apareciam. Visual que *precisa* aparecer vai em
+   attachable.
 
 ## Disputa da tecla agachar + m1
 
@@ -349,7 +361,11 @@ tinha escrito os chifres em `y=0`. Sem o render isso ia pro jogo.
 
 Tier 6, Shinigami, 5500 de vida. Itens: Kyōka Suigetsu (m1, 120), Illusion's
 Mastery, Betrayal of the Illusioner, Bakudō #61 e Fool's Trick. Super:
-Hadō #90 Kurohitsugi. **Toda fala dele no chat sai em roxo** (`aizenSay`).
+Hadō #90 Kurohitsugi. **Ele não fala mais no chat** (pedido do usuário na
+1.21.0): sobraram só os anúncios de skill pra todos (Bakudō, Kurohitsugi e o
+falso awakening do Fool's Trick). Todo teleporte que vira o Aizen pra um alvo
+(Betrayal, Fool's Trick, Counter e as ilusões do Hōgyoku) chega com a mira
+reta (armadilha 17); o da marca de bloco mantém a mira que ele já tinha.
 
 ### A marca da Kyōka (individualidade)
 
@@ -379,9 +395,8 @@ em triângulo em volta do alvo (reposicionados todo tick). O Aizen fica
 invisível, o nome some da cabeça e a Kyōka do slot 0 vira a **Kyōka oculta**
 (mesma arma, textura vazia), senão a espada flutuando entregaria onde ele está.
 
-Acertar um clone: quem acertou toma 50, o clone some, "Errou...tente
-novamente". Os três: o Aizen reaparece. M1 dele no alvo: 300 + lentidão e a
-ilusão cai com "Tolo, caiu em minha ilusão". Dano de skill/área passa direto
+Acertar um clone: quem acertou toma 50 e o clone some. Os três: o Aizen
+reaparece. M1 dele no alvo: 300 + lentidão e a ilusão cai. Dano de skill/área passa direto
 pelo clone (`dealDamage` ignora o tipo): só golpe de verdade conta.
 
 **Duas rotas pro golpe no clone**: o `entityHitEntity` (principal, sabe quem
@@ -406,6 +421,83 @@ mundo lá dentro menos o Aizen, uma a cada 2 ticks; **o dano é aplicado em
 rajadas de 5 golpes a cada 10 ticks** (250 por vez) porque golpe a golpe a
 cada 2 ticks poderia esbarrar na invulnerabilidade pós-dano do alvo. O total é
 o mesmo (2500).
+
+## Sousuke Aizen (Hōgyoku)
+
+Tier 8, **Híbrido**, 7000 de vida, cura 300 a cada 4s. Itens: Kyōka Suigetsu
+(m1, 160, também marca), **Illusions**, Hadō #90 Kurohitsugi (Encantado) e
+Fragor. Divide com o Aizen Capitão a marca da Kyōka, o clone (`aizen:clone`),
+a Kyōka oculta, o som da Kyōka quebrando e o `runKurohitsugi` (parametrizado
+por `cfg`). Tudo dele vive no bloco `HOGYOKU` do `main.js`.
+
+### Illusions (um item, três ilusões)
+
+Agachar + usar abre o menu (`openIllusionsMenu`); usar sem agachar lança a
+escolhida. Cada ilusão tem **cooldown próprio** (chaves
+`aizen:illusions.switch` etc. em `SKILL_COOLDOWN_TICKS` — o ponto no meio é
+de propósito, pro validador não achar que é item), então o item não tem
+cooldown visual. As três são ilusões: só funcionam em quem tem a marca da
+Kyōka, e mirar em alguém sem ela recusa **sem gastar** o cooldown.
+
+- **Switch** (30s): um clone fica sempre atrás do alvo. Quando o alvo acerta
+  o Aizen com m1, o golpe não entra: o Aizen vai pro lugar do clone (atrás
+  dele) e o clone vem pra frente, onde o Aizen estava, e segura ali 1,5s antes
+  de voltar pras costas. Troca toda vez. Acaba em 15s ou quando o alvo acerta
+  o clone (Kyōka quebrando).
+- **False Skill** (25s): finge uma skill de verdade do Hōgyoku (Fragor ou a
+  Kurohitsugi encantada; no Monster, UltraFragor ou Fragor Barrage) com o
+  mesmo anúncio e visual, **sem dano**. Meio segundo depois, se o alvo está no
+  alcance da skill fingida, o Aizen aparece atrás dele e paralisa 1s.
+- **Kanzen Saimin** (45s): o Aizen fica invisível, sem nome e com a Kyōka
+  oculta; 8 clones giram em anel (raio 3,2) em volta do alvo e ele fala
+  "Encontre-me, se puder..." em roxo. Acertar clone só estoura o clone. O
+  primeiro m1 do Aizen dá o dobro e desfaz a ilusão. Máximo 15s.
+
+### Kurohitsugi (Encantado) e Fragor
+
+- **Kurohitsugi (Encantado)** (70s): mesma caixa do Capitão, só que 14×14×14,
+  40 golpes de 90 (3600), e antes o encantamento inteiro no chat em roxo.
+- **Fragor** (50s): raio 30 (a Quebramundos do Yammy tem 26), 1000 de dano,
+  30 estilhaços roxos (`aizen:fragmento`) em espiral de Fibonacci, 100 cada,
+  alcance 45, param no primeiro bloco sólido. Um loop só pra todos os
+  estilhaços, com uma busca de entidades por tick.
+
+### Evolution → casulo → Monster Aizen
+
+O Hōgyoku não usa o medidor de Awakening: a barra mostra **Evolution**
+(`mv:evolution`), que sobe 10% a cada 30s sozinha. Cada 20% soma 20 na cura e
+5% no dano (`hogyokuDamageBonus` entra no `dmgMultiplier`). Em 100% um
+**casulo** 3×4×3 de concreto branco fecha em volta dele (livro-caixa de
+blocos, inquebrável, `LEDGER_PROTECTED_BLOCKS`), paralisado; 5s depois o
+casulo abre e a **Metamorfose** ativa na hora.
+
+**Monster Aizen** é awakening **permanente** (`awakening.permanent`: o loop de
+drenar pula ele): 8000 de vida, cura 400/4s, "Aizen atingiu sua
+Metamorfose..." pra todos, Kyōka em dobro (320; com o +25% da Evolution cheia,
+400). Fragor vira **UltraFragor** (60s, 2000, raio 40, estilhaços de 200 com
+alcance 60) e a Kurohitsugi vira **Fragor Barrage** (60s, 5 Fragors de metade
+do raio e do dano, 0,6s entre eles, centrados no Aizen). A cada 60s ele ganha
+5% de redução de dano recebido (`hogyokuResistMultiplier` no
+`damageTakenMultiplierOf`), com mensagem global, até 50%.
+
+Morrer, desativar ou trocar de personagem zera Evolution e resistência
+(`resetHogyoku`) e desfaz Switch, Kanzen e casulo (`hogyokuCleanup`, chamado
+pelo `aizenCleanup`). O cheat "Dar Awakening" enche a Evolution.
+
+## Daiguren Hyōrinmaru (attachable)
+
+Na 1.19.25 as asas e a cauda eram só partícula de geada — com outro resource
+pack junto elas não apareciam (armadilha 18). Agora a Bankai veste o peitoral
+`hitsugaya:daiguren_chest`, igual à Hollowficação do Vizard: attachable
+`RP/attachables/daiguren.json` com geometria e textura **geradas** por
+`tools/daiguren_model.py` (36 caixas: asas em escadinha presas no `body`,
+cauda no `waist`, manga de gelo e garras no `rightArm`). A geada de partícula
+continua por cima. A peça segue as mesmas regras de armadura de forma
+(`sweepFormArmor`, lida de volta da slot, some quando a Bankai acaba).
+
+`tools/boxmodel.py` virou a base comum dos modelos de caixa: rig do player,
+empacotador de UV e textura. O clone do Aizen foi migrado pra ela (saída
+idêntica byte a byte).
 
 ## Animações
 
@@ -520,6 +612,17 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Counter (Aizen) | conta por atacante; sem cooldown próprio (a paralisia de 3s já segura) |
 | Kurohitsugi (Aizen) | caixa também com 10 de altura; dano em rajadas de 250 a cada 0,5s |
 | Ilusões (Aizen) | quais exigem a marca: Mastery, Fool's Trick e Counter — Betrayal ficou "física" |
+| Illusions (Hōgyoku) | as três exigem a marca da Kyōka; mirar em quem não tem recusa sem gastar |
+| Switch (Hōgyoku) | clone 1,6 bloco atrás do alvo; depois da troca ele segura 1,5s na frente; só o m1 do alvo troca |
+| False Skill (Hōgyoku) | a skill fingida é sorteada; o teleporte vem 0,5s depois e só se o alvo está no alcance dela |
+| Kanzen Saimin (Hōgyoku) | 8 clones em anel de raio 3,2; dura no máximo 15s; clone golpeado só some |
+| Kurohitsugi Encantada | caixa 14 (a do Capitão é 10) |
+| Fragor | raio 30 (maior do addon); estilhaços com alcance 45 que param em bloco |
+| UltraFragor | raio 40, estilhaços de 200 com alcance 60 |
+| Fragor Barrage | 5 explosões de raio 15, 0,6s entre elas, centradas no Aizen |
+| Evolution | o bônus de dano (+25% em 100%) continua valendo no Monster; a cura do Monster é 400 fixa |
+| Casulo | 3×4×3 de concreto branco, inquebrável |
+| Monster Aizen | permanente (não drena); aura roxa |
 
 ## Próximos passos sugeridos
 
@@ -527,6 +630,10 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
    visual do clone, se o nome do Aizen some mesmo quando ele fica invisível, e
    se o golpe no clone chega pelo `entityHitEntity` ou pela rede de segurança
    do `damage_sensor`.
+   No Hōgyoku: se a troca do Switch fica natural com o ping, o tamanho visual
+   do Fragor/UltraFragor (muita partícula de uma vez — o anti-lag corta a
+   `large_explosion`) e o casulo em terreno irregular.
+   Na Daiguren: se as asas/cauda aparecem com o outro resource pack ativo.
 2. **Invulnerabilidade pós-dano**: várias skills do addon batem a cada tick
    (Grito del Diablo, Rugido del Diablo) ou a cada 4–6 ticks (Palacio de las
    Espadas, Los Nueve Aspectos). Se o `applyDamage` respeitar a janela de

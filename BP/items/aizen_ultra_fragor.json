@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "aizen:ultra_fragor",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "aizen:ultra_fragor",
+      "minecraft:display_name": {
+        "value": "UltraFragor"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "aizen_ultra_fragor",
+        "duration": 60
+      }
+    }
+  }
+}

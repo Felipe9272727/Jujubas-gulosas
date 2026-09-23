@@ -568,6 +568,24 @@
     },
     "aizen:fools_trick": {
       "textures": "textures/items/aizen_fools_trick"
+    },
+    "hitsugaya:daiguren_chest": {
+      "textures": "textures/items/hitsugaya_daiguren_chest"
+    },
+    "aizen:illusions": {
+      "textures": "textures/items/aizen_illusions"
+    },
+    "aizen:kurohitsugi_encantado": {
+      "textures": "textures/items/aizen_kurohitsugi_encantado"
+    },
+    "aizen:fragor": {
+      "textures": "textures/items/aizen_fragor"
+    },
+    "aizen:ultra_fragor": {
+      "textures": "textures/items/aizen_ultra_fragor"
+    },
+    "aizen:fragor_barrage": {
+      "textures": "textures/items/aizen_fragor_barrage"
     }
   }
 }

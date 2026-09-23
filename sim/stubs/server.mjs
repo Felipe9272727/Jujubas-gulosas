@@ -572,6 +572,17 @@ export class Entity {
     return { ...this._view };
   }
 
+  // {x: pitch, y: yaw} em graus, derivado da direcao da visao
+  getRotation() {
+    this._assertValid();
+    const v = this._view;
+    const len = Math.hypot(v.x, v.y, v.z) || 1;
+    return {
+      x: (-Math.asin(v.y / len) * 180) / Math.PI,
+      y: (Math.atan2(-v.x, v.z) * 180) / Math.PI,
+    };
+  }
+
   applyKnockback(horizontal, verticalStrength) {
     this._assertValid();
     log.knockbacks.push({
@@ -621,6 +632,20 @@ export class Entity {
     this._assertValid();
     if (!location || typeof location.x !== "number" || typeof location.y !== "number" || typeof location.z !== "number") {
       throw new Error("teleport com location invalida");
+    }
+    // rotacao explicita (pitch, yaw) ou mirar num ponto a partir dos PES, como
+    // o jogo faz com o facingLocation
+    if (options.rotation) {
+      const yaw = (options.rotation.y * Math.PI) / 180;
+      const pitch = (options.rotation.x * Math.PI) / 180;
+      this._view = { x: -Math.sin(yaw) * Math.cos(pitch), y: -Math.sin(pitch), z: Math.cos(yaw) * Math.cos(pitch) };
+    } else if (options.facingLocation) {
+      const f = options.facingLocation;
+      const dx = f.x - location.x;
+      const dy = f.y - location.y;
+      const dz = f.z - location.z;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      this._view = { x: dx / len, y: dy / len, z: dz / len };
     }
     if (options.dimension && options.dimension !== this.dimension) {
       this.dimension._entities.delete(this);
