@@ -391,8 +391,17 @@ for path in sorted(RP.glob("attachables/*.json")):
 # no mundo (leva golpe, tem nome) e simplesmente nao aparece. Vale pras entidades
 # do addon; as que apontam pra recurso vanilla (o boneco usa a skin do Steve)
 # ficam de fora porque o vanilla nao esta no repo.
-VANILLA_GEOMETRY = {"geometry.humanoid", "geometry.humanoid.custom", "geometry.humanoid.customSlim"}
-VANILLA_TEXTURES = {"textures/entity/steve", "textures/entity/alex"}
+VANILLA_GEOMETRY = {
+    "geometry.humanoid",
+    "geometry.humanoid.custom",
+    "geometry.humanoid.customSlim",
+    "geometry.skeleton.v1.8",  # mortos do Minami (Yamamoto)
+}
+VANILLA_TEXTURES = {
+    "textures/entity/steve",
+    "textures/entity/alex",
+    "textures/entity/skeleton/wither_skeleton",
+}
 for path in sorted(RP.glob("entity/*.json")):
     if path.name == "player.entity.json":
         continue  # override do vanilla, conferido acima

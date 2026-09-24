@@ -569,9 +569,6 @@
     "aizen:fools_trick": {
       "textures": "textures/items/aizen_fools_trick"
     },
-    "hitsugaya:daiguren_chest": {
-      "textures": "textures/items/hitsugaya_daiguren_chest"
-    },
     "aizen:illusions": {
       "textures": "textures/items/aizen_illusions"
     },
@@ -604,6 +601,36 @@
     },
     "dangai:mugetsu_chest": {
       "textures": "textures/items/dangai_mugetsu_chest"
+    },
+    "yamamoto:m1_ryujin_jakka": {
+      "textures": "textures/items/yamamoto_m1_ryujin_jakka"
+    },
+    "yamamoto:m1_zanka_no_tachi": {
+      "textures": "textures/items/yamamoto_m1_zanka_no_tachi"
+    },
+    "yamamoto:ennetsu_jigoku": {
+      "textures": "textures/items/yamamoto_ennetsu_jigoku"
+    },
+    "yamamoto:itto_kaso": {
+      "textures": "textures/items/yamamoto_itto_kaso"
+    },
+    "yamamoto:shunshin": {
+      "textures": "textures/items/yamamoto_shunshin"
+    },
+    "yamamoto:hells_pierce": {
+      "textures": "textures/items/yamamoto_hells_pierce"
+    },
+    "yamamoto:minami": {
+      "textures": "textures/items/yamamoto_minami"
+    },
+    "yamamoto:nishi": {
+      "textures": "textures/items/yamamoto_nishi"
+    },
+    "yamamoto:higashi": {
+      "textures": "textures/items/yamamoto_higashi"
+    },
+    "yamamoto:kita": {
+      "textures": "textures/items/yamamoto_kita"
     }
   }
 }

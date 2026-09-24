@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 991 checks na simulação, zero exceções. Packs na versão 1.22.0.
+- **Estado**: 1072 checks na simulação, zero exceções. Packs na versão 1.23.0.
 - **Base**: a partir da 1.20.0 o repo parte da **1.19.25 (TosenVisored)** que o
   usuário mandou em `.mcaddon` — ela descende da 1.14.0 daqui (mesmos UUIDs) e foi
   desenvolvida fora deste branch. Foi importada byte a byte no commit
@@ -17,7 +17,7 @@ commitado e enviado.
 python3 tools/build.py          # valida + simula + empacota (falha se algo quebrar)
 python3 tools/validate.py       # JSON, itens, texturas, manifests, sons, entidades
 python3 tools/gen_textures.py   # renderiza os grids de tools/textures.py em PNG
-python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen, Daiguren, Mugetsu)
+python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen, Mugetsu)
 python3 tools/bump_version.py minor   # OBRIGATÓRIO a cada release de conteúdo
 node --import ./sim/register.mjs sim/run.mjs   # só a simulação
 ```
@@ -29,9 +29,9 @@ O `build.py` roda tudo e **se recusa a empacotar** se qualquer etapa falhar.
 ```
 BP/                     behavior pack
   manifest.json         versão dos packs (ver "cache de pack" abaixo)
-  items/*.json          202 itens, um arquivo cada (format_version 1.26.40)
-  entities/*.json       boneco de teste, clone do Aizen
-  scripts/main.js       ~17 mil linhas: TODO o gameplay (menos o Shinji)
+  items/*.json          211 itens, um arquivo cada (format_version 1.26.40)
+  entities/*.json       boneco de teste, clone do Aizen, mortos do Yamamoto
+  scripts/main.js       ~19 mil linhas: TODO o gameplay (menos o Shinji)
   scripts/shinji.js     o Shinji Hirako, importado pelo main.js
 RP/                     resource pack
   particles/*.json      partículas customizadas (uma por arquivo)
@@ -42,7 +42,6 @@ tools/
   boxmodel.py           base comum dos modelos de caixa (rig do player, UV, textura)
   hollow_model.py       modelo dos attachables do Ichigo Vizard
   aizen_clone_model.py  modelo do clone dos dois Aizen
-  daiguren_model.py     asas, cauda e braço de gelo da Daiguren Hyōrinmaru
   mugetsu_model.py      cabelo, faixas e hakama do Mugetsu (Ichigo Dangai)
   gen_textures.py       grids -> PNG (e --check)
   gen_model.py          modelos -> .geo.json (e --check)
@@ -52,7 +51,7 @@ tools/
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~5500 linhas, 991 checks
+  run.mjs               ~5900 linhas, 1072 checks
 ```
 
 ### A simulação
@@ -91,12 +90,13 @@ menu**. Tabela gerada do registro do `main.js`:
 | 2 | Mayuri Kurotsuchi (Shikai) | 600 | super: Konjiki Ashisogi Jizō |
 | 2 | Rukia Kuchiki (Sode no Shirayuki) | 600 | super |
 | 3 | Zaraki Kenpachi | 1700 | Pressão (tapa-olho removido) |
-| 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000), asas/cauda em attachable |
+| 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000), asas/cauda de partícula |
 | 4 | Soi Fon (Suzumebachi) | 2000 | super: Jakuhō Raikōben |
 | 5 | Gin Ichimaru | 4000 | super: Kamishini no Yari |
 | 5 | Shunsui Kyoraku (Katen Kyokotsu) | 4500 | super: Karamatsu Shinjū |
 | 5 | Jūshiro Ukitake (Sōgyo no Kotowari) | 4400 | super |
 | 6 | **Sousuke Aizen (Captain's Fight)** | 5500 | super: Hadō #90 Kurohitsugi |
+| 7 | **Yamamoto Genryūsai** | 8500 | Bankai: Zanka no Tachi |
 
 ### Hollow
 | Tier | Personagem | Vida | Awakening / super |
@@ -243,10 +243,15 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    aparecer com a mira reta, passar `rotation: levelRotationToward(de, para)`
    (pitch 0, yaw = `atan2(-dx, dz)`); o stub da simulação respeita os dois e
    os checks conferem "olhando reto pro alvo".
-18. **Partícula não substitui modelo.** A Daiguren era só geada de partícula:
-   com qualquer outro resource pack por cima (ou partículas no mínimo) as asas
-   e a cauda simplesmente não apareciam. Visual que *precisa* aparecer vai em
-   attachable.
+18. **A Daiguren é partícula de propósito.** Na 1.21 as asas e a cauda viraram
+   modelo 3D (attachable) porque não apareciam com outro resource pack junto;
+   na 1.23 o usuário pediu de volta a versão de partícula e o modelo saiu. Se
+   elas sumirem de novo, o suspeito é o outro pack/configuração de partículas.
+19. **`jump_boost` 128 não trava mais o pulo — lança o player pro alto.** Era o
+   truque antigo (o Bedrock lia o amplificador como -128); hoje ele é lido sem
+   sinal. Toda paralisia agora trava o pulo por `holdJump(entity, ticks)`, que
+   desliga `InputPermissionCategory.Jump` e religa sozinho quando ninguém
+   renova (e no rejoin). O stub da simulação recusa `jump_boost` acima de 10.
 
 ## Disputa da tecla agachar + m1
 
@@ -487,20 +492,11 @@ Morrer, desativar ou trocar de personagem zera Evolution e resistência
 (`resetHogyoku`) e desfaz Switch, Kanzen e casulo (`hogyokuCleanup`, chamado
 pelo `aizenCleanup`). O cheat "Dar Awakening" enche a Evolution.
 
-## Daiguren Hyōrinmaru (attachable)
+## Modelos de caixa (`tools/boxmodel.py`)
 
-Na 1.19.25 as asas e a cauda eram só partícula de geada — com outro resource
-pack junto elas não apareciam (armadilha 18). Agora a Bankai veste o peitoral
-`hitsugaya:daiguren_chest`, igual à Hollowficação do Vizard: attachable
-`RP/attachables/daiguren.json` com geometria e textura **geradas** por
-`tools/daiguren_model.py` (36 caixas: asas em escadinha presas no `body`,
-cauda no `waist`, manga de gelo e garras no `rightArm`). A geada de partícula
-continua por cima. A peça segue as mesmas regras de armadura de forma
-(`sweepFormArmor`, lida de volta da slot, some quando a Bankai acaba).
-
-`tools/boxmodel.py` virou a base comum dos modelos de caixa: rig do player,
-empacotador de UV e textura. O clone do Aizen foi migrado pra ela (saída
-idêntica byte a byte).
+Base comum dos modelos gerados por código: rig do player, empacotador de UV e
+textura. Usam: o clone do Aizen e a roupa do Mugetsu. (A Daiguren teve um
+modelo aqui na 1.21–1.22; saiu na 1.23, ver armadilha 18.)
 
 ## Ichigo Kurosaki (Dangai)
 
@@ -573,6 +569,56 @@ regeneração é arrancada todo segundo), lentidão 3, não usa item nenhum (o
 `dealDamage` ignora quem ele for a fonte). Switch, Kanzen e casulo são
 desfeitos e a Evolution para. Dura até ele morrer, desativar ou sair —
 preparado pro selamento do próximo update.
+
+## Yamamoto Genryūsai
+
+Tier 7, Shinigami, 8500 de vida. Tudo dele vive no bloco `YAMAMOTO` do
+`main.js`. Itens: Ryūjin Jakka (m1, 170), Ennetsu Jigoku, Hadō #96 Ittō Kasō,
+Shunshin e Hell's Pierce. Awakening: **Bankai: Zanka no Tachi** ("Zanka no
+Tachi..." no chat), com m1 de 200, Minami, Nishi, Higashi e Kita.
+
+### Queimadura
+
+`applyBurn(alvo, fonte, segundos, infernal)`. Duas trilhas por alvo, que
+correm juntas: **Queimadura** (70/s) e **Queimadura Infernal** (100/s, passa
+com `ignoresReduction` no `dealDamage`: guarda, Hierro, a individualidade do
+Nnoitra e as resistências não reduzem). Conta **golpes**, não prazo: "5s de
+queimadura" são exatamente 5 golpes, um por segundo. Reaplicar só aumenta o
+que falta. As armas m1 ganharam o campo `burn` em `MELEE_WEAPONS`.
+
+### Skills
+
+- **Ennetsu Jigoku**: 3 sequências (5 ticks entre elas) de 3 colunas de fogo
+  em leque, como o Tripleshot; cada coluna anda no chão, dá 100 uma vez em
+  quem toca e 3s de Queimadura.
+- **Ittō Kasō**: marca o ponto mirado (alvo na mira, bloco, ou 20 blocos à
+  frente) por 3s e sobe a ponta de uma katana de fogo de 22 blocos; 300 +
+  6s em quem está a 9 blocos do centro.
+- **Shunshin**: 20 blocos em 4 ticks, para no primeiro bloco sólido; 110 + 3s
+  em quem estiver no caminho.
+- **Hell's Pierce**: precisa de alguém a 5 blocos (sem alvo não gasta). 350 +
+  7s no empalado; 0,4s depois explode: 250 + 7s nos outros a 4,5 blocos.
+
+### Bankai
+
+- **m1**: 200 + 2s de Queimadura Infernal. **Passiva**: bater num bloco com a
+  lâmina do Bankai (`entityHitBlock`) abre um triângulo de explosões de 9
+  blocos na frente (como o Dragon's Breath do Hitsugaya): 200 em quem estiver
+  dentro. No máximo uma por segundo.
+- **Minami**: 10 `yamamoto:morto` (BP própria; o visual é o esqueleto vanilla
+  com a textura do wither skeleton). 400 de vida, caçam player **sem a tag
+  `mv_yamamoto`** (um loop põe e tira a tag de quem é Yamamoto) e dão 50 por
+  golpe pelo script (o ataque vanilla é 0, porque o player tem vida virtual).
+  Somem em 30s ou quando o Bankai acaba. As skills do dono não acertam os
+  mortos dele (`isOwnSummon`).
+- **Nishi**: 10s envolto em fogo. Funciona como a Respira (`isRespiring`
+  devolve verdadeiro pra ele) e ainda desfaz qualquer ataque registrado que
+  chegue a 5 blocos, de qualquer tier. Quem está a 10 blocos queima com a
+  Infernal enquanto ficar ali.
+- **Higashi**: o motor do corte do Dangai (`fireCrescent`) com visual de fogo:
+  5 blocos por tick, alcance 35, 650 + 8s de Infernal.
+- **Kita**: corte parado que varre meio círculo na frente com o raio do
+  Getsuga Final (16,2 blocos): 6000 + 20s de Infernal. O Bankai acaba na hora.
 
 ## Animações
 
@@ -704,6 +750,14 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Let's fight somewhere else | 1,5 bloco por tick, no máximo 60 blocos (sem parede, explode no ar); só o alvo toma os 400 |
 | Mugetsu | Getsuga Final 1s depois; desfaz ataque de qualquer tier; escuridão de 3s em quem está perto |
 | Aizen enfraquecido | o estado dura até morrer/desativar; outros golpes ainda podem matar ele |
+| Nishi (Yamamoto) | dura 10s; apaga ataques de qualquer tier a 5 blocos |
+| Minami (Yamamoto) | mortos duram 30s (o cooldown) e somem quando o Bankai acaba; 1 golpe por segundo cada |
+| Passiva do Bankai (Yamamoto) | 1 explosão por segundo no máximo; triângulo de 9 blocos por 4 de meia largura; não queima |
+| Ittō Kasō | raio 9, lâmina de 22 blocos; mira: alvo, bloco ou 20 blocos à frente |
+| Shunshin | 20 blocos em 4 ticks, para em parede |
+| Hell's Pierce | alcance 5; explosão 0,4s depois, raio 4,5; sem alvo não gasta |
+| Kita | respeita Respira/Intocable/guarda (não é "pierce" como o Getsuga Final); cooldown de 5s só pra não repetir no mesmo Bankai |
+| Bankai do Yamamoto | vida continua 8500 (não foi especificada) |
 
 ## Próximos passos sugeridos
 
@@ -714,9 +768,10 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
    No Hōgyoku: se a troca do Switch fica natural com o ping, o tamanho visual
    do Fragor/UltraFragor (muita partícula de uma vez — o anti-lag corta a
    `large_explosion`) e o casulo em terreno irregular.
-   Na Daiguren: se as asas/cauda aparecem com o outro resource pack ativo.
    No Dangai: o visual do Getsuga (e o do Final, que é enorme) com o anti-lag,
    o arrastão do "Let's fight" em terreno irregular e a roupa do Mugetsu.
+   No Yamamoto: se os mortos do Minami andam e atacam direito (a IA é vanilla)
+   e o tamanho visual do Kita e do Ittō Kasō.
 2. **Invulnerabilidade pós-dano**: várias skills do addon batem a cada tick
    (Grito del Diablo, Rugido del Diablo) ou a cada 4–6 ticks (Palacio de las
    Espadas, Los Nueve Aspectos). Se o `applyDamage` respeitar a janela de

@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "yamamoto:itto_kaso",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "yamamoto:itto_kaso",
+      "minecraft:display_name": {
+        "value": "Hadō #96: Ittō Kasō"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "yamamoto_itto_kaso",
+        "duration": 35
+      }
+    }
+  }
+}

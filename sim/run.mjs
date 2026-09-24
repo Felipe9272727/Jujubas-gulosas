@@ -4393,6 +4393,9 @@ check(
     log.worldMessages.slice(linhasAntes).some((m) => m.message.includes("Bakudō #61: Rikujōkōrō"))
 );
 check("alvo paralisado (lentidão máxima)", hinamori.getEffect("slowness")?.amplifier === 255);
+// jump_boost 128 fazia o player voar no Bedrock atual: o pulo e travado pela permissao
+check("sem jump_boost (o pulo gigante)", !hinamori.getEffect("jump_boost"));
+check("pulo travado pela permissão de input", hinamori.inputPermissions.isPermissionCategoryEnabled(6) === false);
 check(
   "seis barras de luz desenhadas",
   log.particles.slice(luzAntes).filter((p) => p.particleId === "aizen:luz").length >= 36,
@@ -4406,6 +4409,7 @@ check(
 );
 advanceTicks(100, "bakudo-fim");
 check("depois de 5s a paralisia solta", !hinamori.getEffect("slowness"));
+check("e o pulo volta", hinamori.inputPermissions.isPermissionCategoryEnabled(6) === true);
 
 scenario("Fool's Trick: awakening falso, e 3s depois o corte pelas costas");
 mark = errors.length;
@@ -4636,9 +4640,9 @@ check(
 );
 estranho.kill();
 
-/* ================= Daiguren Hyōrinmaru: asas e cauda em modelo ================= */
+/* ================= Daiguren Hyōrinmaru: asas e cauda de partícula ================= */
 
-scenario("Daiguren Hyōrinmaru: asas e cauda como modelo 3D (peitoral)");
+scenario("Daiguren Hyōrinmaru: asas e cauda de partícula, sem modelo");
 mark = errors.length;
 const toshiro = createPlayer("ToshiroPlayer", { x: 9500, y: 64, z: 9500 });
 emit("playerSpawn", { player: toshiro, initialSpawn: true });
@@ -4655,8 +4659,8 @@ advanceTicks(30, "bankai-toshiro");
 noNewErrors("Bankai sem erro", mark);
 check("Bankai ativa", toshiro.getDynamicProperty(DP.awakened) === true);
 check(
-  "veste o peitoral da Daiguren (asas, cauda e braço de gelo)",
-  toshiro.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId === "hitsugaya:daiguren_chest",
+  "não veste peitoral nenhum (o modelo saiu)",
+  !toshiro.getComponent("minecraft:equippable").getEquipment("Chest"),
   String(toshiro.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId)
 );
 check(
@@ -4664,13 +4668,12 @@ check(
   !log.worldMessages.slice(linhasToshiro).some((m) => m.to === "ToshiroPlayer" && m.message.includes("hollowficação"))
 );
 check(
-  "a geada de partículas continua por cima",
+  "asas e cauda de partícula de gelo",
   log.particles.slice(geloAntes).filter((p) => p.particleId === "hitsugaya:gelo").length > 20
 );
 toshiro.setDynamicProperty(DP.awakening, 2);
 advanceTicks(80, "bankai-acaba");
 check("Bankai acabou", toshiro.getDynamicProperty(DP.awakened) === false);
-check("o peitoral sai junto", !toshiro.getComponent("minecraft:equippable").getEquipment("Chest"));
 noNewErrors("fim da Bankai sem erro", mark);
 queueFormResponse(deactivateButtonIndex());
 useItem(toshiro, "multiversal:character_selector");
@@ -5411,6 +5414,330 @@ advanceTicks(10, "desativado");
 check("o alvo é solto", presoD.getEffect("slowness")?.amplifier !== 255);
 check("o Ichigo desativa", dangai.getDynamicProperty("mv:character") === undefined);
 presoD.kill();
+noNewErrors("desativar sem erro", mark);
+
+/* ================= Yamamoto Genryūsai ================= */
+
+const YM = game.YAMAMOTO;
+function ymHits(target, since, amount) {
+  return log.damages.slice(since).filter((d) => d.target === target.name && (amount === undefined || virtualDamage(target, d) === amount));
+}
+function ymTotal(target, since) {
+  return log.damages.slice(since).filter((d) => d.target === target.name).reduce((n, d) => n + virtualDamage(target, d), 0);
+}
+
+scenario("Yamamoto Genryūsai: ativação (Shinigami, Tier 7)");
+mark = errors.length;
+const yama = createPlayer("YamamotoPlayer", { x: 40000, y: 64, z: 40000 });
+emit("playerSpawn", { player: yama, initialSpawn: true });
+advanceTicks(20, "spawn-yama");
+check("registro: Shinigami, Tier 7", RACE_TIER.yamamoto?.race === "shinigami" && RACE_TIER.yamamoto?.tier === 7);
+await pickCharacter(yama, "yamamoto");
+advanceTicks(30, "ativar-yama");
+noNewErrors("ativar o Yamamoto sem erro", mark);
+check("vida maxima 8500", virtualMax(yama) === 8500, String(virtualMax(yama)));
+check(
+  "Ryūjin Jakka, Ennetsu, Ittō Kasō, Shunshin e Hell's Pierce nos slots 0-4",
+  JSON.stringify(slotIds(yama, 5)) ===
+    JSON.stringify([
+      "yamamoto:m1_ryujin_jakka",
+      "yamamoto:ennetsu_jigoku",
+      "yamamoto:itto_kaso",
+      "yamamoto:shunshin",
+      "yamamoto:hells_pierce",
+    ]),
+  JSON.stringify(slotIds(yama, 5))
+);
+check("ganha a tag que os mortos respeitam", yama.hasTag(YM.tag));
+
+scenario("Ryūjin Jakka: m1 de 170 + Queimadura de 5s (70/s)");
+mark = errors.length;
+const alvoY = createDummy("AlvoYama", { x: 40002, y: 64, z: 40000 }, 500000);
+dmgBefore = log.damages.length;
+const partY = log.particles.length;
+yama.selectedSlotIndex = 0;
+hitWith(yama, alvoY, "yamamoto:m1_ryujin_jakka");
+advanceTicks(130, "queimadura");
+check("170 do golpe", ymHits(alvoY, dmgBefore, 170).length === 1);
+check("5 segundos de Queimadura, 70 cada", ymHits(alvoY, dmgBefore, 70).length === 5, JSON.stringify(ymHits(alvoY, dmgBefore).map((d) => d.amount)));
+check("fogo em quem está queimando", log.particles.slice(partY).some((p) => p.particleId === "yamamoto:chama"));
+alvoY.kill();
+noNewErrors("m1 e Queimadura sem erro", mark);
+
+scenario("Ennetsu Jigoku: 3 sequências de 3 colunas de fogo");
+mark = errors.length;
+yama.teleport({ x: 40200, y: 64, z: 40000 });
+yama._view = { x: 1, y: 0, z: 0 };
+const meioE = createDummy("MeioEnnetsu", { x: 40210, y: 64, z: 40000 }, 500000);
+const ladoE = createDummy("LadoEnnetsu", { x: 40200 + Math.cos(0.35) * 10, y: 64, z: 40000 + Math.sin(0.35) * 10 }, 500000);
+const foraE = createDummy("ForaEnnetsu", { x: 40200, y: 64, z: 40010 }, 500000);
+dmgBefore = log.damages.length;
+useItem(yama, "yamamoto:ennetsu_jigoku");
+advanceTicks(30, "ennetsu");
+check("no meio: uma coluna de cada sequência (3x 100)", ymHits(meioE, dmgBefore, 100).length === 3, JSON.stringify(ymHits(meioE, dmgBefore).map((d) => d.amount)));
+check("de lado, na diagonal do leque: 3x 100", ymHits(ladoE, dmgBefore, 100).length === 3);
+check("fora do leque: nada", ymHits(foraE, dmgBefore).length === 0);
+advanceTicks(100, "ennetsu-queima");
+check("e queima (70)", ymHits(meioE, dmgBefore, 70).length >= 3);
+for (const d of [meioE, ladoE, foraE]) d.kill();
+noNewErrors("Ennetsu sem erro", mark);
+
+scenario("Hadō #96 Ittō Kasō: marca, e 3s depois a ponta de katana de fogo");
+mark = errors.length;
+yama.teleport({ x: 40400, y: 64, z: 40000 });
+yama._view = { x: 1, y: 0, z: 0 };
+const marcado = createDummy("MarcadoItto", { x: 40415, y: 64, z: 40000 }, 500000);
+const vizinhoI = createDummy("VizinhoItto", { x: 40415, y: 64, z: 40007 }, 500000);
+const longeI = createDummy("LongeItto", { x: 40415, y: 64, z: 40013 }, 500000);
+dmgBefore = log.damages.length;
+const partI = log.particles.length;
+useItem(yama, "yamamoto:itto_kaso");
+advanceTicks(55, "marcando");
+check("nada antes de 3s", ymHits(marcado, dmgBefore).length === 0);
+advanceTicks(15, "erupcao");
+check("300 em quem está na área", ymHits(marcado, dmgBefore, 300).length === 1);
+check("pega 7 blocos do centro", ymHits(vizinhoI, dmgBefore, 300).length === 1);
+check("não pega a 13 blocos", ymHits(longeI, dmgBefore).length === 0);
+const laminaI = log.particles.slice(partI).filter((p) => p.particleId === "yamamoto:lamina");
+check("a lâmina de fogo sobe bem alto (katana gigante)", laminaI.some((p) => p.location.y > 64 + YM.ittoKaso.height * 0.8));
+advanceTicks(140, "itto-queima");
+check("6s de Queimadura", ymHits(marcado, dmgBefore, 70).length === 6, String(ymHits(marcado, dmgBefore, 70).length));
+for (const d of [marcado, vizinhoI, longeI]) d.kill();
+noNewErrors("Ittō Kasō sem erro", mark);
+
+scenario("Shunshin: dash muito rápido cortando o caminho");
+mark = errors.length;
+yama.teleport({ x: 40600, y: 64, z: 40000 });
+yama._view = { x: 1, y: 0, z: 0 };
+const noCaminhoYm = [5, 11, 17].map((dx, i) => createDummy(`Caminho${i}`, { x: 40600 + dx, y: 64, z: 40000.5 }, 500000));
+dmgBefore = log.damages.length;
+useItem(yama, "yamamoto:shunshin");
+advanceTicks(4, "shunshin");
+check("20 blocos em 4 ticks", Math.abs(yama.location.x - 40620) < 0.6, `x=${yama.location.x.toFixed(1)}`);
+check("corta todos no caminho (110)", noCaminhoYm.every((d) => ymHits(d, dmgBefore, 110).length === 1));
+advanceTicks(80, "shunshin-queima");
+check("3s de Queimadura", noCaminhoYm.every((d) => ymHits(d, dmgBefore, 70).length === 3));
+for (const d of noCaminhoYm) d.kill();
+// parede no caminho: para antes dela
+yama.teleport({ x: 40700, y: 64, z: 40000 });
+for (let y = 64; y <= 65; y++) overworld.getBlock({ x: 40708, y, z: 40000 }).setType("minecraft:stone");
+yama.setDynamicProperty("mv:cd_yamamoto_shunshin", undefined);
+useItem(yama, "yamamoto:shunshin");
+advanceTicks(6, "shunshin-parede");
+check("para na parede", yama.location.x < 40708 && yama.location.x > 40704, `x=${yama.location.x.toFixed(1)}`);
+noNewErrors("Shunshin sem erro", mark);
+
+scenario("Hell's Pierce: empala quem está na frente e explode");
+mark = errors.length;
+yama.teleport({ x: 40800, y: 64, z: 40000 });
+yama._view = { x: 1, y: 0, z: 0 };
+const empalado = createDummy("Empalado", { x: 40803, y: 64, z: 40000 }, 500000);
+const pertoP = createDummy("PertoPierce", { x: 40805, y: 64, z: 40002 }, 500000);
+const longeP = createDummy("LongePierce", { x: 40812, y: 64, z: 40000 }, 500000);
+dmgBefore = log.damages.length;
+useItem(yama, "yamamoto:hells_pierce");
+advanceTicks(2, "empala");
+check("350 no empalado", ymHits(empalado, dmgBefore, 350).length === 1);
+check("a explosão vem depois", ymHits(pertoP, dmgBefore).length === 0);
+advanceTicks(10, "explode");
+check("250 em quem está perto", ymHits(pertoP, dmgBefore, 250).length === 1);
+check("o empalado não leva a explosão também", ymHits(empalado, dmgBefore, 250).length === 0);
+check("longe fica de fora", ymHits(longeP, dmgBefore).length === 0);
+advanceTicks(150, "pierce-queima");
+check("7s de Queimadura", ymHits(empalado, dmgBefore, 70).length === 7 && ymHits(pertoP, dmgBefore, 70).length === 7);
+for (const d of [empalado, pertoP, longeP]) d.kill();
+advanceTicks(2, "sem-alvo");
+yama.setDynamicProperty("mv:cd_yamamoto_hells_pierce", undefined);
+useItem(yama, "yamamoto:hells_pierce");
+check("sem ninguém na frente: não gasta", yama.getDynamicProperty("mv:cd_yamamoto_hells_pierce") === undefined);
+noNewErrors("Hell's Pierce sem erro", mark);
+
+scenario("Bankai: Zanka no Tachi");
+mark = errors.length;
+yama.teleport({ x: 41000, y: 64, z: 41000 });
+yama._view = { x: 1, y: 0, z: 0 };
+yama.setDynamicProperty(DP.awakening, 100);
+let linhasZ = log.worldMessages.length;
+yama.isSneaking = true;
+useItem(yama, "yamamoto:m1_ryujin_jakka");
+yama.isSneaking = false;
+advanceTicks(10, "bankai-yama");
+check("desperta", yama.getDynamicProperty(DP.awakened) === true);
+check("\"Zanka no Tachi...\"", log.worldMessages.slice(linhasZ).some((m) => m.message.includes("Zanka no Tachi...")));
+check(
+  "Minami, Nishi, Higashi e Kita no lugar das skills",
+  JSON.stringify(slotIds(yama, 5)) ===
+    JSON.stringify(["yamamoto:m1_zanka_no_tachi", "yamamoto:minami", "yamamoto:nishi", "yamamoto:higashi", "yamamoto:kita"]),
+  JSON.stringify(slotIds(yama, 5))
+);
+noNewErrors("Bankai sem erro", mark);
+
+scenario("Zanka no Tachi: m1 de 200 + Queimadura Infernal que ignora redução");
+mark = errors.length;
+const nnoY = createPlayer("NnoitraY", { x: 41002, y: 64, z: 41000 });
+emit("playerSpawn", { player: nnoY, initialSpawn: true });
+advanceTicks(10, "spawn-nno-y");
+await pickCharacter(nnoY, "nnoitra");
+advanceTicks(20, "ativar-nno-y");
+nnoY.teleport({ x: 41002, y: 64, z: 41000 });
+fullHp(nnoY);
+dmgBefore = log.damages.length;
+yama.selectedSlotIndex = 0;
+hitWith(yama, nnoY, "yamamoto:m1_zanka_no_tachi");
+advanceTicks(50, "infernal");
+const golpesNno = ymHits(nnoY, dmgBefore).map((d) => virtualDamage(nnoY, d));
+check("a lâmina sofre a redução do Nnoitra (200 → 180)", golpesNno[0] === 180, JSON.stringify(golpesNno));
+check("2s de Queimadura Infernal com 100 cheio (ignora os 10%)", golpesNno.slice(1).length === 2 && golpesNno.slice(1).every((n) => n === 100), JSON.stringify(golpesNno));
+noNewErrors("m1 do Bankai sem erro", mark);
+
+scenario("Zanka no Tachi (passiva): m1 num bloco explode um triângulo na frente");
+mark = errors.length;
+yama.teleport({ x: 41200, y: 64, z: 41200 });
+yama._view = { x: 1, y: 0, z: 0 };
+const naFrenteT = createDummy("FrenteTriangulo", { x: 41206, y: 64, z: 41201 }, 500000);
+const pontaT = createDummy("PontaTriangulo", { x: 41208, y: 64, z: 41203 }, 500000);
+const ladoT = createDummy("LadoTriangulo", { x: 41202, y: 64, z: 41205 }, 500000);
+const chaoY = overworld.getBlock({ x: 41201, y: 63, z: 41200 });
+chaoY.setType("minecraft:stone");
+dmgBefore = log.damages.length;
+const partT = log.particles.length;
+yama.selectedSlotIndex = 0;
+emit("entityHitBlock", { damagingEntity: yama, hitBlock: chaoY, blockFace: "Up" });
+advanceTicks(6, "triangulo");
+check("200 em quem está no triângulo", ymHits(naFrenteT, dmgBefore, 200).length === 1);
+check("o triângulo abre: pega a ponta larga", ymHits(pontaT, dmgBefore, 200).length === 1);
+check("não pega do lado", ymHits(ladoT, dmgBefore).length === 0);
+check("explosões", log.particles.slice(partT).some((p) => p.particleId === "minecraft:large_explosion"));
+emit("entityHitBlock", { damagingEntity: yama, hitBlock: chaoY, blockFace: "Up" });
+advanceTicks(6, "triangulo-2");
+check("não dá pra spammar (1s entre explosões)", ymHits(naFrenteT, dmgBefore, 200).length === 1);
+for (const d of [naFrenteT, pontaT, ladoT]) d.kill();
+noNewErrors("passiva sem erro", mark);
+
+scenario("Minami: 10 mortos incinerados que caçam quem não é Yamamoto");
+mark = errors.length;
+yama.teleport({ x: 41400, y: 64, z: 41400 });
+nnoY.teleport({ x: 41500, y: 64, z: 41500 });
+useItem(yama, "yamamoto:minami");
+advanceTicks(2, "minami");
+const mortos = overworld.getEntities({ type: "yamamoto:morto" });
+check("10 mortos", mortos.length === 10, String(mortos.length));
+const bpMorto = JSON.parse(fs.readFileSync(new URL("../BP/entities/yamamoto_morto.json", import.meta.url), "utf8"))["minecraft:entity"].components;
+check("400 de vida cada", bpMorto["minecraft:health"].value === 400);
+check(
+  "o alvo vanilla é player sem a tag do Yamamoto",
+  JSON.stringify(bpMorto["minecraft:behavior.nearest_attackable_target"]).includes(`"value":"${YM.tag}"`)
+);
+check("o golpe vanilla não dá dano (os 50 saem do script)", bpMorto["minecraft:attack"].damage === 0);
+// um morto encostado no Yamamoto: nao bate nele
+mortos[0].teleport({ x: 41401, y: 64, z: 41400 });
+dmgBefore = log.damages.length;
+advanceTicks(30, "morto-perto-do-dono");
+check("não ataca o Yamamoto", ymHits(yama, dmgBefore).length === 0);
+// encostado no Nnoitra: 50 por golpe, 1 por segundo
+nnoY.teleport({ x: 41401, y: 64, z: 41410 });
+mortos[1].teleport({ x: 41402, y: 64, z: 41410 });
+fullHp(nnoY);
+dmgBefore = log.damages.length;
+const partM = log.particles.length;
+advanceTicks(45, "morto-bate");
+const golpesM = ymHits(nnoY, dmgBefore).map((d) => virtualDamage(nnoY, d));
+check("50 por golpe (menos os 10% do Nnoitra)", golpesM.length >= 2 && golpesM.every((n) => n === 45), JSON.stringify(golpesM));
+check("trilha de fogo", log.particles.slice(partM).some((p) => p.particleId === "yamamoto:chama"));
+nnoY.teleport({ x: 41600, y: 64, z: 41600 });
+noNewErrors("Minami sem erro", mark);
+
+scenario("Nishi: fogo em volta queima quem chega perto e apaga ataques");
+mark = errors.length;
+const grimY = createPlayer("GrimmjowY", { x: 41820, y: 64, z: 41800 });
+emit("playerSpawn", { player: grimY, initialSpawn: true });
+advanceTicks(10, "spawn-grim-y");
+await pickCharacter(grimY, "grimmjow");
+advanceTicks(20, "ativar-grim-y");
+yama.teleport({ x: 41800, y: 64, z: 41800 });
+nnoY.teleport({ x: 41807, y: 64, z: 41805 });
+const longeN = createDummy("LongeNishi", { x: 41800, y: 64, z: 41813 }, 500000);
+fullHp(yama);
+fullHp(nnoY);
+useItem(yama, "yamamoto:nishi");
+advanceTicks(2, "nishi");
+aim(grimY, yama);
+dmgBefore = log.damages.length;
+useItem(grimY, "grimmjow:gran_rey_cero");
+advanceTicks(40, "nishi-cero");
+check("o Gran Rey Cero some antes de chegar", ymHits(yama, dmgBefore).length === 0, JSON.stringify(ymHits(yama, dmgBefore)));
+check("quem está a 10 blocos queima (Infernal, 100 cheio)", ymHits(nnoY, dmgBefore, 100).length >= 1, JSON.stringify(ymHits(nnoY, dmgBefore).map((d) => virtualDamage(nnoY, d))));
+check("quem está a 13 não", ymHits(longeN, dmgBefore).length === 0);
+advanceTicks(200, "nishi-acaba");
+const depoisN = log.damages.length;
+advanceTicks(60, "nishi-acabou");
+check("em 10s acaba (e a Queimadura some junto)", ymHits(nnoY, depoisN).length === 0);
+longeN.kill();
+noNewErrors("Nishi sem erro", mark);
+
+scenario("Higashi: Getsuga de fogo, 650 e Queimadura Infernal de 8s");
+mark = errors.length;
+yama.teleport({ x: 42000, y: 64, z: 42000 });
+yama._view = { x: 1, y: 0, z: 0 };
+const alvoH = createDummy("AlvoHigashi", { x: 42030, y: 64, z: 42000 }, 500000);
+const alemH = createDummy("AlemHigashi", { x: 42040, y: 64, z: 42000 }, 500000);
+const meuMorto = overworld.getEntities({ type: "yamamoto:morto" })[2];
+meuMorto.teleport({ x: 42010, y: 64, z: 42000 });
+dmgBefore = log.damages.length;
+const partH = log.particles.length;
+useItem(yama, "yamamoto:higashi");
+advanceTicks(12, "higashi");
+check("650 a 30 blocos", ymHits(alvoH, dmgBefore, 650).length === 1);
+check("alcance 35: não chega a 40", ymHits(alemH, dmgBefore).length === 0);
+check("não acerta os próprios mortos", !log.damages.slice(dmgBefore).some((d) => d.target === meuMorto.name && d.amount >= 600));
+check("corte de fogo", log.particles.slice(partH).some((p) => p.particleId === "yamamoto:lamina"));
+advanceTicks(180, "higashi-queima");
+check("8s de Queimadura Infernal", ymHits(alvoH, dmgBefore, 100).length === 8, String(ymHits(alvoH, dmgBefore, 100).length));
+for (const d of [alvoH, alemH]) d.kill();
+noNewErrors("Higashi sem erro", mark);
+
+scenario("Kita: corte gigante parado, 6000 + Infernal de 20s, e o Bankai acaba");
+mark = errors.length;
+yama.teleport({ x: 42200, y: 64, z: 42200 });
+yama._view = { x: 1, y: 0, z: 0 };
+const frenteK = createDummy("FrenteKita", { x: 42214, y: 64, z: 42203 }, 500000);
+const ladoK = createDummy("LadoKita", { x: 42201, y: 64, z: 42212 }, 500000);
+const atrasK = createDummy("AtrasKita", { x: 42190, y: 64, z: 42200 }, 500000);
+const longeK = createDummy("LongeKita", { x: 42225, y: 64, z: 42200 }, 500000);
+dmgBefore = log.damages.length;
+useItem(yama, "yamamoto:kita");
+advanceTicks(1, "kita");
+check("o Bankai acaba na hora", yama.getDynamicProperty(DP.awakened) === false && inv(yama).getItem(1)?.typeId === "yamamoto:ennetsu_jigoku");
+advanceTicks(8, "kita-corte");
+check("6000 na frente", ymHits(frenteK, dmgBefore, 6000).length === 1);
+check("o corte é do tamanho do Mugetsu: pega de lado a 12 blocos", ymHits(ladoK, dmgBefore, 6000).length === 1);
+check("não pega atrás", ymHits(atrasK, dmgBefore).length === 0);
+check("nem além do raio", ymHits(longeK, dmgBefore).length === 0);
+check("o corte não anda: raio do Mugetsu", Math.abs(YM.kita.radius - game.DANGAI.mugetsu.radius) < 0.01);
+advanceTicks(20, "kita-mortos");
+check("sem Bankai os mortos somem", overworld.getEntities({ type: "yamamoto:morto" }).length === 0);
+advanceTicks(420, "kita-queima");
+check("20s de Queimadura Infernal", ymHits(frenteK, dmgBefore, 100).length === 20, String(ymHits(frenteK, dmgBefore, 100).length));
+for (const d of [frenteK, ladoK, atrasK, longeK]) d.kill();
+noNewErrors("Kita sem erro", mark);
+
+scenario("Yamamoto: desativar tira a tag e os mortos");
+mark = errors.length;
+yama.setDynamicProperty(DP.awakening, 100);
+yama.isSneaking = true;
+useItem(yama, "yamamoto:m1_ryujin_jakka");
+yama.isSneaking = false;
+advanceTicks(5, "bankai-de-novo");
+yama.setDynamicProperty("mv:cd_yamamoto_minami", undefined);
+useItem(yama, "yamamoto:minami");
+advanceTicks(2, "minami-de-novo");
+check("(mortos de pé)", overworld.getEntities({ type: "yamamoto:morto" }).length === 10);
+queueFormResponse(deactivateButtonIndex());
+useItem(yama, "multiversal:character_selector");
+await settleForms();
+advanceTicks(25, "desativar-yama");
+check("mortos removidos", overworld.getEntities({ type: "yamamoto:morto" }).length === 0);
+check("a tag sai", !yama.hasTag(YM.tag));
 noNewErrors("desativar sem erro", mark);
 
 /* ================= estabilidade longa ================= */

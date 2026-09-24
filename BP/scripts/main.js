@@ -6,6 +6,7 @@ import {
   EquipmentSlot,
   BlockPermutation,
   Dimension,
+  InputPermissionCategory,
 } from "@minecraft/server";
 import { ActionFormData, MessageFormData } from "@minecraft/server-ui";
 import { createShinji } from "./shinji.js";
@@ -717,9 +718,7 @@ const CHARACTERS = {
       health: 3000,
       triggerItem: "hitsugaya:m1_hyorinmaru",
       canFly: true, // asas de gelo: voa (mesmo mecanismo do Ulquiorra)
-      // asas, cauda e braco do dragao em modelo 3D (attachable no peitoral);
-      // as particulas de gelo continuam por cima
-      armorPiece: "hitsugaya:daiguren_chest",
+      // asas e cauda sao de particula (loop "Individualidade do Bankai")
       onActivate: "battlecry",
       chatLine: "Bankai: Daiguren Hyōrinmaru",
       cryParticle: "hitsugaya:gelo",
@@ -902,6 +901,36 @@ const CHARACTERS = {
       triggerItem: "dangai:m1_zangetsu",
     },
   },
+  yamamoto: {
+    id: "yamamoto",
+    name: "Yamamoto Genryūsai",
+    health: 8500,
+    items: {
+      0: "yamamoto:m1_ryujin_jakka",
+      1: "yamamoto:ennetsu_jigoku",
+      2: "yamamoto:itto_kaso",
+      3: "yamamoto:shunshin",
+      4: "yamamoto:hells_pierce",
+    },
+    // Awk-Bankai: agachar + usar a Ryūjin Jakka com o medidor em 100%
+    awakening: {
+      name: "Bankai: Zanka no Tachi",
+      triggerItem: "yamamoto:m1_ryujin_jakka",
+      onActivate: "battlecry",
+      chatLine: "Zanka no Tachi...",
+      cryParticle: "yamamoto:chama",
+      cryPitch: 0.6,
+      // o fogo fica preso na lamina: so brasa subindo em volta
+      aura: { particle: "yamamoto:brasa", radius: 0.9, height: 2.2, perTick: 1 },
+      items: {
+        0: "yamamoto:m1_zanka_no_tachi",
+        1: "yamamoto:minami",
+        2: "yamamoto:nishi",
+        3: "yamamoto:higashi",
+        4: "yamamoto:kita",
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -919,7 +948,6 @@ const EXTRA_OWNED_ITEMS = {
   "vizard:hollow_chest": "ichigo_vizard",
   "vizard:vasto_chest": "ichigo_vizard",
   "ulquiorra:segunda_chest": "ulquiorra",
-  "hitsugaya:daiguren_chest": "hitsugaya",
   "dangai:mugetsu_chest": "ichigo_dangai",
   // a Kyōka "oculta" (textura vazia) fica no slot 0 enquanto o Aizen esta invisivel
   "aizen:m1_kyoka_oculta": "aizen",
@@ -971,6 +999,7 @@ const CHARACTER_RACE_TIER = {
   aizen: { race: "shinigami", tier: 6 },
   aizen_hogyoku: { race: "hybrid", tier: 7 },
   ichigo_dangai: { race: "hybrid", tier: 7 },
+  yamamoto: { race: "shinigami", tier: 7 },
 
   grimmjow: { race: "hollow", tier: 2 },
   szayelaporro: { race: "hollow", tier: 2 },
@@ -1209,13 +1238,15 @@ function dealDamage(target, amount, source, options) {
   const marked =
     markMultiplierOf(target) * vulnerabilityMultiplierOf(target) * fragilityMultiplierOf(target);
 
-  const guarded = !options?.breaksBlock && isBlocking(target);
+  const guarded = !options?.breaksBlock && !options?.ignoresReduction && isBlocking(target);
   if (guarded) showBlockSpark(target);
 
   const blocked = guarded ? BLOCK.damageMultiplier : 1;
   // individualidade e Hierro do Nnoitra: valem contra TUDO, ate contra o golpe
-  // que quebra a guarda (a guarda e uma coisa, a pele dele e outra)
-  const resisted = damageTakenMultiplierOf(target);
+  // que quebra a guarda (a guarda e uma coisa, a pele dele e outra). So a
+  // Queimadura Infernal do Yamamoto passa por cima de reducao.
+  let resisted = damageTakenMultiplierOf(target);
+  if (options?.ignoresReduction) resisted = Math.max(1, resisted);
   const finalAmount = amount * marked * blocked * resisted;
   // Absorb do Ukitake: imune ao dano, que fica guardado pro Hansha
   if (absorbUkitakeDamage(target, finalAmount)) return;
@@ -1381,6 +1412,14 @@ const SKILL_COOLDOWN_TICKS = {
   "dangai:omnidirectional_getsuga": 700, // 35s
   "dangai:arrogants_counter": 500, // 25s
   "dangai:lets_fight_somewhere_else": 300, // 15s
+  "yamamoto:ennetsu_jigoku": 500, // 25s
+  "yamamoto:itto_kaso": 700, // 35s
+  "yamamoto:shunshin": 400, // 20s
+  "yamamoto:hells_pierce": 800, // 40s
+  "yamamoto:minami": 600, // 30s
+  "yamamoto:nishi": 500, // 25s
+  "yamamoto:higashi": 800, // 40s
+  "yamamoto:kita": 100, // o Bankai acaba junto: o cooldown de verdade e encher o medidor de novo
 };
 
 const SKILL_NAMES = {
@@ -1533,6 +1572,14 @@ const SKILL_NAMES = {
   "dangai:omnidirectional_getsuga": "Omnidirectional Getsuga",
   "dangai:arrogants_counter": "Arrogant's Counter",
   "dangai:lets_fight_somewhere_else": "Let's fight somewhere else.",
+  "yamamoto:ennetsu_jigoku": "Ennetsu Jigoku",
+  "yamamoto:itto_kaso": "Hadō #96: Ittō Kasō",
+  "yamamoto:shunshin": "Shunshin",
+  "yamamoto:hells_pierce": "Hell's Pierce",
+  "yamamoto:minami": "Minami — Kaka Jūmanokushi Daisōjin",
+  "yamamoto:nishi": "Nishi — Zanjitsu Gokui",
+  "yamamoto:higashi": "Higashi — Kyokujitsujin",
+  "yamamoto:kita": "Kita — Tenchi Kaijin",
 };
 
 // dano aumentado
@@ -1725,6 +1772,18 @@ const DAMAGE = {
   dangaiCounterSlash: 250,
   dangaiFightElsewhere: 400,
   getsugaFinal: 10000,
+  // Yamamoto Genryūsai
+  yamamotoM1: 170,
+  zankaM1: 200,
+  ennetsuColumn: 100,
+  ittoKaso: 300,
+  shunshin: 110,
+  hellsPierceImpale: 350,
+  hellsPierceBlast: 250,
+  zankaBlockBlast: 200,
+  minamiHit: 50,
+  higashi: 650,
+  kita: 6000,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -2582,6 +2641,8 @@ function applyDeterioration(target, player, perSecond, seconds) {
 // projetil (esfera de energia, onda crescente e fera guiada) consultam isso
 // antes de causar dano. Golpe corpo a corpo passa normal.
 function isRespiring(entity) {
+  // Nishi do Yamamoto: o fogo em volta dele queima o que vem voando
+  if (isNishiActive(entity)) return true;
   try {
     return (
       system.currentTick < readTickDeadline(entity, DP.respiraEnd, RESPIRA.durationTicks)
@@ -2592,6 +2653,20 @@ function isRespiring(entity) {
 }
 
 function showRespiraGuard(entity) {
+  if (isNishiActive(entity)) {
+    try {
+      const l = entity.location;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        entity.dimension.spawnParticle(i % 2 ? YAMAMOTO.infernalParticle : "yamamoto:chama", {
+          x: l.x + Math.cos(a) * 1.2,
+          y: l.y + 1.2,
+          z: l.z + Math.sin(a) * 1.2,
+        });
+      }
+    } catch (e) {}
+    return;
+  }
   try {
     const loc = entity.location;
     for (let i = 0; i < 8; i++) {
@@ -2831,6 +2906,7 @@ function deactivateCharacter(player) {
   if (character.id === "aizen" || character.id === "aizen_hogyoku") aizenCleanup(player.id);
   if (character.id === "aizen_hogyoku") resetHogyoku(player);
   if (character.id === "ichigo_dangai") dangaiCleanup(player, true);
+  if (character.id === "yamamoto") yamamotoCleanup(player.id);
 
   if (isMasked(player)) {
     try {
@@ -3282,6 +3358,11 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     // o contador de ticks reinicia com o mundo, entao todo cooldown/deadline
     // gravado numa sessao anterior tem que morrer aqui
     clearSessionTimers(player);
+    // saiu do mundo paralisado: o pulo volta
+    jumpLockUntil.delete(player.id);
+    try {
+      player.inputPermissions.setPermissionCategory(InputPermissionCategory.Jump, true);
+    } catch (e) {}
     const inv = getInv(player);
     forceGiveLockedItem(inv, SELECTOR_SLOT, SELECTOR_ITEM);
   } else {
@@ -3289,6 +3370,8 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     aizenCleanup(player.id);
     if (getActiveCharacter(player)?.id === "aizen_hogyoku") resetHogyoku(player);
     dangaiCleanup(player, false); // o Mugetsu continua contando depois da morte
+    yamamotoCleanup(player.id);
+    burns.delete(player.id);
     ukitakeAbsorb.delete(player.id);
     player.setDynamicProperty(UKITAKE_STORED, 0);
     // respawn depois de morrer: reaplica personagem se tinha um ativo
@@ -4015,6 +4098,30 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "dangai:lets_fight_somewhere_else":
       castFightSomewhereElse(player);
+      break;
+    case "yamamoto:ennetsu_jigoku":
+      castEnnetsuJigoku(player);
+      break;
+    case "yamamoto:itto_kaso":
+      castIttoKaso(player);
+      break;
+    case "yamamoto:shunshin":
+      castShunshin(player);
+      break;
+    case "yamamoto:hells_pierce":
+      castHellsPierce(player);
+      break;
+    case "yamamoto:minami":
+      castMinami(player);
+      break;
+    case "yamamoto:nishi":
+      castNishi(player);
+      break;
+    case "yamamoto:higashi":
+      castHigashi(player);
+      break;
+    case "yamamoto:kita":
+      castKita(player);
       break;
   }
 });
@@ -9886,12 +9993,44 @@ function ginParalyze(entity) {
   } catch (e) {}
 }
 
+// Travar o pulo. O jeito antigo era jump_boost 128, que o Bedrock lia como
+// "pulo negativo"; hoje o amplificador e lido sem sinal e 128 vira um pulo
+// altissimo. Agora o pulo do player e desligado pela permissao de input e volta
+// sozinho quando ninguem renova a trava (mob nao precisa: a lentidao segura).
+const jumpLockUntil = new Map(); // id do player -> tick em que o pulo volta
+
+function holdJump(entity, ticks) {
+  if (entity?.typeId !== "minecraft:player") return;
+  const until = system.currentTick + ticks;
+  jumpLockUntil.set(entity.id, Math.max(jumpLockUntil.get(entity.id) ?? 0, until));
+  try {
+    entity.inputPermissions.setPermissionCategory(InputPermissionCategory.Jump, false);
+  } catch (e) {}
+}
+
+function releaseJump(entity) {
+  if (!entity || !jumpLockUntil.has(entity.id)) return;
+  jumpLockUntil.delete(entity.id);
+  try {
+    entity.inputPermissions.setPermissionCategory(InputPermissionCategory.Jump, true);
+  } catch (e) {}
+}
+
+system.runInterval(() => {
+  if (!jumpLockUntil.size) return;
+  const now = system.currentTick;
+  for (const player of world.getPlayers()) {
+    const until = jumpLockUntil.get(player.id);
+    if (until !== undefined && now >= until) releaseJump(player);
+  }
+}, 2);
+
 function ginHoldParalysis(entity) {
   ginParalyzed.set(entity.id, system.currentTick + GIN_PARALYSIS_SAFETY_TICKS);
   try {
     entity.addEffect("slowness", 10, { amplifier: 255, showParticles: false });
-    entity.addEffect("jump_boost", 10, { amplifier: 128, showParticles: false });
   } catch (e) {}
+  holdJump(entity, 10);
 }
 
 function ginRelease(entity) {
@@ -9900,8 +10039,8 @@ function ginRelease(entity) {
   if (isFrozen(entity)) return;
   try {
     entity.removeEffect("slowness");
-    entity.removeEffect("jump_boost");
   } catch (e) {}
+  releaseJump(entity);
 }
 
 /* ---------- Extended Blade ---------- */
@@ -13079,7 +13218,7 @@ function juhakuFreezeLegs(entity, ledger) {
         return;
       }
       entity.addEffect("slowness", 10, { amplifier: 255, showParticles: false });
-      entity.addEffect("jump_boost", 10, { amplifier: 128, showParticles: false });
+      holdJump(entity, 10);
     } catch (e) {
       system.clearRun(interval);
     }
@@ -16088,7 +16227,9 @@ system.runInterval(() => {
   }
 }, 20);
 
-function cancelAttacksNear(player, dim, center, reach, maxTier) {
+function cancelAttacksNear(player, dim, center, reach, maxTier, look = {}) {
+  const label = look.label ?? "Getsuga";
+  const particles = look.particles ?? ["dangai:borda", "dangai:raio"];
   const now = system.currentTick;
   for (const attack of travellingAttacks) {
     if (attack.cancelled || !attack.pos || now - attack.seen > 2) continue;
@@ -16106,7 +16247,7 @@ function cancelAttacksNear(player, dim, center, reach, maxTier) {
     travellingAttacks.delete(attack);
     try {
       for (let i = 0; i < 8; i++) {
-        dim.spawnParticle(i % 2 ? "dangai:raio" : "dangai:borda", {
+        dim.spawnParticle(particles[i % 2], {
           x: attack.pos.x + (Math.random() - 0.5) * 1.6,
           y: attack.pos.y + (Math.random() - 0.5) * 1.6,
           z: attack.pos.z + (Math.random() - 0.5) * 1.6,
@@ -16116,7 +16257,7 @@ function cancelAttacksNear(player, dim, center, reach, maxTier) {
       dim.playSound("random.glass", attack.pos, { volume: 0.8, pitch: 1.4 });
     } catch (e) {}
     try {
-      attack.owner.sendMessage(`§7Seu ataque foi desfeito pelo Getsuga de §b${player.name}§7.`);
+      attack.owner.sendMessage(`§7Seu ataque foi desfeito pelo ${label} de §b${player.name}§7.`);
     } catch (e) {}
   }
 }
@@ -16305,6 +16446,7 @@ function fireCrescent(player, cfg, look, options = {}) {
     for (const entity of dim.getEntities({ location: c, maxDistance: cfg.radius + cfg.lateral + 2 })) {
       if (entity.id === player.id || hit.has(entity.id)) continue;
       if (!entity.getComponent("minecraft:health")) continue;
+      if (options.ignore?.(entity)) continue;
       const l = entity.location;
       const mid = { x: l.x - c.x, y: l.y + 1 - c.y, z: l.z - c.z };
       const along = mid.x * frame.dir.x + mid.y * frame.dir.y + mid.z * frame.dir.z;
@@ -16330,6 +16472,7 @@ function fireCrescent(player, cfg, look, options = {}) {
           breaksBlock: options.pierce === true,
         });
       } catch (e) {}
+      options.afterHit?.(entity);
     }
   };
 
@@ -16423,7 +16566,7 @@ function castArrogantsCounter(player) {
     }
     try {
       player.addEffect("slowness", 6, { amplifier: 255, showParticles: false });
-      player.addEffect("jump_boost", 6, { amplifier: 128, showParticles: false });
+      holdJump(player, 6);
       const l = player.location;
       const a = (system.currentTick % 20) * (Math.PI / 10);
       for (let i = 0; i < 3; i++) {
@@ -16440,7 +16583,7 @@ function endCounterStance(stance, reason) {
   try {
     if (!isFrozen(stance.player)) {
       stance.player.removeEffect("slowness");
-      stance.player.removeEffect("jump_boost");
+      releaseJump(stance.player);
     }
     if (reason === "tempo") stance.player.sendMessage("§7Ninguém caiu no Arrogant's Counter.");
   } catch (e) {}
@@ -16856,11 +16999,765 @@ function dangaiCleanupId(playerId) {
 }
 
 /* ---------------------------------------------------------
+   Yamamoto Genryūsai - Tier 7 (Shinigami)
+   Ryūjin Jakka e o Bankai Zanka no Tachi. Quase tudo queima: Queimadura
+   (70/s) e Queimadura Infernal (100/s, ignora redução de dano).
+   --------------------------------------------------------- */
+
+const YAMAMOTO = {
+  tag: "mv_yamamoto", // os mortos do Minami nao atacam quem tem essa tag
+  infernalParticle: "yamamoto:infernal", // fogo vermelho-escuro da Queimadura Infernal
+  burn: { perSecond: 70 },
+  infernal: { perSecond: 100 },
+  ennetsu: {
+    volleys: 3,
+    volleyGapTicks: 5,
+    angles: [-0.35, 0, 0.35], // leque do Tripleshot, em radianos
+    speed: 2,
+    range: 16,
+    height: 4.5,
+    hitRadius: 1.3,
+    burnSeconds: 3,
+  },
+  ittoKaso: { range: 40, markTicks: 60, radius: 9, height: 22, baseHalfWidth: 4, riseTicks: 8, burnSeconds: 6 },
+  shunshin: { distance: 20, ticks: 4, hitRadius: 1.8, burnSeconds: 3 },
+  hellsPierce: { reach: 5, blastDelayTicks: 8, blastRadius: 4.5, burnSeconds: 7 },
+  // passiva do Bankai: m1 num bloco explode um triangulo na frente
+  passive: { length: 9, halfWidth: 4, cooldownTicks: 20, growTicks: 4 },
+  bankaiInfernalSeconds: 2,
+  minami: {
+    entity: "yamamoto:morto",
+    count: 10,
+    ringRadius: 3,
+    lifetimeTicks: 600, // 30s, o mesmo do cooldown
+    hitCooldownTicks: 20,
+    reach: 1.9,
+  },
+  nishi: { durationTicks: 200, radius: 10, eraseRadius: 5 },
+  higashi: {
+    radius: 3,
+    bulge: 1.2,
+    thickness: 1.4,
+    lateral: 2.2,
+    speed: 5,
+    range: 35,
+    subSteps: 5,
+    startAhead: 1.5,
+    cancelsUpToTier: -1, // corte de fogo nao desfaz ataque (quem faz isso e o Nishi)
+    infernalSeconds: 8,
+  },
+  // Kita: parado, do tamanho do Mugetsu do Ichigo
+  kita: { radius: DANGAI.mugetsu.radius, height: 8, sweepTicks: 6, infernalSeconds: 20 },
+};
+
+function isYamamoto(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === "yamamoto";
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ---------- Queimadura e Queimadura Infernal ---------- */
+
+// id -> { entity, normal: { hits, source }, infernal: { hits, source } }
+// Conta golpes (um por segundo) em vez de prazo: "5 segundos de queimadura" da
+// exatamente 5 golpes, nao importa em que tick do loop ela comecou.
+const burns = new Map();
+
+function applyBurn(entity, source, seconds, infernal = false) {
+  if (!entity || seconds <= 0 || entity.typeId === AIZEN.cloneType) return;
+  if (isDownOrGone(entity)) return;
+  let state = burns.get(entity.id);
+  if (!state) {
+    state = { entity };
+    burns.set(entity.id, state);
+  }
+  const key = infernal ? "infernal" : "normal";
+  const current = state[key];
+  if (!current || current.hits < seconds) state[key] = { hits: seconds, source };
+}
+
+function isBurning(entity, infernal) {
+  const state = burns.get(entity?.id);
+  if (!state) return false;
+  return infernal === undefined ? !!(state.normal || state.infernal) : !!state[infernal ? "infernal" : "normal"];
+}
+
+system.runInterval(() => {
+  for (const [id, state] of burns) {
+    const entity = state.entity;
+    if (isDownOrGone(entity)) {
+      burns.delete(id);
+      continue;
+    }
+    for (const key of ["normal", "infernal"]) {
+      const burn = state[key];
+      if (!burn) continue;
+      burn.hits--;
+      const cfg = key === "infernal" ? YAMAMOTO.infernal : YAMAMOTO.burn;
+      let multiplier = 1;
+      try {
+        multiplier = dmgMultiplier(burn.source);
+      } catch (e) {}
+      // a Infernal ignora redução de dano (guarda, Hierro, resistências)
+      const options = { ignoresReduction: key === "infernal" };
+      try {
+        dealDamage(entity, cfg.perSecond * multiplier, burn.source, options);
+      } catch (e) {
+        // quem pos fogo saiu do mundo: o fogo continua queimando sem dono
+        try {
+          dealDamage(entity, cfg.perSecond, undefined, options);
+        } catch (e2) {}
+      }
+      if (burn.hits <= 0) delete state[key];
+    }
+    if (!state.normal && !state.infernal) burns.delete(id);
+  }
+}, 20);
+
+// fogo em quem esta queimando (vermelho escuro na Infernal)
+system.runInterval(() => {
+  for (const state of burns.values()) {
+    try {
+      const l = state.entity.location;
+      const particle = state.infernal ? YAMAMOTO.infernalParticle : "yamamoto:chama";
+      for (let i = 0; i < 2; i++) {
+        state.entity.dimension.spawnParticle(particle, {
+          x: l.x + (Math.random() - 0.5) * 0.8,
+          y: l.y + 0.2 + Math.random() * 1.6,
+          z: l.z + (Math.random() - 0.5) * 0.8,
+        });
+      }
+    } catch (e) {}
+  }
+}, 4);
+
+/* ---------- a tag que os mortos respeitam ---------- */
+
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    try {
+      const should = isYamamoto(player);
+      const has = player.hasTag(YAMAMOTO.tag);
+      if (should && !has) player.addTag(YAMAMOTO.tag);
+      else if (!should && has) player.removeTag(YAMAMOTO.tag);
+    } catch (e) {}
+  }
+}, 20);
+
+/* ---------- mortos do Minami ---------- */
+
+const yamamotoSummons = new Map(); // id do morto -> { entity, ownerId, until, lastHit }
+
+// os proprios mortos nao levam dano das skills de quem os invocou
+function isOwnSummon(player, entity) {
+  return yamamotoSummons.get(entity?.id)?.ownerId === player?.id;
+}
+
+// dano de fogo em area, pulando o dono e os mortos dele
+function yamamotoStrike(player, entity, damage, burnSeconds, infernal = false, options) {
+  if (!entity || entity.id === player.id || isOwnSummon(player, entity)) return false;
+  try {
+    if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) return false;
+  } catch (e) {
+    return false;
+  }
+  try {
+    dealDamage(entity, damage * dmgMultiplier(player), player, options);
+  } catch (e) {}
+  applyBurn(entity, player, burnSeconds, infernal);
+  return true;
+}
+
+function flameBurst(dim, at, count, spread, particle = "yamamoto:chama") {
+  try {
+    for (let i = 0; i < count; i++) {
+      dim.spawnParticle(particle, {
+        x: at.x + (Math.random() - 0.5) * spread,
+        y: at.y + Math.random() * spread * 0.8,
+        z: at.z + (Math.random() - 0.5) * spread,
+      });
+    }
+  } catch (e) {}
+}
+
+/* ---------- Ennetsu Jigoku ---------- */
+
+function castEnnetsuJigoku(player) {
+  if (!tryUseSkill(player, "yamamoto:ennetsu_jigoku")) return;
+  const cfg = YAMAMOTO.ennetsu;
+  world.sendMessage(`§6${player.name}: §c§lEnnetsu Jigoku`);
+  for (let v = 0; v < cfg.volleys; v++) {
+    system.runTimeout(() => {
+      if (isDownOrGone(player)) return;
+      try {
+        player.dimension.playSound("mob.blaze.shoot", player.location, { volume: 1.4, pitch: 0.7 + v * 0.1 });
+      } catch (e) {}
+      const f = forwardDirection(player);
+      const base = Math.atan2(f.z, f.x);
+      const origin = player.location;
+      for (const offset of cfg.angles) {
+        const a = base + offset;
+        launchFireColumn(player, origin, { x: Math.cos(a), z: Math.sin(a) }, cfg);
+      }
+    }, v * cfg.volleyGapTicks);
+  }
+}
+
+// uma coluna de fogo andando no chao (como uma linha do Tripleshot)
+function launchFireColumn(player, origin, dir, cfg) {
+  const dim = player.dimension;
+  const hit = new Set();
+  let travelled = 1.5;
+  const interval = system.runInterval(() => {
+    try {
+      const at = { x: origin.x + dir.x * travelled, y: origin.y, z: origin.z + dir.z * travelled };
+      for (let h = 0; h < cfg.height; h += 1) {
+        dim.spawnParticle(h % 2 ? "yamamoto:brasa" : "yamamoto:chama", {
+          x: at.x + (Math.random() - 0.5) * 0.6,
+          y: at.y + h,
+          z: at.z + (Math.random() - 0.5) * 0.6,
+        });
+      }
+      for (const entity of dim.getEntities({ location: at, maxDistance: cfg.hitRadius + cfg.height })) {
+        if (hit.has(entity.id)) continue;
+        const l = entity.location;
+        if (Math.hypot(l.x - at.x, l.z - at.z) > cfg.hitRadius) continue;
+        if (l.y < at.y - 1.5 || l.y > at.y + cfg.height) continue;
+        if (yamamotoStrike(player, entity, DAMAGE.ennetsuColumn, cfg.burnSeconds)) hit.add(entity.id);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    travelled += cfg.speed;
+    if (travelled > cfg.range) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Hadō #96: Ittō Kasō ---------- */
+
+function ittoKasoPoint(player, range) {
+  const target = targetInView(player, range);
+  if (target) return { ...target.location };
+  try {
+    const hit = player.getBlockFromViewDirection({ maxDistance: range });
+    if (hit?.block) {
+      const b = hit.block.location;
+      return { x: b.x + 0.5, y: b.y + 1, z: b.z + 0.5 };
+    }
+  } catch (e) {}
+  const l = player.location;
+  const f = forwardDirection(player);
+  return { x: l.x + f.x * 20, y: l.y, z: l.z + f.z * 20 };
+}
+
+function castIttoKaso(player) {
+  if (!tryUseSkill(player, "yamamoto:itto_kaso")) return;
+  const cfg = YAMAMOTO.ittoKaso;
+  const dim = player.dimension;
+  const center = ittoKasoPoint(player, cfg.range);
+  const f = forwardDirection(player);
+  const side = { x: -f.z, z: f.x }; // a lamina fica de frente pra quem lancou
+  world.sendMessage(`§6${player.name} usou §c§lHadō #96: Ittō Kasō§r§6!`);
+  try {
+    dim.playSound("fire.ignite", center, { volume: 2, pitch: 0.5 });
+  } catch (e) {}
+
+  // 3s marcando a area
+  let tick = 0;
+  const mark = system.runInterval(() => {
+    tick += 5;
+    try {
+      const n = 16;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + tick * 0.05;
+        dim.spawnParticle("yamamoto:lamina", {
+          x: center.x + Math.cos(a) * cfg.radius * 0.6,
+          y: center.y + 0.15,
+          z: center.z + Math.sin(a) * cfg.radius * 0.6,
+        });
+      }
+      if (tick % 20 === 0) dim.playSound("fire.fire", center, { volume: 2, pitch: 0.6 });
+    } catch (e) {}
+    if (tick >= cfg.markTicks) {
+      system.clearRun(mark);
+      eruptIttoKaso(player, dim, center, side, cfg);
+    }
+  }, 5);
+}
+
+// a ponta de uma katana gigante subindo do chao, feita de fogo vermelho
+function eruptIttoKaso(player, dim, center, side, cfg) {
+  try {
+    dim.playSound("random.explode", center, { volume: 3, pitch: 0.5 });
+    dim.playSound("mob.ghast.fireball", center, { volume: 2, pitch: 0.5 });
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      dim.spawnParticle(i % 3 === 0 ? "minecraft:large_explosion" : "yamamoto:chama", {
+        x: center.x + Math.cos(a) * cfg.radius * 0.5,
+        y: center.y + 0.5,
+        z: center.z + Math.sin(a) * cfg.radius * 0.5,
+      });
+    }
+  } catch (e) {}
+  for (const entity of dim.getEntities({ location: center, maxDistance: cfg.radius + cfg.height })) {
+    const l = entity.location;
+    if (Math.hypot(l.x - center.x, l.z - center.z) > cfg.radius) continue;
+    if (l.y < center.y - 2 || l.y > center.y + cfg.height) continue;
+    yamamotoStrike(player, entity, DAMAGE.ittoKaso, cfg.burnSeconds);
+  }
+  let k = 0;
+  const rise = system.runInterval(() => {
+    k++;
+    try {
+      const top = (cfg.height * k) / cfg.riseTicks;
+      const from = (cfg.height * (k - 1)) / cfg.riseTicks;
+      for (let y = from; y < top; y += 0.9) {
+        const t = y / cfg.height;
+        // o fio curva de leve pro lado, como o kissaki de uma katana
+        const half = cfg.baseHalfWidth * Math.pow(1 - t, 1.4);
+        const lean = cfg.baseHalfWidth * 0.5 * t * t;
+        for (const u of [-half, -half * 0.3, half * 0.3, half]) {
+          dim.spawnParticle(Math.abs(u) === half ? "yamamoto:lamina" : "yamamoto:chama", {
+            x: center.x + side.x * (u + lean),
+            y: center.y + y,
+            z: center.z + side.z * (u + lean),
+          });
+        }
+      }
+    } catch (e) {}
+    if (k >= cfg.riseTicks) system.clearRun(rise);
+  }, 1);
+}
+
+/* ---------- Shunshin ---------- */
+
+function castShunshin(player) {
+  if (!tryUseSkill(player, "yamamoto:shunshin")) return;
+  const cfg = YAMAMOTO.shunshin;
+  const dim = player.dimension;
+  const f = forwardDirection(player);
+  const perTick = cfg.distance / cfg.ticks;
+  const hit = new Set();
+  const cache = new Map();
+  let done = 0;
+  world.sendMessage(`§6${player.name}: §c§lShunshin`);
+  try {
+    dim.playSound("item.trident.riptide_1", player.location, { volume: 1.5, pitch: 1.4 });
+  } catch (e) {}
+  const interval = system.runInterval(() => {
+    try {
+      if (isDownOrGone(player)) {
+        system.clearRun(interval);
+        return;
+      }
+      const start = player.location;
+      let reached = start;
+      // anda em passos de 1 bloco: para no primeiro bloco solido
+      for (let s = 1; s <= Math.ceil(perTick); s++) {
+        const step = Math.min(s, perTick);
+        const next = { x: start.x + f.x * step, y: start.y, z: start.z + f.z * step };
+        if (dangaiBodyBlocked(dim, cache, next)) {
+          done = cfg.distance;
+          break;
+        }
+        reached = next;
+        dim.spawnParticle(s % 2 ? "yamamoto:chama" : "yamamoto:brasa", { x: next.x, y: next.y + 1, z: next.z });
+        for (const entity of dim.getEntities({ location: { x: next.x, y: next.y + 1, z: next.z }, maxDistance: cfg.hitRadius })) {
+          if (hit.has(entity.id)) continue;
+          if (yamamotoStrike(player, entity, DAMAGE.shunshin, cfg.burnSeconds)) hit.add(entity.id);
+        }
+      }
+      player.teleport(reached, { keepVelocity: false });
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    done += perTick;
+    if (done >= cfg.distance) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- Hell's Pierce ---------- */
+
+function castHellsPierce(player) {
+  const cfg = YAMAMOTO.hellsPierce;
+  const target =
+    targetInView(player, cfg.reach) ??
+    (() => {
+      const near = nearestTarget(player, cfg.reach - 1);
+      if (!near || isOwnSummon(player, near)) return undefined;
+      return near;
+    })();
+  if (!target || isOwnSummon(player, target)) {
+    player.sendMessage("§7Não tem ninguém na frente pra empalar.");
+    return;
+  }
+  if (!tryUseSkill(player, "yamamoto:hells_pierce")) return;
+  const dim = player.dimension;
+  world.sendMessage(`§6${player.name}: §4§lHell's Pierce`);
+  try {
+    const from = player.location;
+    const to = target.location;
+    const d = unitVector({ x: to.x - from.x, y: 0, z: to.z - from.z });
+    // a lamina atravessa o alvo e sai 2 blocos do outro lado
+    const length = Math.hypot(to.x - from.x, to.z - from.z) + 2;
+    for (let s = 0.6; s <= length; s += 0.35) {
+      dim.spawnParticle(s > length - 2.4 ? "yamamoto:lamina" : "yamamoto:chama", {
+        x: from.x + d.x * s,
+        y: from.y + 1.2,
+        z: from.z + d.z * s,
+      });
+    }
+    dim.playSound("item.trident.throw", to, { volume: 1.4, pitch: 0.6 });
+  } catch (e) {}
+  yamamotoStrike(player, target, DAMAGE.hellsPierceImpale, cfg.burnSeconds);
+  system.runTimeout(() => {
+    let at;
+    try {
+      at = target.location;
+    } catch (e) {
+      return;
+    }
+    try {
+      dim.playSound("random.explode", at, { volume: 2, pitch: 0.7 });
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const r = cfg.blastRadius * (0.3 + Math.random() * 0.7);
+        dim.spawnParticle(i % 3 === 0 ? "minecraft:large_explosion" : "yamamoto:chama", {
+          x: at.x + Math.cos(a) * r,
+          y: at.y + 0.4 + Math.random() * 1.6,
+          z: at.z + Math.sin(a) * r,
+        });
+      }
+    } catch (e) {}
+    // quem foi empalado ja levou os 350: a explosao pega os outros
+    for (const entity of dim.getEntities({ location: at, maxDistance: cfg.blastRadius })) {
+      if (entity.id === target.id) continue;
+      yamamotoStrike(player, entity, DAMAGE.hellsPierceBlast, cfg.burnSeconds);
+    }
+  }, cfg.blastDelayTicks);
+}
+
+/* ---------- Bankai: passiva do m1 num bloco ---------- */
+
+const yamamotoPassiveTick = new Map();
+
+function yamamotoBlockBlast(player) {
+  const cfg = YAMAMOTO.passive;
+  const now = system.currentTick;
+  if (now - (yamamotoPassiveTick.get(player.id) ?? -1000) < cfg.cooldownTicks) return;
+  yamamotoPassiveTick.set(player.id, now);
+  const dim = player.dimension;
+  const o = player.location;
+  const f = forwardDirection(player);
+  const r = { x: -f.z, z: f.x };
+  const hit = new Set();
+  let k = 0;
+  try {
+    dim.playSound("random.explode", o, { volume: 1.2, pitch: 1.1 });
+  } catch (e) {}
+  const interval = system.runInterval(() => {
+    k++;
+    const front = (cfg.length * k) / cfg.growTicks;
+    const back = (cfg.length * (k - 1)) / cfg.growTicks;
+    try {
+      // explosoes abrindo em triangulo (como o Dragon's Breath do Hitsugaya)
+      for (let a = Math.max(1.5, back); a <= front; a += 1.5) {
+        const w = (cfg.halfWidth * a) / cfg.length;
+        for (const b of [-w, 0, w]) {
+          const p = { x: o.x + f.x * a + r.x * b, y: o.y + 0.6, z: o.z + f.z * a + r.z * b };
+          dim.spawnParticle(b === 0 ? "minecraft:large_explosion" : "yamamoto:chama", p);
+          dim.spawnParticle("yamamoto:brasa", { x: p.x, y: p.y + 0.8, z: p.z });
+        }
+      }
+      for (const entity of dim.getEntities({ location: o, maxDistance: front + 2 })) {
+        if (hit.has(entity.id)) continue;
+        const l = entity.location;
+        const dx = l.x - o.x;
+        const dz = l.z - o.z;
+        const a = dx * f.x + dz * f.z;
+        const b = dx * r.x + dz * r.z;
+        if (a < 0 || a > front) continue;
+        if (Math.abs(b) > (cfg.halfWidth * Math.max(a, 1)) / cfg.length + 0.8) continue;
+        if (Math.abs(l.y - o.y) > 4) continue;
+        if (yamamotoStrike(player, entity, DAMAGE.zankaBlockBlast, 0)) hit.add(entity.id);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (k >= cfg.growTicks) system.clearRun(interval);
+  }, 1);
+}
+
+world.afterEvents.entityHitBlock.subscribe((ev) => {
+  const player = ev.damagingEntity;
+  if (!isYamamoto(player) || !isAwakened(player)) return;
+  try {
+    const held = player.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Mainhand);
+    if (held?.typeId !== "yamamoto:m1_zanka_no_tachi") return;
+  } catch (e) {
+    return;
+  }
+  yamamotoBlockBlast(player);
+});
+
+/* ---------- Minami: Kaka Jūmanokushi Daisōjin ---------- */
+
+function castMinami(player) {
+  if (!tryUseSkill(player, "yamamoto:minami")) return;
+  const cfg = YAMAMOTO.minami;
+  const dim = player.dimension;
+  const o = player.location;
+  world.sendMessage(`§6${player.name}: §c§lMinami — Kaka Jūmanokushi Daisōjin`);
+  try {
+    dim.playSound("mob.wither.spawn", o, { volume: 1.6, pitch: 0.7 });
+  } catch (e) {}
+  for (let i = 0; i < cfg.count; i++) {
+    const a = (i / cfg.count) * Math.PI * 2;
+    const spot = { x: o.x + Math.cos(a) * cfg.ringRadius, y: o.y, z: o.z + Math.sin(a) * cfg.ringRadius };
+    try {
+      const dead = dim.spawnEntity(cfg.entity, spot);
+      dead.nameTag = "§6Morto Incinerado";
+      yamamotoSummons.set(dead.id, {
+        entity: dead,
+        ownerId: player.id,
+        until: system.currentTick + cfg.lifetimeTicks,
+        lastHit: -1000,
+      });
+      flameBurst(dim, spot, 6, 1.2);
+    } catch (e) {}
+  }
+}
+
+function removeSummon(id, summon) {
+  yamamotoSummons.delete(id);
+  try {
+    flameBurst(summon.entity.dimension, summon.entity.location, 5, 1);
+    summon.entity.remove();
+  } catch (e) {}
+}
+
+// o morto some no fim do tempo, e quando o Bankai do dono acaba
+function removeSummonsOf(ownerId) {
+  for (const [id, summon] of yamamotoSummons) {
+    if (summon.ownerId === ownerId) removeSummon(id, summon);
+  }
+}
+
+// trilha de fogo + golpe de 50 (o ataque vanilla do esqueleto nao da dano)
+system.runInterval(() => {
+  const now = system.currentTick;
+  const cfg = YAMAMOTO.minami;
+  for (const [id, summon] of yamamotoSummons) {
+    const dead = summon.entity;
+    let owner;
+    try {
+      if (!dead.isValid || isDownOrGone(dead)) {
+        yamamotoSummons.delete(id);
+        continue;
+      }
+      owner = world.getPlayers().find((p) => p.id === summon.ownerId);
+    } catch (e) {
+      yamamotoSummons.delete(id);
+      continue;
+    }
+    if (now >= summon.until || !owner || !isYamamoto(owner) || !isAwakened(owner)) {
+      removeSummon(id, summon);
+      continue;
+    }
+    try {
+      const l = dead.location;
+      dead.dimension.spawnParticle("yamamoto:chama", { x: l.x + (Math.random() - 0.5) * 0.4, y: l.y + 0.1, z: l.z + (Math.random() - 0.5) * 0.4 });
+      dead.dimension.spawnParticle("yamamoto:brasa", { x: l.x, y: l.y + 1 + Math.random(), z: l.z });
+      if (now - summon.lastHit < cfg.hitCooldownTicks) continue;
+      let victim;
+      let best = cfg.reach;
+      for (const player of dead.dimension.getPlayers({ location: l, maxDistance: cfg.reach + 1 })) {
+        if (isYamamoto(player) || isDownOrGone(player)) continue;
+        const d = Math.hypot(player.location.x - l.x, player.location.z - l.z);
+        if (d <= best && Math.abs(player.location.y - l.y) < 2) {
+          best = d;
+          victim = player;
+        }
+      }
+      if (!victim) continue;
+      summon.lastHit = now;
+      dealDamage(victim, DAMAGE.minamiHit, dead);
+    } catch (e) {}
+  }
+}, 5);
+
+/* ---------- Nishi: Zanjitsu Gokui ---------- */
+
+const yamamotoNishi = new Map(); // id -> tick em que acaba
+
+function isNishiActive(entity) {
+  return (yamamotoNishi.get(entity?.id) ?? 0) > system.currentTick;
+}
+
+function castNishi(player) {
+  if (!tryUseSkill(player, "yamamoto:nishi")) return;
+  const cfg = YAMAMOTO.nishi;
+  yamamotoNishi.set(player.id, system.currentTick + cfg.durationTicks);
+  world.sendMessage(`§6${player.name}: §c§lNishi — Zanjitsu Gokui`);
+  try {
+    player.dimension.playSound("mob.blaze.breathe", player.location, { volume: 2, pitch: 0.5 });
+  } catch (e) {}
+}
+
+system.runInterval(() => {
+  const now = system.currentTick;
+  const cfg = YAMAMOTO.nishi;
+  for (const [id, until] of yamamotoNishi) {
+    const player = world.getPlayers().find((p) => p.id === id);
+    if (!player || now >= until || !isYamamoto(player) || !isAwakened(player) || isDownOrGone(player)) {
+      yamamotoNishi.delete(id);
+      continue;
+    }
+    try {
+      const dim = player.dimension;
+      const l = player.location;
+      // o corpo envolto em fogo
+      for (let i = 0; i < 6; i++) {
+        const a = Math.random() * Math.PI * 2;
+        dim.spawnParticle(i % 2 ? "yamamoto:chama" : YAMAMOTO.infernalParticle, {
+          x: l.x + Math.cos(a) * 0.8,
+          y: l.y + Math.random() * 2.2,
+          z: l.z + Math.sin(a) * 0.8,
+        });
+      }
+      // como a Respira: o que vem voando e queimado antes de chegar
+      cancelAttacksNear(player, dim, { x: l.x, y: l.y + 1, z: l.z }, cfg.eraseRadius, 99, {
+        label: "Zanjitsu Gokui",
+        particles: ["yamamoto:chama", YAMAMOTO.infernalParticle],
+      });
+      // quem esta a 10 blocos queima (Infernal) enquanto ficar ali
+      if (now % 20 === 0) {
+        for (const entity of dim.getEntities({ location: l, maxDistance: cfg.radius })) {
+          if (entity.id === player.id || isOwnSummon(player, entity)) continue;
+          if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+          applyBurn(entity, player, 1, true);
+        }
+      }
+    } catch (e) {}
+  }
+}, 2);
+
+/* ---------- Higashi: Kyokujitsujin ---------- */
+
+CRESCENT_LOOKS.fogo = {
+  coreParticle: "yamamoto:chama",
+  edgeParticle: "yamamoto:lamina",
+  boltParticle: "yamamoto:brasa",
+  points: 15,
+  litePoints: 7,
+  bolts: 2,
+  boltSegments: 3,
+  boltStep: 0.5,
+};
+
+function castHigashi(player) {
+  if (!tryUseSkill(player, "yamamoto:higashi")) return;
+  const cfg = YAMAMOTO.higashi;
+  world.sendMessage(`§6${player.name}: §c§lHigashi — Kyokujitsujin`);
+  try {
+    player.dimension.playSound("mob.ghast.fireball", player.location, { volume: 2, pitch: 0.6 });
+    player.dimension.playSound("item.trident.riptide_1", player.location, { volume: 1, pitch: 1.6 });
+  } catch (e) {}
+  fireCrescent(player, cfg, CRESCENT_LOOKS.fogo, {
+    damage: DAMAGE.higashi,
+    ignore: (entity) => isOwnSummon(player, entity),
+    afterHit: (entity) => applyBurn(entity, player, cfg.infernalSeconds, true),
+  });
+}
+
+/* ---------- Kita: Tenchi Kaijin ---------- */
+
+function castKita(player) {
+  if (!tryUseSkill(player, "yamamoto:kita")) return;
+  const cfg = YAMAMOTO.kita;
+  const dim = player.dimension;
+  const o = player.location;
+  const f = forwardDirection(player);
+  const r = { x: -f.z, z: f.x };
+  const hit = new Set();
+  world.sendMessage(`§6§l${player.name}: §4§lKita — Tenchi Kaijin!`);
+  try {
+    dim.playSound("mob.warden.sonic_boom", o, { volume: 2, pitch: 0.4 });
+    dim.playSound("mob.ghast.fireball", o, { volume: 2, pitch: 0.3 });
+  } catch (e) {}
+  // o Bankai acaba na hora; o corte termina sozinho
+  player.setDynamicProperty(DP.awakening, 0);
+  revertAwakening(player, "kita");
+  let k = 0;
+  const interval = system.runInterval(() => {
+    k++;
+    // o corte varre meio circulo na frente, de um lado ao outro
+    const fromAngle = -Math.PI / 2 + (Math.PI * (k - 1)) / cfg.sweepTicks;
+    const toAngle = -Math.PI / 2 + (Math.PI * k) / cfg.sweepTicks;
+    try {
+      for (let a = fromAngle; a <= toAngle + 1e-6; a += Math.PI / 30) {
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        for (let rad = 3; rad <= cfg.radius; rad += 1.6) {
+          dim.spawnParticle(rad >= cfg.radius - 1.6 ? "yamamoto:lamina" : "yamamoto:chama", {
+            x: o.x + (f.x * c + r.x * s) * rad,
+            y: o.y + 1.2 + Math.sin(rad) * 0.4,
+            z: o.z + (f.z * c + r.z * s) * rad,
+          });
+        }
+      }
+      for (const entity of dim.getEntities({ location: o, maxDistance: cfg.radius + 1 })) {
+        if (hit.has(entity.id)) continue;
+        const l = entity.location;
+        const dx = l.x - o.x;
+        const dz = l.z - o.z;
+        const along = dx * f.x + dz * f.z;
+        const across = dx * r.x + dz * r.z;
+        if (along < 0 || Math.hypot(dx, dz) > cfg.radius + 0.6 || Math.abs(l.y - o.y) > cfg.height) continue;
+        const angle = Math.atan2(across, along);
+        if (angle > toAngle + 0.05) continue; // o corte ainda nao chegou ali
+        if (yamamotoStrike(player, entity, DAMAGE.kita, cfg.infernalSeconds, true)) hit.add(entity.id);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (k >= cfg.sweepTicks) system.clearRun(interval);
+  }, 1);
+}
+
+/* ---------- limpeza ---------- */
+
+function yamamotoCleanup(playerId) {
+  removeSummonsOf(playerId);
+  yamamotoNishi.delete(playerId);
+  yamamotoPassiveTick.delete(playerId);
+}
+
+/* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
 // registro generico de armas m1 - facilita adicionar novos personagens
 const MELEE_WEAPONS = {
+  // Ryūjin Jakka: Queimadura de 5s; no Bankai, Queimadura Infernal de 2s
+  "yamamoto:m1_ryujin_jakka": {
+    baseDamage: DAMAGE.yamamotoM1,
+    particle: "yamamoto:chama",
+    dot: null,
+    burn: { seconds: 5, infernal: false },
+  },
+  "yamamoto:m1_zanka_no_tachi": {
+    baseDamage: DAMAGE.zankaM1,
+    particle: "yamamoto:brasa",
+    dot: null,
+    burn: { seconds: 2, infernal: true },
+  },
   "dangai:m1_zangetsu": {
     baseDamage: DAMAGE.dangaiM1,
     particle: "dangai:getsuga",
@@ -17198,6 +18095,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       if (weapon.dot) {
         applyDot(hitEntity, damagingEntity, weapon.dot.perSecond, weapon.dot.seconds);
       }
+      if (weapon.burn) applyBurn(hitEntity, damagingEntity, weapon.burn.seconds, weapon.burn.infernal);
       // m1 com estouro (o Zangetsu do Vasto Lorde)
       if (weapon.blast) {
         try {
@@ -17559,7 +18457,7 @@ system.runInterval(()=>{
       try{
         dealDamage(player, 20, player);
         player.addEffect("slowness",40,{amplifier:255,showParticles:false});
-        player.addEffect("jump_boost",40,{amplifier:128,showParticles:false});
+        holdJump(player,40);
         const x=player.getDynamicProperty(DP.mayuriParalysisX),y=player.getDynamicProperty(DP.mayuriParalysisY),z=player.getDynamicProperty(DP.mayuriParalysisZ);
         if([x,y,z].every(v=>typeof v==="number")) player.teleport({x,y,z},{keepVelocity:false});
       }catch(e){}
@@ -17909,6 +18807,9 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   tosenOldHelmet.delete(playerId);
   aizenCleanup(playerId);
   dangaiCleanupId(playerId);
+  jumpLockUntil.delete(playerId);
+  yamamotoCleanup(playerId);
+  burns.delete(playerId);
 });
 
 
@@ -17938,4 +18839,5 @@ export {
   AIZEN,
   HOGYOKU,
   DANGAI,
+  YAMAMOTO,
 };

@@ -3091,31 +3091,6 @@ TEXTURES = {
             "................",
         ],
     },
-    # Daiguren Hyorinmaru: o peitoral (invisivel no corpo) que carrega as asas
-    "items/hitsugaya_daiguren_chest": {
-        "palette": {
-            "#": (82, 140, 204, 255),
-            "=": (206, 238, 252, 255),
-        },
-        "grid": [
-            "................",
-            ".#............#.",
-            ".##..........##.",
-            "#=##........##=#",
-            "#==##......##==#",
-            "#=#=##....##=#=#",
-            "#==#=##..##=#==#",
-            ".#=#==#..#==#=#.",
-            ".#==#=#..#=#==#.",
-            "..#=#=#..#=#=#..",
-            "..#==#....#==#..",
-            "...#=#....#=#...",
-            "...#=#....#=#...",
-            "....#......#....",
-            "................",
-            "................",
-        ],
-    },
     # ------------------------------------------------------------------
     # Sousuke Aizen (Captain's Fight)
     # ------------------------------------------------------------------
@@ -3557,11 +3532,6 @@ from aizen_clone_model import TEXTURE_SPEC as _AIZEN_CLONE_TEXTURE  # noqa: E402
 
 TEXTURES["entity/aizen_clone"] = _AIZEN_CLONE_TEXTURE
 
-# asas, cauda e braco de gelo da Daiguren Hyorinmaru (tools/daiguren_model.py)
-from daiguren_model import TEXTURE_SPEC as _DAIGUREN_TEXTURE  # noqa: E402
-
-TEXTURES["entity/daiguren"] = _DAIGUREN_TEXTURE
-
 # roupa do Mugetsu (cabelo, faixas e hakama) do Ichigo Dangai (tools/mugetsu_model.py)
 from mugetsu_model import TEXTURE_SPEC as _MUGETSU_TEXTURE  # noqa: E402
 
@@ -3812,6 +3782,235 @@ TEXTURES.update({
             ".rRkkRr.",
             "..rRRr..",
             "...rr...",
+        ],
+    },
+})
+
+# ---------------------------------------------------------------------------
+# Yamamoto Genryūsai: icones desenhados por funcao (grade 16x16) e fogo
+# ---------------------------------------------------------------------------
+_FOGO = {
+    "Y": (255, 226, 96, 255),
+    "F": (255, 142, 34, 255),
+    "R": (206, 42, 22, 255),
+    "D": (110, 16, 10, 255),
+    "k": (34, 24, 22, 255),
+    "#": (206, 206, 214, 255),
+    "%": (120, 120, 134, 255),
+    "g": (206, 160, 60, 255),
+    "h": (72, 50, 40, 255),
+    "w": (236, 232, 222, 255),
+    "s": (160, 154, 144, 255),
+}
+
+
+def _draw(fn, size=16):
+    """grade a partir de fn(x, y) -> caractere ('.' e transparente)"""
+    return ["".join(fn(x, y) or "." for x in range(size)) for y in range(size)]
+
+
+def _katana(x, y, flames):
+    d = x + y  # a lamina corre na diagonal de baixo-esquerda pra cima-direita
+    if y <= 10 and d == 15:
+        return "#"
+    if y <= 10 and d == 16:
+        return "%"
+    if flames and y <= 9 and d in (13, 14) and (x + 2 * y) % 3 == 0:
+        return "F" if y % 2 else "Y"
+    if (x, y) in ((4, 11), (3, 11), (5, 10), (3, 12), (4, 12), (2, 11)):
+        return "g"
+    if d == 15 and y > 11:
+        return "h"
+    return None
+
+
+def _zanka(x, y):
+    d = x + y
+    if y <= 10 and d == 15:
+        return "k"
+    if y <= 10 and d == 16:
+        return "R"
+    if y <= 9 and d == 13 and y % 3 == 0:
+        return "F"  # brasa saindo da lamina queimada
+    if (x, y) in ((4, 11), (3, 11), (5, 10), (3, 12), (4, 12), (2, 11)):
+        return "D"
+    if d == 15 and y > 11:
+        return "h"
+    return None
+
+
+def _pillars(x, y):
+    for cx in (3, 8, 13):
+        w = 1 if y < 6 else 2
+        if abs(x - cx) < w and y >= 2 + (cx % 3):
+            return "Y" if y < 7 else "F" if y < 12 else "R"
+    return None
+
+
+def _kissaki(x, y):
+    if y == 15:
+        return "D"
+    half = (y - 1) * 0.45  # ponta no alto, larga embaixo
+    lean = (15 - y) * 0.12
+    u = x - 7.5 - lean
+    if y >= 1 and abs(u) <= half:
+        if abs(u) >= half - 0.8:
+            return "R"
+        return "Y" if abs(u) < half * 0.35 else "F"
+    return None
+
+
+def _shunshin(x, y):
+    if x + (15 - y) == 15 and 2 <= x <= 13:
+        return "Y"
+    if abs(x + (15 - y) - 15) == 1 and 3 <= x <= 12:
+        return "F"
+    if y in (4, 9, 12) and x < 6 + (y % 3):
+        return "R"
+    return None
+
+
+def _pierce(x, y):
+    dx, dy = x - 11, y - 8
+    if dx * dx + dy * dy <= 9:
+        return "Y" if dx * dx + dy * dy <= 2 else "F"
+    if dx * dx + dy * dy <= 16 and (x + y) % 2 == 0:
+        return "R"
+    if y == 8 and x <= 15:
+        return "#" if x < 7 else "Y"
+    if y in (7, 9) and x < 3:
+        return "h"
+    return None
+
+
+def _minami(x, y):
+    # caveira com fogo em cima
+    if y < 5:
+        return ("Y" if (x + y) % 2 else "F") if 5 <= x <= 10 and y >= 1 + abs(x - 7.5) // 2 else None
+    if 5 <= y <= 11 and 4 <= x <= 11:
+        if y in (7, 8) and x in (5, 6, 9, 10):
+            return "k"
+        if y == 10 and x in (6, 8, 10):
+            return "k"
+        return "w" if y < 10 else "s"
+    if y in (12, 13) and 5 <= x <= 10 and x % 2 == 1:
+        return "s"
+    return None
+
+
+def _nishi(x, y):
+    dx, dy = x - 7.5, y - 7.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if r <= 3.2:
+        return "k"
+    if r <= 5.2:
+        return "D" if (x + y) % 3 == 0 else "R"
+    if r <= 7.4:
+        return "F" if (x * 3 + y) % 4 else "Y"
+    return None
+
+
+def _higashi(x, y):
+    dx, dy = x - 3, y - 7.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if 9.5 <= r <= 11.5 and x >= 6:
+        return "Y" if r < 10.3 else "F"
+    if 8.3 <= r < 9.5 and x >= 6:
+        return "R"
+    return None
+
+
+def _kita(x, y):
+    dx, dy = x - 7.5, y - 13
+    r = (dx * dx + dy * dy) ** 0.5
+    if y > 13:
+        return "D" if y == 14 else None
+    if 10.5 <= r <= 12.5:
+        return "Y" if r < 11.3 else "R"
+    if 7.5 <= r < 10.5 and (x + y) % 2 == 0:
+        return "F"
+    return None
+
+
+TEXTURES.update({
+    "items/yamamoto_m1_ryujin_jakka": {"palette": _FOGO, "grid": _draw(lambda x, y: _katana(x, y, True))},
+    "items/yamamoto_m1_zanka_no_tachi": {"palette": _FOGO, "grid": _draw(_zanka)},
+    "items/yamamoto_ennetsu_jigoku": {"palette": _FOGO, "grid": _draw(_pillars)},
+    "items/yamamoto_itto_kaso": {"palette": _FOGO, "grid": _draw(_kissaki)},
+    "items/yamamoto_shunshin": {"palette": _FOGO, "grid": _draw(_shunshin)},
+    "items/yamamoto_hells_pierce": {"palette": _FOGO, "grid": _draw(_pierce)},
+    "items/yamamoto_minami": {"palette": _FOGO, "grid": _draw(_minami)},
+    "items/yamamoto_nishi": {"palette": _FOGO, "grid": _draw(_nishi)},
+    "items/yamamoto_higashi": {"palette": _FOGO, "grid": _draw(_higashi)},
+    "items/yamamoto_kita": {"palette": _FOGO, "grid": _draw(_kita)},
+    # chama: labareda laranja com miolo amarelo
+    "particle/yamamoto_chama": {
+        "palette": {
+            "r": (220, 60, 20, 150),
+            "F": (255, 142, 34, 230),
+            "Y": (255, 226, 96, 255),
+        },
+        "grid": [
+            "...r....",
+            "...rr...",
+            "..rFr...",
+            "..rFFr..",
+            ".rFYFr..",
+            ".rFYYFr.",
+            ".rFYYFr.",
+            "..rFFr..",
+        ],
+    },
+    "particle/yamamoto_brasa": {
+        "palette": {
+            "F": (255, 142, 34, 220),
+            "Y": (255, 236, 150, 255),
+        },
+        "grid": [
+            "........",
+            "........",
+            "...FF...",
+            "..FYYF..",
+            "..FYYF..",
+            "...FF...",
+            "........",
+            "........",
+        ],
+    },
+    # o fogo vermelho forte (lamina do Ittō Kasō, fio dos cortes)
+    "particle/yamamoto_lamina": {
+        "palette": {
+            "d": (150, 20, 12, 150),
+            "R": (230, 44, 24, 235),
+            "O": (255, 120, 60, 255),
+        },
+        "grid": [
+            "..dddd..",
+            ".dRRRRd.",
+            "dRROORRd",
+            "dROOOORd",
+            "dROOOORd",
+            "dRROORRd",
+            ".dRRRRd.",
+            "..dddd..",
+        ],
+    },
+    # Queimadura Infernal: vermelho escuro com miolo preto
+    "particle/yamamoto_infernal": {
+        "palette": {
+            "r": (120, 12, 8, 160),
+            "R": (190, 24, 14, 235),
+            "k": (30, 6, 4, 255),
+        },
+        "grid": [
+            "...r....",
+            "...rr...",
+            "..rRr...",
+            "..rRRr..",
+            ".rRkRr..",
+            ".rRkkRr.",
+            ".rRkkRr.",
+            "..rRRr..",
         ],
     },
 })

@@ -369,6 +369,7 @@ export class Entity {
     this.nameTag = this.name;
     this.dimension = dimension ?? overworld;
     this._location = { ...location };
+    this._tags = new Set();
     this.isSneaking = false;
     this.isSprinting = false;
     this.isOnGround = true;
@@ -473,6 +474,25 @@ export class Entity {
     this.dimension._entities.delete(this);
   }
 
+  addTag(tag) {
+    this._assertValid();
+    if (this._tags.has(tag)) return false;
+    this._tags.add(tag);
+    return true;
+  }
+  removeTag(tag) {
+    this._assertValid();
+    return this._tags.delete(tag);
+  }
+  hasTag(tag) {
+    this._assertValid();
+    return this._tags.has(tag);
+  }
+  getTags() {
+    this._assertValid();
+    return [...this._tags];
+  }
+
   addEffect(effectType, duration, options = {}) {
     this._assertValid();
     if (typeof effectType !== "string") throw new Error("addEffect precisa de um id de efeito");
@@ -482,6 +502,11 @@ export class Entity {
       throw new Error(
         `amplifier fora do range do Bedrock (0-255): ${effectType} amplifier ${amplifier}`
       );
+    }
+    // jump_boost 128 ja foi o truque de "travar o pulo"; o Bedrock atual le o
+    // amplificador sem sinal e o player sai voando. Trava de pulo e holdJump.
+    if (effectType === "jump_boost" && amplifier > 10) {
+      throw new Error(`jump_boost ${amplifier} vira pulo gigante no jogo: use holdJump`);
     }
     // No Bedrock o efeito novo so substitui o que ja esta ativo quando o
     // amplifier e MAIOR OU IGUAL. Aplicar health_boost 244 por cima de um 255

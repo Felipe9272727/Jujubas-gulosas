@@ -14,12 +14,13 @@ o tier abre os personagens daquela raça naquele tier.
 | 2 | Mayuri Kurotsuchi (Shikai) | 600 | super: Konjiki Ashisogi Jizō |
 | 2 | Rukia Kuchiki (Sode no Shirayuki) | 600 | super |
 | 3 | Zaraki Kenpachi | 1700 | Pressão (tapa-olho removido) |
-| 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000), asas/cauda em attachable |
+| 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000), asas/cauda de partícula |
 | 4 | Soi Fon (Suzumebachi) | 2000 | super: Jakuhō Raikōben |
 | 5 | Gin Ichimaru | 4000 | super: Kamishini no Yari |
 | 5 | Shunsui Kyoraku (Katen Kyokotsu) | 4500 | super: Karamatsu Shinjū |
 | 5 | Jūshiro Ukitake (Sōgyo no Kotowari) | 4400 | super |
 | 6 | **Sousuke Aizen (Captain's Fight)** | 5500 | super: Hadō #90 Kurohitsugi |
+| 7 | **Yamamoto Genryūsai** | 8500 | Bankai: Zanka no Tachi |
 
 ### Hollow
 | Tier | Personagem | Vida | Awakening / super |
@@ -56,13 +57,13 @@ com a pressão ligada; o Aizen Hōgyoku (7) apaga até o tier 2. O Ichigo (Danga
 BP/                     behavior pack
   manifest.json
   items/*.json          um arquivo por item (format_version 1.26.40)
-  entities/*.json       boneco de teste, clone do Aizen
+  entities/*.json       boneco de teste, clone do Aizen, mortos do Yamamoto
   scripts/main.js       TODO o gameplay (@minecraft/server 2.0 + server-ui)
   scripts/shinji.js     o Shinji Hirako (importado pelo main.js)
 RP/                     resource pack
   manifest.json
-  entity/               override do player (escala do modelo por Molang), boneco, clone
-  attachables/          Hollowficação/Vasto Lorde (Vizard), Daiguren (Hitsugaya) e Mugetsu (Dangai)
+  entity/               override do player (escala do modelo por Molang), boneco, clone, mortos
+  attachables/          Hollowficação/Vasto Lorde (Vizard) e Mugetsu (Dangai)
   particles/            partículas customizadas (sakura:leaf, mayuri:poison_fog, grimmjow:cero, ...)
   textures/items/*.png  uma textura por item
   textures/item_texture.json
@@ -72,7 +73,6 @@ tools/
   boxmodel.py           base dos modelos de caixa (rig do player, UV, textura)
   hollow_model.py       modelo do Ichigo Vizard (attachable)
   aizen_clone_model.py  modelo do clone dos dois Aizen
-  daiguren_model.py     asas, cauda e braço de gelo da Daiguren (attachable)
   mugetsu_model.py      roupa do Mugetsu do Ichigo Dangai (attachable)
   gen_model.py          renderiza os modelos em .geo.json
   vanilla_sounds.txt    IDs de som do Bedrock, pra validar os sons do script
@@ -186,7 +186,7 @@ dynamic properties e formulários com resposta roteirizada.
 O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
 `entityHitEntity`, `entityHitBlock`, `entitySpawn`, `playerLeave`...), usa as
 skills, ativa awakenings e supers, mata alvos no meio de um DoT, simula reload
-do mundo e desconexão, e roda 2000 ticks livres no fim. São 991 checks —
+do mundo e desconexão, e roda 2000 ticks livres no fim. São 1072 checks —
 qualquer exceção em qualquer callback é capturada e reportada, inclusive a que
 o anti-lag do `main.js` engole dentro dos loops. Os números vêm do próprio
 `main.js` (ele exporta o registro), então rebalancear não quebra a simulação.
