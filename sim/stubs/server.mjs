@@ -370,6 +370,7 @@ export class Entity {
     this.dimension = dimension ?? overworld;
     this._location = { ...location };
     this.isSneaking = false;
+    this.isSprinting = false;
     this.isOnGround = true;
     this.selectedSlotIndex = 0;
 

@@ -3561,3 +3561,257 @@ TEXTURES["entity/aizen_clone"] = _AIZEN_CLONE_TEXTURE
 from daiguren_model import TEXTURE_SPEC as _DAIGUREN_TEXTURE  # noqa: E402
 
 TEXTURES["entity/daiguren"] = _DAIGUREN_TEXTURE
+
+# roupa do Mugetsu (cabelo, faixas e hakama) do Ichigo Dangai (tools/mugetsu_model.py)
+from mugetsu_model import TEXTURE_SPEC as _MUGETSU_TEXTURE  # noqa: E402
+
+TEXTURES["entity/mugetsu"] = _MUGETSU_TEXTURE
+
+# ---------------------------------------------------------------------------
+# Ichigo Kurosaki (Dangai)
+# ---------------------------------------------------------------------------
+_DANGAI_BLUE = {
+    "B": (30, 70, 190, 255),
+    "C": (80, 160, 255, 255),
+    "W": (220, 245, 255, 255),
+    "k": (10, 10, 16, 255),
+    "K": (30, 36, 72, 255),
+}
+
+TEXTURES.update({
+    # Tensa Zangetsu do Dangai: lamina preta com fio azul e a corrente no cabo
+    "items/dangai_m1_zangetsu": {
+        "palette": {
+            "%": (15, 15, 18, 255),
+            "&": (38, 38, 46, 255),
+            "=": (90, 170, 255, 255),
+            "$": (80, 80, 92, 255),
+            "#": (58, 58, 70, 255),
+            "@": (112, 112, 128, 255),
+            "o": (160, 160, 176, 255),
+        },
+        "grid": [
+            "..............=%",
+            ".............=%&",
+            "............=%&.",
+            "...........=%&..",
+            "..........=%&...",
+            ".........=%&....",
+            "........=%&.....",
+            ".......=%&......",
+            "......=%&.......",
+            ".....=%&........",
+            "....$#..........",
+            "...@$$#.........",
+            "..@##@$#........",
+            ".o.@#@$.........",
+            "o.o.@@..........",
+            ".o..............",
+        ],
+    },
+    # Getsuga Dangai: lua azul com raios pretos saindo
+    "items/dangai_getsuga_tenshou": {
+        "palette": _DANGAI_BLUE,
+        "grid": [
+            "......BBBB......",
+            "......BWCCBB....",
+            "........BWWCB...",
+            "..........BWCB..",
+            ".......k...BWCB.",
+            "......k.k...BCB.",
+            ".....k...k..BWCB",
+            "....k.....k.BWCB",
+            "....K....k..BWCB",
+            ".....K..k...BWCB",
+            "......KK....BCB.",
+            "...........BWCB.",
+            "..........BWCB..",
+            "........BWWCB...",
+            "......BWCCBB....",
+            "......BBBB......",
+        ],
+    },
+    # Omnidirectional: oito cortes saindo do centro
+    "items/dangai_omnidirectional_getsuga": {
+        "palette": _DANGAI_BLUE,
+        "grid": [
+            "B......B......B.",
+            ".C.....C.....C..",
+            "..W....W....W...",
+            "...C...C...C....",
+            "....k.kCk.k.....",
+            ".....kWWWk......",
+            "BCWCkWkKkWkCWCB.",
+            ".....kWWWk......",
+            "....k.kCk.k.....",
+            "...C...C...C....",
+            "..W....W....W...",
+            ".C.....C.....C..",
+            "B......B......B.",
+            "................",
+            "................",
+            "................",
+        ],
+    },
+    # Arrogant's Counter: dois cortes cruzados
+    "items/dangai_arrogants_counter": {
+        "palette": _DANGAI_BLUE,
+        "grid": [
+            "W..............W",
+            ".C............C.",
+            "..C..........C..",
+            "...B........B...",
+            "....B......B....",
+            ".....B....B.....",
+            "......BkkB......",
+            ".......kK.......",
+            ".......Kk.......",
+            "......BkkB......",
+            ".....B....B.....",
+            "....B......B....",
+            "...B........B...",
+            "..C..........C..",
+            ".C............C.",
+            "W..............W",
+        ],
+    },
+    # "Let's fight somewhere else.": arrastao e o estouro na parede
+    "items/dangai_lets_fight_somewhere_else": {
+        "palette": {**_DANGAI_BLUE, "#": (120, 110, 100, 255), "$": (84, 76, 68, 255)},
+        "grid": [
+            "..............#$",
+            "...........B..#$",
+            "..........B.CC#$",
+            "CCCCC.....CCWW#$",
+            "..........CWWW#$",
+            "BBBBBBBBBkCWWW#$",
+            "..........CWWW#$",
+            "CCCCC.....CCWW#$",
+            "..........B.CC#$",
+            "...........B..#$",
+            "..............#$",
+            "CCC..CCC..CCC.#$",
+            "..............#$",
+            "..............#$",
+            "..............#$",
+            "..............#$",
+        ],
+    },
+    # a roupa do Mugetsu (o item nunca fica na mochila, mas precisa de icone)
+    "items/dangai_mugetsu_chest": {
+        "palette": {
+            "H": (16, 16, 20, 255),
+            "s": (206, 164, 132, 255),
+            "k": (30, 30, 34, 255),
+            "C": (24, 24, 28, 255),
+            "L": (74, 72, 80, 255),
+        },
+        "grid": [
+            "....HHHHHH......",
+            "...HHHHHHHH.....",
+            "...HHssssHH.....",
+            "...HHkkkkHH.....",
+            "..HCCCkkCCCH....",
+            ".HCCCCCCCCCCH...",
+            ".HCCLCCCCLCCH...",
+            ".HCCCLCCLCCCH...",
+            ".HCC.CCCC.CCH...",
+            "..H..CCCC..H....",
+            "..H..CLLC..H....",
+            "..H..CCCC..H....",
+            ".....CC.CC......",
+            ".....CC.CC......",
+            ".....LC.CL......",
+            "................",
+        ],
+    },
+    # brilho azul do corte
+    "particle/dangai_getsuga": {
+        "palette": {
+            "b": (40, 90, 220, 110),
+            "B": (70, 140, 255, 190),
+            "C": (150, 210, 255, 235),
+            "W": (235, 250, 255, 255),
+        },
+        "grid": [
+            "..bbbb..",
+            ".bBBBBb.",
+            "bBCCCCBb",
+            "bBCWWCBb",
+            "bBCWWCBb",
+            "bBCCCCBb",
+            ".bBBBBb.",
+            "..bbbb..",
+        ],
+    },
+    # o fio do corte: quase branco
+    "particle/dangai_borda": {
+        "palette": {
+            "c": (160, 225, 255, 200),
+            "W": (245, 252, 255, 255),
+        },
+        "grid": [
+            "...cc...",
+            "..cWWc..",
+            ".cWWWWc.",
+            "cWWWWWWc",
+            "cWWWWWWc",
+            ".cWWWWc.",
+            "..cWWc..",
+            "...cc...",
+        ],
+    },
+    # faisca dos raios pretos
+    "particle/dangai_raio": {
+        "palette": {
+            "k": (6, 6, 10, 255),
+            "K": (40, 50, 110, 255),
+        },
+        "grid": [
+            "....k...",
+            "...kK...",
+            "..kKk...",
+            ".kKkkk..",
+            "...kKk..",
+            "...kK...",
+            "..kK....",
+            "..k.....",
+        ],
+    },
+    # energia preta do Getsuga Tenshou Final
+    "particle/dangai_mugetsu": {
+        "palette": {
+            "r": (90, 10, 14, 140),
+            "k": (18, 6, 8, 230),
+            "K": (4, 2, 3, 255),
+        },
+        "grid": [
+            "..rrrr..",
+            ".rkkkkr.",
+            "rkKKKKkr",
+            "rkKKKKkr",
+            "rkKKKKkr",
+            "rkKKKKkr",
+            ".rkkkkr.",
+            "..rrrr..",
+        ],
+    },
+    "particle/dangai_mugetsu_borda": {
+        "palette": {
+            "r": (90, 10, 14, 150),
+            "R": (150, 20, 24, 230),
+            "k": (30, 6, 8, 255),
+            "K": (8, 2, 3, 255),
+        },
+        "grid": [
+            "...rr...",
+            "..rRRr..",
+            ".rRkkRr.",
+            "rRkKKkRr",
+            "rRkKKkRr",
+            ".rRkkRr.",
+            "..rRRr..",
+            "...rr...",
+        ],
+    },
+})

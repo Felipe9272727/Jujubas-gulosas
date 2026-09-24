@@ -586,6 +586,24 @@
     },
     "aizen:fragor_barrage": {
       "textures": "textures/items/aizen_fragor_barrage"
+    },
+    "dangai:m1_zangetsu": {
+      "textures": "textures/items/dangai_m1_zangetsu"
+    },
+    "dangai:getsuga_tenshou": {
+      "textures": "textures/items/dangai_getsuga_tenshou"
+    },
+    "dangai:omnidirectional_getsuga": {
+      "textures": "textures/items/dangai_omnidirectional_getsuga"
+    },
+    "dangai:arrogants_counter": {
+      "textures": "textures/items/dangai_arrogants_counter"
+    },
+    "dangai:lets_fight_somewhere_else": {
+      "textures": "textures/items/dangai_lets_fight_somewhere_else"
+    },
+    "dangai:mugetsu_chest": {
+      "textures": "textures/items/dangai_mugetsu_chest"
     }
   }
 }

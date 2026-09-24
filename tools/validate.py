@@ -448,7 +448,7 @@ referenced = set(re.findall(r'"([a-z_]+:[a-z0-9_]+)"', main_js))
 # particula com item.
 particle_refs = set(re.findall(r'spawnParticle\(\s*"([^"]+)"', main_js))
 particle_refs |= set(
-    re.findall(r'(?:particle|burst|particleId|cryParticle)\s*:\s*"([^"]+)"', main_js)
+    re.findall(r'(?:particle|burst|particleId|\w+Particle)\s*:\s*"([^"]+)"', main_js)
 )
 
 for particle in sorted(particle_refs):

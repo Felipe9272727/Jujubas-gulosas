@@ -4698,14 +4698,14 @@ function hogyokuClones() {
   return overworld.getEntities({ type: "aizen:clone" });
 }
 
-scenario("Sousuke Aizen (Hōgyoku): ativação (Híbrido, Tier 8)");
+scenario("Sousuke Aizen (Hōgyoku): ativação (Híbrido, Tier 7)");
 mark = errors.length;
 const hogy = createPlayer("HogyokuPlayer", { x: 12000, y: 64, z: 12000 });
 const gin = createPlayer("GinAlvo", { x: 12006, y: 64, z: 12000 });
 emit("playerSpawn", { player: hogy, initialSpawn: true });
 emit("playerSpawn", { player: gin, initialSpawn: true });
 advanceTicks(20, "spawn-hogyoku");
-check("registro: Híbrido, Tier 8", RACE_TIER.aizen_hogyoku?.race === "hybrid" && RACE_TIER.aizen_hogyoku?.tier === 8);
+check("registro: Híbrido, Tier 7", RACE_TIER.aizen_hogyoku?.race === "hybrid" && RACE_TIER.aizen_hogyoku?.tier === 7);
 await pickCharacter(hogy, "aizen_hogyoku");
 await pickCharacter(gin, "kenpachi");
 advanceTicks(20, "ativar-hogyoku");
@@ -4735,18 +4735,18 @@ check(
 check("marca o alvo", gin.getDynamicProperty("mv:kyoka_mark") === true);
 noNewErrors("m1 sem erro", mark);
 
-scenario("Hōgyoku: cura 300 a cada 4s e Evolution +10% a cada 30s");
+scenario("Hōgyoku: cura 100 a cada 4s e Evolution +10% a cada 30s");
 mark = errors.length;
 setVirtualHp(hogy, 5000);
 advanceTicks(81, "cura-hogyoku");
-check("curou 300 em 4s", Math.round(virtualHp(hogy)) === 5300, `${virtualHp(hogy)}`);
+check("curou 100 em 4s", HOGY.regen.base === 100 && Math.round(virtualHp(hogy)) === 5100, `${virtualHp(hogy)}`);
 hogy.setDynamicProperty("mv:evolution", 0);
 advanceTicks(620, "evolution-30s");
 check("30s depois: Evolution 10%", hogy.getDynamicProperty("mv:evolution") === 10, String(hogy.getDynamicProperty("mv:evolution")));
 hogy.setDynamicProperty("mv:evolution", 40); // dois degraus de 20%
 setVirtualHp(hogy, 5000);
 advanceTicks(81, "cura-evoluida");
-check("cada 20% soma 20 na cura (40% = 340)", Math.round(virtualHp(hogy)) === 5340, `${virtualHp(hogy)}`);
+check("cada 20% soma 20 na cura (40% = 140)", Math.round(virtualHp(hogy)) === 5140, `${virtualHp(hogy)}`);
 dmgBefore = log.damages.length;
 hitWith(hogy, gin, "aizen:m1_kyoka_suigetsu");
 check(
@@ -4972,7 +4972,7 @@ check(
 advanceTicks(10, "actionbar-meta");
 check("a barra mostra a Metamorfose", (log.actionBars.filter((a) => a.player === "HogyokuPlayer").pop()?.text ?? "").includes("Metamorfose"));
 
-scenario("Monster Aizen: Kyōka em dobro, cura 400, não drena");
+scenario("Monster Aizen: Kyōka em dobro, cura 200, não drena");
 mark = errors.length;
 hogy.teleport({ x: 13000, y: 64, z: 13000 });
 gin.teleport({ x: 13002, y: 64, z: 13000 });
@@ -4987,7 +4987,7 @@ check(
 );
 setVirtualHp(hogy, 6000);
 advanceTicks(81, "cura-monster");
-check("cura 400 a cada 4s", Math.round(virtualHp(hogy)) === 6400, `${virtualHp(hogy)}`);
+check("cura 200 a cada 4s", HOGY.regen.monster === 200 && Math.round(virtualHp(hogy)) === 6200, `${virtualHp(hogy)}`);
 advanceTicks(400, "nao-drena");
 check("a Metamorfose não drena como awakening comum", hogy.getDynamicProperty(DP.awakened) === true);
 noNewErrors("Monster sem erro", mark);
@@ -5073,6 +5073,345 @@ check("clones removidos", hogyokuClones().length === 0);
 check("visível e com nome", !hogy.getEffect("invisibility") && hogy.nameTag === "HogyokuPlayer");
 check("nenhuma Kyōka sobra", !inv(hogy).slots.some((i) => i && i.typeId.startsWith("aizen:")), JSON.stringify(inv(hogy).slots.filter(Boolean).map((i) => i.typeId)));
 gin.kill();
+
+/* ================= Ichigo Kurosaki (Dangai) ================= */
+
+const DG = game.DANGAI;
+function dangaiDamageTo(name, since) {
+  return log.damages.slice(since).filter((d) => d.target === name);
+}
+function dangaiTotal(target, since) {
+  return dangaiDamageTo(target.name, since).reduce((n, d) => n + virtualDamage(target, d), 0);
+}
+
+scenario("Ichigo Kurosaki (Dangai): ativação (Híbrido, Tier 7)");
+mark = errors.length;
+const dangai = createPlayer("DangaiPlayer", { x: 30000, y: 64, z: 30000 });
+emit("playerSpawn", { player: dangai, initialSpawn: true });
+advanceTicks(20, "spawn-dangai");
+check("registro: Híbrido, Tier 7", RACE_TIER.ichigo_dangai?.race === "hybrid" && RACE_TIER.ichigo_dangai?.tier === 7);
+check("Aizen Hōgyoku agora é Tier 7", RACE_TIER.aizen_hogyoku?.tier === 7);
+await pickCharacter(dangai, "ichigo_dangai");
+advanceTicks(20, "ativar-dangai");
+noNewErrors("ativar o Ichigo (Dangai) sem erro", mark);
+check("vida maxima 7500", virtualMax(dangai) === 7500, String(virtualMax(dangai)));
+check(
+  "Zangetsu, Getsuga, Omnidirectional, Counter e Let's fight nos slots 0-4",
+  JSON.stringify(slotIds(dangai, 5)) ===
+    JSON.stringify([
+      "dangai:m1_zangetsu",
+      "dangai:getsuga_tenshou",
+      "dangai:omnidirectional_getsuga",
+      "dangai:arrogants_counter",
+      "dangai:lets_fight_somewhere_else",
+    ]),
+  JSON.stringify(slotIds(dangai, 5))
+);
+
+scenario("Dangai: m1 de 200 e speed 5 só correndo");
+mark = errors.length;
+const alvoD = createDummy("AlvoDangai", { x: 30002, y: 64, z: 30000 }, 500000);
+dmgBefore = log.damages.length;
+hitWith(dangai, alvoD, "dangai:m1_zangetsu");
+check("200 de dano", dangaiDamageTo("AlvoDangai", dmgBefore).some((d) => d.amount === 200), JSON.stringify(dangaiDamageTo("AlvoDangai", dmgBefore)));
+advanceTicks(8, "parado");
+const speedParado = dangai.getEffect("speed")?.amplifier;
+dangai.isSprinting = true;
+advanceTicks(8, "correndo");
+const speedCorrendo = dangai.getEffect("speed")?.amplifier;
+dangai.isSprinting = false;
+advanceTicks(8, "parou");
+check("parado: speed 2 (o base)", speedParado === 1, String(speedParado));
+check("correndo: speed 5", speedCorrendo === 4, String(speedCorrendo));
+check("parou de correr: volta pro base", dangai.getEffect("speed")?.amplifier === 1, String(dangai.getEffect("speed")?.amplifier));
+alvoD.kill();
+noNewErrors("m1 e corrida sem erro", mark);
+
+scenario("Dangai: o dash vira o teleporte do Vasto Lorde");
+mark = errors.length;
+dangai.teleport({ x: 30200, y: 64, z: 30000 });
+const alvoDash = createDummy("AlvoDashD", { x: 30225, y: 64, z: 30000 }, 500000);
+dangai.setDynamicProperty("mv:cd_dash", undefined);
+const kbDashD = log.knockbacks.length;
+dangai.isSneaking = false;
+advanceTicks(4, "reset-dash-d");
+dangai._velocity = { x: 0, y: 0.5, z: 0 };
+dangai.isSneaking = true;
+advanceTicks(4, "dash-d");
+dangai.isSneaking = false;
+dangai._velocity = { x: 0, y: 0, z: 0 };
+check("aparece no alvo em vez de avançar", Math.abs(dangai.location.x - 30225) < 3, `x=${dangai.location.x.toFixed(1)}`);
+check("e não usa knockback", !log.knockbacks.slice(kbDashD).some((k) => k.target === "DangaiPlayer"));
+alvoDash.kill();
+noNewErrors("dash sem erro", mark);
+
+scenario("Dangai: a Pressão Espiritual não pega nele");
+mark = errors.length;
+// ninguem no elenco esta 2+ tiers acima do Dangai: sobe o tier de um Aizen de
+// mentira so pro teste (e devolve no fim)
+const pressor = createPlayer("PressorD", { x: 30400, y: 64, z: 30000 });
+const controleP = createPlayer("ControleP", { x: 30405, y: 64, z: 30000 });
+emit("playerSpawn", { player: pressor, initialSpawn: true });
+emit("playerSpawn", { player: controleP, initialSpawn: true });
+advanceTicks(10, "spawn-pressao");
+await pickCharacter(pressor, "aizen_hogyoku");
+await pickCharacter(controleP, "gin");
+advanceTicks(20, "ativar-pressao");
+dangai.teleport({ x: 30403, y: 64, z: 30000 });
+const tierReal = RACE_TIER.aizen_hogyoku.tier;
+RACE_TIER.aizen_hogyoku.tier = 9;
+pressor.setDynamicProperty("mv:generic_pressure_until", system.currentTick + 200);
+dmgBefore = log.damages.length;
+advanceTicks(130, "pressao");
+RACE_TIER.aizen_hogyoku.tier = tierReal;
+pressor.setDynamicProperty("mv:generic_pressure_until", 0);
+check(
+  "o controle (Gin, tier 5, 4 abaixo) toma a pressão",
+  dangaiDamageTo("ControleP", dmgBefore).length > 0 && controleP.getEffect("slowness")?.amplifier === 3
+);
+check("o Dangai (2 abaixo) não toma nada", dangaiDamageTo("DangaiPlayer", dmgBefore).length === 0, JSON.stringify(dangaiDamageTo("DangaiPlayer", dmgBefore)));
+check("nem lentidão", !dangai.getEffect("slowness"));
+noNewErrors("pressão sem erro", mark);
+
+scenario("Dangai: as ilusões do Aizen não pegam nele");
+mark = errors.length;
+fullHp(pressor);
+pressor.teleport({ x: 30600, y: 64, z: 30000 });
+dangai.teleport({ x: 30602, y: 64, z: 30000 });
+hitWith(pressor, dangai, "aizen:m1_kyoka_suigetsu");
+check("a Kyōka não marca", dangai.getDynamicProperty("mv:kyoka_mark") !== true);
+dangai.setDynamicProperty("mv:kyoka_mark", true); // marcado antes de virar o Dangai
+aim(pressor, dangai);
+let linhasIlusao = log.worldMessages.length;
+useItem(pressor, "aizen:illusions");
+advanceTicks(5, "ilusao-no-dangai");
+check("nem com a marca de antes a ilusão entra", hogyokuClones().length === 0);
+check(
+  "o Aizen é avisado e não gasta a ilusão",
+  log.worldMessages.slice(linhasIlusao).some((m) => m.to === "PressorD" && m.message.includes("nunca viu a Kyōka")) &&
+    pressor.getDynamicProperty("mv:cd_aizen_illusions.switch") === undefined
+);
+dangai.setDynamicProperty("mv:kyoka_mark", undefined);
+noNewErrors("ilusões sem erro", mark);
+
+scenario("Getsuga Tenshou (Dangai): 750, rápido, grande, azul com raios pretos");
+mark = errors.length;
+dangai.teleport({ x: 30800, y: 64, z: 30000 });
+dangai._view = { x: 1, y: 0, z: 0 };
+const naFrenteDg = createDummy("NaFrenteD", { x: 30820, y: 64, z: 30000 }, 500000);
+const noAlto = createDummy("NoAltoD", { x: 30812, y: 67, z: 30000 }, 500000);
+const doLado = createDummy("DoLadoD", { x: 30815, y: 64, z: 30006 }, 500000);
+const atrasDg = createDummy("AtrasD", { x: 30797, y: 64, z: 30000 }, 500000);
+dmgBefore = log.damages.length;
+const partG = log.particles.length;
+useItem(dangai, "dangai:getsuga_tenshou");
+advanceTicks(6, "getsuga-dangai");
+check("chega a 20 blocos em 6 ticks (bem mais rápido)", dangaiDamageTo("NaFrenteD", dmgBefore).length === 1);
+check("750 de dano", dangaiTotal(naFrenteDg, dmgBefore) === 750, String(dangaiTotal(naFrenteDg, dmgBefore)));
+check("grande: pega quem está 3 blocos acima", dangaiTotal(noAlto, dmgBefore) === 750);
+check("fino: não pega quem está 6 blocos pro lado", dangaiDamageTo("DoLadoD", dmgBefore).length === 0);
+check("não pega quem está atrás", dangaiDamageTo("AtrasD", dmgBefore).length === 0);
+const idsG = new Set(log.particles.slice(partG).map((p) => p.particleId));
+check("azul, com fio claro e raios pretos", idsG.has("dangai:getsuga") && idsG.has("dangai:borda") && idsG.has("dangai:raio"), [...idsG].join(", "));
+check("maior que o Getsuga do Shikai (raio 1,8)", DG.getsuga.radius > 1.8 && DG.getsuga.speed > 2);
+advanceTicks(20, "getsuga-fim");
+for (const d of [naFrenteDg, noAlto, doLado, atrasDg]) d.kill();
+noNewErrors("Getsuga Dangai sem erro", mark);
+
+scenario("Getsuga Dangai desfaz ataques de tier 4 ou menos");
+mark = errors.length;
+const grimD = createPlayer("GrimmjowD", { x: 31025, y: 64, z: 31000 });
+emit("playerSpawn", { player: grimD, initialSpawn: true });
+advanceTicks(10, "spawn-grimd");
+await pickCharacter(grimD, "grimmjow");
+advanceTicks(20, "ativar-grimd");
+dangai.teleport({ x: 31000, y: 64, z: 31000 });
+fullHp(dangai);
+fullHp(grimD);
+aim(dangai, grimD);
+aim(grimD, dangai);
+dmgBefore = log.damages.length;
+let linhasCancel = log.worldMessages.length;
+useItem(grimD, "grimmjow:gran_rey_cero");
+advanceTicks(2, "cero-sai");
+dangai.setDynamicProperty("mv:cd_dangai_getsuga_tenshou", undefined);
+useItem(dangai, "dangai:getsuga_tenshou");
+advanceTicks(40, "choque");
+check("o Gran Rey Cero (tier 2) some no caminho", dangaiDamageTo("DangaiPlayer", dmgBefore).length === 0, JSON.stringify(dangaiDamageTo("DangaiPlayer", dmgBefore)));
+check("e o Getsuga segue e acerta o Grimmjow", dangaiTotal(grimD, dmgBefore) === 750, String(dangaiTotal(grimD, dmgBefore)));
+check("o dono do cero é avisado", log.worldMessages.slice(linhasCancel).some((m) => m.to === "GrimmjowD" && m.message.includes("desfeito")));
+// o mesmo cero vindo de alguem tier 5 passa
+const tierGrim = RACE_TIER.grimmjow.tier;
+RACE_TIER.grimmjow.tier = 5;
+fullHp(dangai);
+fullHp(grimD);
+grimD.setDynamicProperty("mv:cd_grimmjow_gran_rey_cero", undefined);
+dangai.setDynamicProperty("mv:cd_dangai_getsuga_tenshou", undefined);
+dmgBefore = log.damages.length;
+useItem(grimD, "grimmjow:gran_rey_cero");
+advanceTicks(2, "cero-sai-t5");
+useItem(dangai, "dangai:getsuga_tenshou");
+advanceTicks(40, "choque-t5");
+RACE_TIER.grimmjow.tier = tierGrim;
+check("o de tier 5 não é desfeito", dangaiDamageTo("DangaiPlayer", dmgBefore).length > 0);
+noNewErrors("choque de ataques sem erro", mark);
+
+scenario("Omnidirectional Getsuga: 8 getsugas pra todo lado");
+mark = errors.length;
+dangai.teleport({ x: 31200, y: 64, z: 31200 });
+dangai._view = { x: 1, y: 0, z: 0 };
+const anelD = [];
+for (let i = 0; i < 8; i++) {
+  const a = (i / 8) * Math.PI * 2;
+  anelD.push(createDummy(`AnelD${i}`, { x: 31200 + Math.cos(a) * 12, y: 64, z: 31200 + Math.sin(a) * 12 }, 500000));
+}
+const coladoD = createDummy("ColadoD", { x: 31202, y: 64, z: 31201 }, 500000); // entre dois cortes
+dmgBefore = log.damages.length;
+const partO = log.particles.length;
+useItem(dangai, "dangai:omnidirectional_getsuga");
+advanceTicks(20, "omni");
+check("acerta os 8 lados, 750 cada", anelD.every((d) => dangaiTotal(d, dmgBefore) === 750), anelD.map((d) => dangaiTotal(d, dmgBefore)).join(","));
+check("quem está entre dois cortes toma um só", dangaiTotal(coladoD, dmgBefore) === 750, String(dangaiTotal(coladoD, dmgBefore)));
+check("mesmo visual do Getsuga Dangai", log.particles.slice(partO).some((p) => p.particleId === "dangai:raio"));
+for (const d of [...anelD, coladoD]) d.kill();
+noNewErrors("Omnidirectional sem erro", mark);
+
+scenario("Arrogant's Counter: parado 5s, quem bate cai no contra-ataque");
+mark = errors.length;
+dangai.teleport({ x: 31400, y: 64, z: 31400 });
+pressor.teleport({ x: 31402, y: 64, z: 31400 });
+fullHp(dangai);
+fullHp(pressor);
+// o Aizen (7000) aguenta os 1250 do contra-ataque inteiro
+useItem(dangai, "dangai:arrogants_counter");
+advanceTicks(10, "postura");
+check("fica parado (lentidão máxima)", dangai.getEffect("slowness")?.amplifier === 255);
+dmgBefore = log.damages.length;
+hitWith(pressor, dangai, "aizen:m1_kyoka_suigetsu");
+advanceTicks(1, "golpe-no-counter");
+check("o golpe não entra", dangaiDamageTo("DangaiPlayer", dmgBefore).length === 0, JSON.stringify(dangaiDamageTo("DangaiPlayer", dmgBefore)));
+const dxC = dangai.location.x - pressor.location.x;
+check("aparece atrás de quem bateu", Math.abs(dxC - 1.6) < 0.6 || Math.hypot(dangai.location.x - pressor.location.x, dangai.location.z - pressor.location.z) < 2.5, `dx=${dxC.toFixed(2)}`);
+check("olhando reto pro alvo", aimsLevelAt(dangai, pressor));
+check("o atacante fica paralisado", pressor.getEffect("slowness")?.amplifier === 255);
+check("e o Ichigo solta a postura", dangai.getEffect("slowness")?.amplifier !== 255);
+advanceTicks(37, "espera-2s");
+check("nada antes de 2s", dangaiDamageTo("PressorD", dmgBefore).length === 0, JSON.stringify(dangaiDamageTo("PressorD", dmgBefore)));
+advanceTicks(30, "cortes-e-getsuga");
+const golpesC = dangaiDamageTo("PressorD", dmgBefore).map((d) => virtualDamage(pressor, d));
+check(
+  "dois cortes seguidos de um Getsuga Dangai",
+  golpesC.length === 3 && golpesC[0] === game.DAMAGE.dangaiCounterSlash && golpesC[1] === game.DAMAGE.dangaiCounterSlash && golpesC[2] === 750,
+  JSON.stringify(golpesC)
+);
+// ninguem bate: acaba sozinho em 5s
+dangai.setDynamicProperty("mv:cd_dangai_arrogants_counter", undefined);
+let linhasC = log.worldMessages.length;
+useItem(dangai, "dangai:arrogants_counter");
+advanceTicks(105, "counter-vazio");
+check("sem golpe em 5s: acaba sozinho", log.worldMessages.slice(linhasC).some((m) => m.to === "DangaiPlayer" && m.message.includes("Ninguém caiu")));
+check("e ele volta a andar", dangai.getEffect("slowness")?.amplifier !== 255);
+noNewErrors("Arrogant's Counter sem erro", mark);
+
+scenario("\"Let's fight somewhere else.\": leva o alvo até bater num bloco");
+mark = errors.length;
+dangai.teleport({ x: 31600, y: 64, z: 31600 });
+dangai._view = { x: 1, y: 0, z: 0 };
+const levado = createDummy("LevadoD", { x: 31603, y: 64, z: 31600 }, 500000);
+for (let y = 64; y <= 67; y++) {
+  for (let z = 31597; z <= 31603; z++) overworld.getBlock({ x: 31620, y, z }).setType("minecraft:stone");
+}
+dmgBefore = log.damages.length;
+let linhasF = log.worldMessages.length;
+useItem(dangai, "dangai:lets_fight_somewhere_else");
+advanceTicks(4, "arrastando");
+check("fala a frase", log.worldMessages.slice(linhasF).some((m) => m.message.includes("Let's fight somewhere else.")));
+check("segura o alvo na frente", levado.location.x > dangai.location.x + 1.5 && levado.getEffect("slowness")?.amplifier === 255);
+advanceTicks(20, "ate-a-parede");
+check("explode ao bater na parede: 400", dangaiTotal(levado, dmgBefore) === 400, String(dangaiTotal(levado, dmgBefore)));
+check("parou antes da parede", levado.location.x < 31620 && levado.location.x > 31612, `x=${levado.location.x.toFixed(1)}`);
+check("e solta o alvo", levado.getEffect("slowness")?.amplifier !== 255);
+// sem ninguem na frente: nao gasta
+dangai.teleport({ x: 31800, y: 64, z: 31800 });
+levado.kill();
+advanceTicks(2, "sozinho");
+dangai.setDynamicProperty("mv:cd_dangai_lets_fight_somewhere_else", undefined);
+useItem(dangai, "dangai:lets_fight_somewhere_else");
+check("sem alvo: não gasta o cooldown", dangai.getDynamicProperty("mv:cd_dangai_lets_fight_somewhere_else") === undefined);
+noNewErrors("Let's fight sem erro", mark);
+
+scenario("Mugetsu: roupa, Getsuga Tenshou Final de 10000 e o Ichigo sai 5s depois");
+mark = errors.length;
+const aizenM = createPlayer("AizenMugetsu", { x: 32025, y: 64, z: 32000 });
+emit("playerSpawn", { player: aizenM, initialSpawn: true });
+advanceTicks(10, "spawn-aizen-m");
+await pickCharacter(aizenM, "aizen_hogyoku");
+advanceTicks(20, "ativar-aizen-m");
+dangai.teleport({ x: 32000, y: 64, z: 32000 });
+dangai._view = { x: 1, y: 0, z: 0 };
+const vitimaM = createDummy("VitimaMugetsu", { x: 32060, y: 64, z: 32004 }, 500000);
+fullHp(aizenM);
+dangai.setDynamicProperty(DP.awakening, 100);
+dmgBefore = log.damages.length;
+const titulosM = log.titles.length;
+dangai.isSneaking = true;
+useItem(dangai, "dangai:m1_zangetsu");
+dangai.isSneaking = false;
+advanceTicks(2, "mugetsu");
+const peitoM = dangai.getComponent("minecraft:equippable").getEquipment(EquipmentSlot.Chest)?.typeId;
+check("veste a roupa do Mugetsu", peitoM === "dangai:mugetsu_chest", String(peitoM));
+check("MUGETSU na tela de todo mundo por perto", log.titles.slice(titulosM).some((t) => t.player === "AizenMugetsu" && t.title.includes("MUGETSU")));
+check("gasta o medidor", (dangai.getDynamicProperty(DP.awakening) ?? 0) === 0);
+advanceTicks(40, "getsuga-final");
+check("3x o tamanho do Super Nuke Tenshou", Math.abs(DG.mugetsu.radius - 16.2) < 0.01);
+check("10000 em quem está no caminho", dangaiTotal(vitimaM, dmgBefore) === 10000, String(dangaiTotal(vitimaM, dmgBefore)));
+check("partículas pretas", log.particles.some((p) => p.particleId === "dangai:mugetsu"));
+const maxAizen = virtualMax(aizenM);
+check("o Aizen Hōgyoku não morre: fica com 10%", Math.abs(virtualHp(aizenM) - maxAizen * 0.1) < 2, `${virtualHp(aizenM)} de ${maxAizen}`);
+check("e não toma os 10000", dangaiDamageTo("AizenMugetsu", dmgBefore).length === 0);
+check("lentidão 3", aizenM.getEffect("slowness")?.amplifier === 2);
+// sem skill, sem dano, sem cura
+let linhasW = log.worldMessages.length;
+useItem(aizenM, "aizen:fragor");
+check("não usa skill", log.worldMessages.slice(linhasW).some((m) => m.to === "AizenMugetsu" && m.message.includes("sem forças")) && aizenM.getDynamicProperty("mv:cd_aizen_fragor") === undefined);
+const alvoW = createDummy("AlvoFraco", { x: 32027, y: 64, z: 32000 }, 500000);
+const dmgW = log.damages.length;
+hitWith(aizenM, alvoW, "aizen:m1_kyoka_suigetsu");
+check("não dá dano", dangaiDamageTo("AlvoFraco", dmgW).length === 0);
+const vidaFraco = virtualHp(aizenM);
+advanceTicks(60, "espera-mugetsu"); // 102 ticks desde o Mugetsu
+check("5s depois o Ichigo perde o personagem", dangai.getDynamicProperty("mv:character") === undefined);
+check("e a roupa sai", dangai.getComponent("minecraft:equippable").getEquipment(EquipmentSlot.Chest)?.typeId !== "dangai:mugetsu_chest");
+advanceTicks(81, "sem-cura");
+check("o Aizen não regenera", Math.round(virtualHp(aizenM)) === Math.round(vidaFraco), `${virtualHp(aizenM)} vs ${vidaFraco}`);
+check("nem evolui", (aizenM.getDynamicProperty("mv:evolution") ?? 0) === 0);
+// morrer desfaz o enfraquecimento (o stub invalida quem morre: so o respawn)
+emit("playerSpawn", { player: aizenM, initialSpawn: false });
+advanceTicks(10, "respawn-aizen-m");
+const alvoW2 = createDummy("AlvoForte", { x: 32029, y: 64, z: 32000 }, 500000);
+const dmgW2 = log.damages.length;
+hitWith(aizenM, alvoW2, "aizen:m1_kyoka_suigetsu");
+check("depois de morrer volta ao normal", dangaiDamageTo("AlvoForte", dmgW2).length > 0);
+for (const d of [vitimaM, alvoW, alvoW2]) d.kill();
+noNewErrors("Mugetsu sem erro", mark);
+
+scenario("Dangai: desativar no meio do Counter e do Let's fight não deixa nada preso");
+mark = errors.length;
+await pickCharacter(dangai, "ichigo_dangai");
+advanceTicks(20, "reativar-dangai");
+dangai.teleport({ x: 32400, y: 64, z: 32400 });
+dangai._view = { x: 1, y: 0, z: 0 };
+const presoD = createDummy("PresoD", { x: 32403, y: 64, z: 32400 }, 500000);
+useItem(dangai, "dangai:lets_fight_somewhere_else");
+advanceTicks(3, "arrastando-2");
+queueFormResponse(deactivateButtonIndex());
+useItem(dangai, "multiversal:character_selector");
+await settleForms();
+advanceTicks(10, "desativado");
+check("o alvo é solto", presoD.getEffect("slowness")?.amplifier !== 255);
+check("o Ichigo desativa", dangai.getDynamicProperty("mv:character") === undefined);
+presoD.kill();
+noNewErrors("desativar sem erro", mark);
 
 /* ================= estabilidade longa ================= */
 

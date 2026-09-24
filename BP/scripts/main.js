@@ -879,6 +879,29 @@ const CHARACTERS = {
       },
     },
   },
+  ichigo_dangai: {
+    id: "ichigo_dangai",
+    name: "Ichigo Kurosaki (Dangai)",
+    health: 7500,
+    // individualidade: a Pressão Espiritual e as ilusões do Aizen não pegam
+    // nele, corre com speed 5 e o dash vira o teleporte do Vasto Lorde
+    pressureImmune: true,
+    illusionImmune: true,
+    sprintSpeedAmplifier: 4, // speed 5 correndo
+    dashTeleports: true,
+    items: {
+      0: "dangai:m1_zangetsu",
+      1: "dangai:getsuga_tenshou",
+      2: "dangai:omnidirectional_getsuga",
+      3: "dangai:arrogants_counter",
+      4: "dangai:lets_fight_somewhere_else",
+    },
+    // Awk-Mugetsu como super: agachar + usar a Zangetsu com o medidor em 100%
+    superAttack: {
+      onTrigger: "mugetsu",
+      triggerItem: "dangai:m1_zangetsu",
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -897,6 +920,7 @@ const EXTRA_OWNED_ITEMS = {
   "vizard:vasto_chest": "ichigo_vizard",
   "ulquiorra:segunda_chest": "ulquiorra",
   "hitsugaya:daiguren_chest": "hitsugaya",
+  "dangai:mugetsu_chest": "ichigo_dangai",
   // a Kyōka "oculta" (textura vazia) fica no slot 0 enquanto o Aizen esta invisivel
   "aizen:m1_kyoka_oculta": "aizen",
 };
@@ -945,7 +969,8 @@ const CHARACTER_RACE_TIER = {
   shinji: { race: "hybrid", tier: 4 },
   tosen: { race: "hybrid", tier: 3 },
   aizen: { race: "shinigami", tier: 6 },
-  aizen_hogyoku: { race: "hybrid", tier: 8 },
+  aizen_hogyoku: { race: "hybrid", tier: 7 },
+  ichigo_dangai: { race: "hybrid", tier: 7 },
 
   grimmjow: { race: "hollow", tier: 2 },
   szayelaporro: { race: "hollow", tier: 2 },
@@ -993,6 +1018,8 @@ for (const key in CHARACTERS) {
   if (form?.armorPiece) FORM_ARMOR_PIECES.add(form.armorPiece);
   if (form?.trueForm?.armorPiece) FORM_ARMOR_PIECES.add(form.trueForm.armorPiece);
 }
+// a roupa do Mugetsu vem do super, nao de um awakening
+FORM_ARMOR_PIECES.add("dangai:mugetsu_chest");
 
 // mapa reverso: itemId -> personagem dono (pra saber o que pode ser dropado/travado)
 const ITEM_OWNER = {};
@@ -1156,6 +1183,10 @@ function dealDamage(target, amount, source, options) {
   // clone da Illusion's Mastery: area e skill passam direto por ele; so o golpe
   // corpo a corpo (entityHitEntity) conta como "acertar o clone"
   if (target?.typeId === AIZEN.cloneType) return;
+  // o Aizen enfraquecido pelo Getsuga Tenshou Final nao causa dano nenhum
+  if (source && isMugetsuWeakened(source)) return;
+  // Arrogant's Counter do Ichigo (Dangai): o golpe nao entra e vira o contra-ataque
+  if (source && dangaiCounterIntercept(target, source)) return;
   if (isIntocable(target)) {
     if (!options?.bypassesIntocable) {
       try {
@@ -1346,6 +1377,10 @@ const SKILL_COOLDOWN_TICKS = {
   "aizen:fragor": 1000, // 50s
   "aizen:ultra_fragor": 1200, // 60s
   "aizen:fragor_barrage": 1200, // 60s
+  "dangai:getsuga_tenshou": 400, // 20s
+  "dangai:omnidirectional_getsuga": 700, // 35s
+  "dangai:arrogants_counter": 500, // 25s
+  "dangai:lets_fight_somewhere_else": 300, // 15s
 };
 
 const SKILL_NAMES = {
@@ -1494,6 +1529,10 @@ const SKILL_NAMES = {
   "aizen:fragor": "Fragor",
   "aizen:ultra_fragor": "UltraFragor",
   "aizen:fragor_barrage": "Fragor Barrage",
+  "dangai:getsuga_tenshou": "Getsuga Tenshou (Dangai)",
+  "dangai:omnidirectional_getsuga": "Omnidirectional Getsuga",
+  "dangai:arrogants_counter": "Arrogant's Counter",
+  "dangai:lets_fight_somewhere_else": "Let's fight somewhere else.",
 };
 
 // dano aumentado
@@ -1680,6 +1719,12 @@ const DAMAGE = {
   ultraFragorFragment: 200,
   fragorBarrage: 500, // metade do Fragor, 5 explosoes
   fragorBarrageFragment: 50,
+  // Ichigo (Dangai)
+  dangaiM1: 200,
+  dangaiGetsuga: 750,
+  dangaiCounterSlash: 250,
+  dangaiFightElsewhere: 400,
+  getsugaFinal: 10000,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -2785,6 +2830,7 @@ function deactivateCharacter(player) {
   if (!character) return;
   if (character.id === "aizen" || character.id === "aizen_hogyoku") aizenCleanup(player.id);
   if (character.id === "aizen_hogyoku") resetHogyoku(player);
+  if (character.id === "ichigo_dangai") dangaiCleanup(player, true);
 
   if (isMasked(player)) {
     try {
@@ -3242,6 +3288,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     soiClearNigeki(player.id);
     aizenCleanup(player.id);
     if (getActiveCharacter(player)?.id === "aizen_hogyoku") resetHogyoku(player);
+    dangaiCleanup(player, false); // o Mugetsu continua contando depois da morte
     ukitakeAbsorb.delete(player.id);
     player.setDynamicProperty(UKITAKE_STORED, 0);
     // respawn depois de morrer: reaplica personagem se tinha um ativo
@@ -3320,7 +3367,7 @@ function openCheatOptionsMenu(player) {
 
 system.runInterval(()=>{
   const players=world.getPlayers();
-  for(const source of players){const until=source.getDynamicProperty(DP.pressureActiveUntil);if(!getActiveCharacter(source)||typeof until!=="number"||until<=system.currentTick)continue;const tier=tierOfPlayer(source),radius=SPIRITUAL_PRESSURE.radii[tier];if(!radius)continue;for(const target of players){if(target.id===source.id||target.dimension.id!==source.dimension.id||!getActiveCharacter(target))continue;const diff=tier-tierOfPlayer(target);if(diff<2)continue;const dx=source.location.x-target.location.x,dy=source.location.y-target.location.y,dz=source.location.z-target.location.z;if(dx*dx+dy*dy+dz*dz>radius*radius)continue;if(diff>=5){try{target.kill();}catch(e){}continue;}const cfg=SPIRITUAL_PRESSURE.effects[diff];if(!cfg)continue;try{target.addEffect("slowness",SPIRITUAL_PRESSURE.intervalTicks+10,{amplifier:cfg.amplifier,showParticles:false});dealDamage(target,cfg.damage,source);}catch(e){}}}
+  for(const source of players){const until=source.getDynamicProperty(DP.pressureActiveUntil);if(!getActiveCharacter(source)||typeof until!=="number"||until<=system.currentTick)continue;const tier=tierOfPlayer(source),radius=SPIRITUAL_PRESSURE.radii[tier];if(!radius)continue;for(const target of players){if(target.id===source.id||target.dimension.id!==source.dimension.id||!getActiveCharacter(target)||isPressureImmune(target))continue;const diff=tier-tierOfPlayer(target);if(diff<2)continue;const dx=source.location.x-target.location.x,dy=source.location.y-target.location.y,dz=source.location.z-target.location.z;if(dx*dx+dy*dy+dz*dz>radius*radius)continue;if(diff>=5){try{target.kill();}catch(e){}continue;}const cfg=SPIRITUAL_PRESSURE.effects[diff];if(!cfg)continue;try{target.addEffect("slowness",SPIRITUAL_PRESSURE.intervalTicks+10,{amplifier:cfg.amplifier,showParticles:false});dealDamage(target,cfg.damage,source);}catch(e){}}}
 },SPIRITUAL_PRESSURE.intervalTicks);
 const genericSneakState=new Map();
 system.runInterval(()=>{for(const player of world.getPlayers()){const held=getInv(player).getItem(GENERIC_SKILL_SLOT),holding=held?.typeId===GENERIC_SKILL_ITEM,sneak=player.isSneaking,prev=genericSneakState.get(player.id)===true;if(holding&&sneak&&!prev&&getActiveCharacter(player))cycleGenericSkill(player);genericSneakState.set(player.id,sneak);if(player.getDynamicProperty(DP.airStepActive)===true){if(tierOfPlayer(player)<5||!getActiveCharacter(player)){player.setDynamicProperty(DP.airStepActive,false);removeAirStepBlock(player);continue;}try{const v=player.getVelocity();if(sneak)player.teleport({x:player.location.x,y:player.location.y-0.12,z:player.location.z},{keepVelocity:false});else if(v.y>0.08)player.teleport({x:player.location.x,y:player.location.y+0.12,z:player.location.z},{keepVelocity:false});}catch(e){}setAirStepBlock(player);}if(holding&&genericSkillIndex(player)===2&&sneak&&getActiveCharacter(player))player.setDynamicProperty("mv:reiatsu_jump_charge",Math.min(120,(Number(player.getDynamicProperty("mv:reiatsu_jump_charge"))||0)+2));}},2);
@@ -3344,6 +3391,12 @@ world.afterEvents.itemUse.subscribe((ev) => {
 
   if (itemStack.typeId === CHEAT_OPTIONS_ITEM) {
     openCheatOptionsMenu(player);
+    return;
+  }
+
+  // o Aizen que sobreviveu ao Getsuga Tenshou Final nao usa mais nada
+  if (isMugetsuWeakened(player)) {
+    player.sendMessage("§8O Getsuga Tenshou Final te deixou sem forças pra usar qualquer skill.");
     return;
   }
 
@@ -3951,6 +4004,18 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "aizen:fragor_barrage":
       castFragorBarrage(player);
       break;
+    case "dangai:getsuga_tenshou":
+      castDangaiGetsuga(player);
+      break;
+    case "dangai:omnidirectional_getsuga":
+      castOmnidirectionalGetsuga(player);
+      break;
+    case "dangai:arrogants_counter":
+      castArrogantsCounter(player);
+      break;
+    case "dangai:lets_fight_somewhere_else":
+      castFightSomewhereElse(player);
+      break;
   }
 });
 
@@ -4189,8 +4254,14 @@ function fireCrescentWave(player, options) {
 
   let travelled = 0;
   const hitEntities = new Set();
+  // o Getsuga do Ichigo (Dangai) desfaz a onda no caminho
+  const attack = trackAttack(player, radius);
 
   const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
     for (let row = 0; row <= rows; row++) {
       const dy = -radius + (2 * radius * row) / rows;
       const outerReach = Math.sqrt(Math.max(0, radius * radius - dy * dy));
@@ -4226,6 +4297,7 @@ function fireCrescentWave(player, options) {
       y: origin.y + 1,
       z: origin.z + dir.z * travelled,
     };
+    touchAttack(attack, center);
     const nearby = dim.getEntities({ location: center, maxDistance: radius + 0.6 });
     for (const entity of nearby) {
       if (entity.id === player.id || hitEntities.has(entity.id)) continue;
@@ -4363,7 +4435,18 @@ function castByakuyaTripleshot(player) {
   dim.playSound("mob.wither.shoot", origin, { volume: 1.2, pitch: 1.6 });
 
   let travelled = 0;
+  const attack = trackAttack(player, 1.3);
   const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
+    // o leque abre: o raio pra desfazer cresce junto
+    touchAttack(
+      attack,
+      { x: origin.x + dir.x * travelled, y: origin.y + 1, z: origin.z + dir.z * travelled },
+      1.3 + 0.5 * travelled
+    );
     for (const offset of LINES) {
       const p = {
         x: origin.x + dir.x * travelled + perp.x * offset * travelled,
@@ -4929,6 +5012,8 @@ function tryTriggerSuperAttack(player, character) {
       return tryTriggerEnma(player);
     case "aizen":
       return tryTriggerKurohitsugi(player);
+    case "mugetsu":
+      return tryTriggerMugetsu(player);
   }
   return false;
 }
@@ -5010,8 +5095,15 @@ function fireEnergySphere(player, options) {
     }
   };
 
+  const attack = trackAttack(player, radius);
+
   const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
     const center = centerAt(travelled);
+    touchAttack(attack, center);
 
     // casca da esfera: pontos espalhados na superficie
     for (let i = 0; i < shellParticles; i++) {
@@ -5928,12 +6020,18 @@ function castLanza(player) {
   dim.playSound("mob.wither.shoot", origin, { volume: 2, pitch: 0.4 });
 
   let travelled = 2;
+  const attack = trackAttack(player, 2);
   const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
     const tip = {
       x: origin.x + step.x * travelled,
       y: origin.y + 1.4 + step.y * travelled,
       z: origin.z + step.z * travelled,
     };
+    touchAttack(attack, tip);
 
     // corpo da lanca arrastando atras da ponta
     for (let t = 0; t < 10; t++) {
@@ -7002,7 +7100,13 @@ function castTsunami(player) {
   const hitEntities = new Set();
 
   let travelled = 0;
+  const attack = trackAttack(player, half);
   const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
+    touchAttack(attack, { x: origin.x + dir.x * travelled, y: origin.y + 1, z: origin.z + dir.z * travelled });
     // parede de agua avancando. Sao SO particulas: a onda passa e nao deixa
     // bloco de agua nenhum pra tras, como o pedido pede.
     for (let c = -half; c <= half; c += 1.5) {
@@ -8660,6 +8764,7 @@ function activateSpiritualPressure(player, cfg) {
   for (const entity of dim.getEntities({ location: center, maxDistance: cfg.radius })) {
     if (entity.id === player.id) continue;
     if (!entity.getComponent("minecraft:health")) continue;
+    if (isPressureImmune(entity)) continue; // Ichigo (Dangai): a pressao nao pega
     held.push({ entity, anchor: entity.location });
     if (entity.typeId === "minecraft:player") {
       world.sendMessage(`<${entity.name}> ${cfg.chatLine}`);
@@ -10912,9 +11017,15 @@ function launchIceShard(player, dir, cache) {
   const head = player.getHeadLocation();
   let pos = { x: head.x + dir.x * 0.8, y: head.y - 0.2 + dir.y * 0.8, z: head.z + dir.z * 0.8 };
   let life = 0;
+  const attack = trackAttack(player, cfg.radius);
 
   const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
     life++;
+    touchAttack(attack, pos);
     try {
       const from = { ...pos };
       const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
@@ -12466,8 +12577,14 @@ function runJakuho(player) {
     let pos = { x: hand.x + dir.x * 1.5, y: hand.y + dir.y * 1.5, z: hand.z + dir.z * 1.5 };
     const cache = new Map();
     let life = 0;
+    const attack = trackAttack(player, cfg.hitRadius + 0.6);
     const missile = system.runInterval(() => {
+      if (attack.cancelled) {
+        system.clearRun(missile);
+        return;
+      }
       life++;
+      touchAttack(attack, pos);
       try {
         const from = { ...pos };
         const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
@@ -12669,9 +12786,15 @@ function launchFrostBolt(player, dir, cache) {
   const head = player.getHeadLocation();
   let pos = { x: head.x + dir.x * 0.8, y: head.y - 0.2 + dir.y * 0.8, z: head.z + dir.z * 0.8 };
   let life = 0;
+  const attack = trackAttack(player, cfg.radius);
 
   const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
     life++;
+    touchAttack(attack, pos);
     try {
       const from = { ...pos };
       const to = { x: from.x + dir.x * cfg.speed, y: from.y + dir.y * cfg.speed, z: from.z + dir.z * cfg.speed };
@@ -14234,6 +14357,8 @@ function aizenSneakSpent(player) {
 }
 
 function hasKyokaMark(entity) {
+  // Ichigo (Dangai): as ilusoes do Aizen nao pegam nele, com marca ou sem
+  if (isIllusionImmune(entity)) return false;
   try {
     return entity.getDynamicProperty(DP.kyokaMark) === true;
   } catch (e) {
@@ -14378,6 +14503,7 @@ function setVirtualHealth(entity, value) {
 
 function markWithKyoka(aizen, target) {
   if (!target || target.id === aizen.id || target.typeId === AIZEN.cloneType) return;
+  if (isIllusionImmune(target)) return;
   if (hasKyokaMark(target)) return;
   try {
     target.setDynamicProperty(DP.kyokaMark, true);
@@ -15185,10 +15311,12 @@ function aizenCleanup(playerId) {
   for (const perAttacker of aizenCounterHits.values()) perAttacker.delete(playerId);
   aizenTrack.delete(playerId);
   hogyokuCleanup(playerId);
+  // morreu, trocou de personagem ou saiu: o enfraquecimento do Mugetsu acaba
+  clearMugetsuWeakness(playerId);
 }
 
 /* ---------------------------------------------------------
-   Sousuke Aizen (Hōgyoku) - Tier 8 (Híbrido)
+   Sousuke Aizen (Hōgyoku) - Tier 7 (Híbrido)
 
    7000 de vida, cura 300 a cada 4s. A Kyōka (160) tambem marca o alvo, e as
    tres ilusões do item Illusions (Switch, False Skill, Kanzen Saimin) seguem
@@ -15204,7 +15332,7 @@ function aizenCleanup(playerId) {
    --------------------------------------------------------- */
 
 const HOGYOKU = {
-  regen: { everyTicks: 80, base: 300, monster: 400 },
+  regen: { everyTicks: 80, base: 100, monster: 200 },
   evolution: { stepPercent: 10, stepSeconds: 30, bonusEvery: 20, regenPerBonus: 20, damagePerBonus: 0.05 },
   cocoonTicks: 100,
   monsterResist: { everySeconds: 60, step: 0.05, max: 0.5 },
@@ -15799,11 +15927,12 @@ system.runInterval(() => {
       continue;
     }
     if (isDownOrGone(player)) continue;
+    if (isMugetsuWeakened(player)) continue;
     const clock = hogyokuClock.get(player.id) ?? { evolution: 0, regen: 0, resist: 0 };
     hogyokuClock.set(player.id, clock);
     const monster = isAwakened(player);
 
-    // cura: 300 a cada 4s (+20 por 20% de Evolution); Monster: 400
+    // cura: 100 a cada 4s (+20 por 20% de Evolution); Monster: 200
     clock.regen += 20;
     if (clock.regen >= HOGYOKU.regen.everyTicks) {
       clock.regen = 0;
@@ -15873,11 +16002,870 @@ function hogyokuCleanup(playerId) {
 }
 
 /* ---------------------------------------------------------
+   Ichigo Kurosaki (Dangai) - Tier 7 (Híbrido)
+   Individualidade: imune à Pressão Espiritual e às ilusões do Aizen, speed 5
+   correndo e o dash vira o teleporte do Vasto Lorde (flags no registro).
+   --------------------------------------------------------- */
+
+const DANGAI = {
+  getsuga: {
+    radius: 4, // meia altura do corte: 8 blocos de ponta a ponta
+    bulge: 1.6, // quanto o meio do arco vai na frente das pontas
+    thickness: 1.6,
+    lateral: 2.2, // meia largura que ainda conta como acerto
+    speed: 4, // blocos por tick (o Getsuga do Shikai anda 2, o da Bankai 3)
+    range: 56,
+    subSteps: 5,
+    startAhead: 1.5,
+    cancelsUpToTier: 4,
+  },
+  omni: { count: 8 },
+  counter: {
+    stanceTicks: 100, // 5s parado
+    behind: 1.6,
+    delayTicks: 40, // 2s depois do teleporte vem o primeiro corte
+    slashGapTicks: 6,
+    paralysisTicks: 70,
+  },
+  fightElsewhere: {
+    searchRange: 12,
+    grabRange: 5,
+    holdDistance: 2.2,
+    speed: 1.5,
+    maxTicks: 40, // 60 blocos sem bater em nada: explode no ar
+    blastRadius: 3,
+  },
+  mugetsu: {
+    armorPiece: "dangai:mugetsu_chest",
+    chargeTicks: 20,
+    deactivateTicks: 100, // 5s depois do Mugetsu o Ichigo perde o personagem
+    // "3x o tamanho do Super Nuke Tenshou"
+    radius: SUPER_NUKE.radius * 3,
+    bulge: SUPER_NUKE.radius * 1.2,
+    thickness: SUPER_NUKE.thickness * 3,
+    lateral: 7,
+    speed: 4,
+    range: 100,
+    subSteps: 6,
+    startAhead: 2,
+    cancelsUpToTier: 9,
+    hogyokuHealthFraction: 0.1,
+    weaknessSlowAmplifier: 2, // lentidao 3
+  },
+};
+
+/* ---------- ataques que viajam (e podem ser desfeitos no caminho) ---------- */
+
+// getsugas, ceros, lancas, estacas e misseis se registram aqui e avisam onde
+// estao a cada tick (touchAttack). O Getsuga do Dangai desfaz os de tier <= 4.
+const travellingAttacks = new Set();
+
+function trackAttack(owner, radius) {
+  const attack = {
+    owner,
+    ownerId: owner.id,
+    dimId: owner.dimension.id,
+    radius,
+    pos: undefined,
+    seen: system.currentTick,
+    cancelled: false,
+  };
+  travellingAttacks.add(attack);
+  return attack;
+}
+
+function touchAttack(attack, pos, radius) {
+  attack.pos = pos;
+  attack.seen = system.currentTick;
+  if (radius !== undefined) attack.radius = radius;
+}
+
+// ataque que parou de avisar onde esta ja acabou (bateu, sumiu ou o loop caiu)
+system.runInterval(() => {
+  const now = system.currentTick;
+  for (const attack of travellingAttacks) {
+    if (attack.cancelled || now - attack.seen > 40) travellingAttacks.delete(attack);
+  }
+}, 20);
+
+function cancelAttacksNear(player, dim, center, reach, maxTier) {
+  const now = system.currentTick;
+  for (const attack of travellingAttacks) {
+    if (attack.cancelled || !attack.pos || now - attack.seen > 2) continue;
+    if (attack.ownerId === player.id || attack.dimId !== dim.id) continue;
+    let tier = 0;
+    try {
+      tier = tierOfPlayer(attack.owner);
+    } catch (e) {}
+    if (tier > maxTier) continue;
+    const dx = attack.pos.x - center.x;
+    const dy = attack.pos.y - center.y;
+    const dz = attack.pos.z - center.z;
+    if (Math.sqrt(dx * dx + dy * dy + dz * dz) > reach + attack.radius) continue;
+    attack.cancelled = true;
+    travellingAttacks.delete(attack);
+    try {
+      for (let i = 0; i < 8; i++) {
+        dim.spawnParticle(i % 2 ? "dangai:raio" : "dangai:borda", {
+          x: attack.pos.x + (Math.random() - 0.5) * 1.6,
+          y: attack.pos.y + (Math.random() - 0.5) * 1.6,
+          z: attack.pos.z + (Math.random() - 0.5) * 1.6,
+        });
+      }
+      dim.playSound("random.fizz", attack.pos, { volume: 1.2, pitch: 0.6 });
+      dim.playSound("random.glass", attack.pos, { volume: 0.8, pitch: 1.4 });
+    } catch (e) {}
+    try {
+      attack.owner.sendMessage(`§7Seu ataque foi desfeito pelo Getsuga de §b${player.name}§7.`);
+    } catch (e) {}
+  }
+}
+
+/* ---------- individualidade ---------- */
+
+function isPressureImmune(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.pressureImmune === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isIllusionImmune(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.illusionImmune === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// speed 5 so enquanto corre: troca o efeito quando o player comeca/para de correr
+const dangaiSprinting = new Map();
+system.runInterval(() => {
+  for (const player of world.getPlayers()) {
+    let character;
+    try {
+      character = getActiveCharacter(player);
+    } catch (e) {
+      continue;
+    }
+    const amplifier = character?.sprintSpeedAmplifier;
+    if (amplifier === undefined) {
+      dangaiSprinting.delete(player.id);
+      continue;
+    }
+    let sprinting = false;
+    try {
+      sprinting = player.isSprinting === true;
+    } catch (e) {}
+    const was = dangaiSprinting.get(player.id);
+    let current = -1;
+    try {
+      current = player.getEffect("speed")?.amplifier ?? -1;
+    } catch (e) {}
+    // correndo: garante o speed 5 mesmo se outra coisa reaplicou o efeito base
+    if (sprinting && current < amplifier) {
+      setPermanentEffect(player, "speed", amplifier);
+    } else if (!sprinting && was === true) {
+      setPermanentEffect(player, "speed", activeFormOf(player, character)?.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
+    }
+    dangaiSprinting.set(player.id, sprinting);
+  }
+}, 4);
+
+/* ---------- o corte (Getsuga Dangai e Getsuga Tenshou Final) ---------- */
+
+function unitVector(v) {
+  const length = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) || 1;
+  return { x: v.x / length, y: v.y / length, z: v.z / length };
+}
+
+// referencial do corte: dir (pra onde anda), up (altura do arco), side (largura)
+function crescentFrame(direction) {
+  const dir = unitVector(direction);
+  let side = { x: -dir.z, y: 0, z: dir.x }; // cross(dir, cima) com o sinal do Bedrock
+  const sideLength = Math.sqrt(side.x * side.x + side.z * side.z);
+  side = sideLength < 1e-3 ? { x: 1, y: 0, z: 0 } : { x: side.x / sideLength, y: 0, z: side.z / sideLength };
+  const up = {
+    x: side.y * dir.z - side.z * dir.y,
+    y: side.z * dir.x - side.x * dir.z,
+    z: side.x * dir.y - side.y * dir.x,
+  };
+  // up tem que apontar pro ceu
+  if (up.y < 0) {
+    up.x = -up.x;
+    up.y = -up.y;
+    up.z = -up.z;
+  }
+  return { dir, up, side };
+}
+
+function framePoint(c, frame, along, vert, lat) {
+  const { dir, up, side } = frame;
+  return {
+    x: c.x + dir.x * along + up.x * vert + side.x * lat,
+    y: c.y + dir.y * along + up.y * vert + side.y * lat,
+    z: c.z + dir.z * along + up.z * vert + side.z * lat,
+  };
+}
+
+// o arco: o meio vai na frente, as pontas ficam pra tras
+function arcAlong(cfg, vert) {
+  const t = Math.max(-1, Math.min(1, vert / cfg.radius));
+  return cfg.bulge * Math.sqrt(1 - t * t);
+}
+
+const CRESCENT_LOOKS = {
+  dangai: {
+    coreParticle: "dangai:getsuga",
+    edgeParticle: "dangai:borda",
+    boltParticle: "dangai:raio",
+    points: 15,
+    litePoints: 7,
+    bolts: 3,
+    boltSegments: 5,
+    boltStep: 0.55,
+  },
+  mugetsu: {
+    coreParticle: "dangai:mugetsu",
+    edgeParticle: "dangai:mugetsu_borda",
+    boltParticle: "dangai:raio",
+    points: 21,
+    litePoints: 21,
+    bolts: 4,
+    boltSegments: 6,
+    boltStep: 1.4,
+  },
+};
+
+function drawCrescent(dim, c, frame, cfg, look, lite, smear) {
+  const points = lite ? look.litePoints : look.points;
+  for (let i = 0; i < points; i++) {
+    const t = -0.92 + (1.84 * i) / Math.max(1, points - 1);
+    const vert = t * cfg.radius;
+    const front = arcAlong(cfg, vert);
+    const thick = cfg.thickness * (1 - t * t * 0.7); // afina nas pontas
+    try {
+      dim.spawnParticle(look.edgeParticle, framePoint(c, frame, front, vert, 0));
+      // corpo: espalhado pelo trecho que o corte andou neste tick, pra nao
+      // ficar um "carimbo" a cada 4 blocos
+      dim.spawnParticle(
+        look.coreParticle,
+        framePoint(c, frame, front - thick * 0.5 - Math.random() * smear, vert, (Math.random() - 0.5) * cfg.lateral * 0.5)
+      );
+      if (!lite) {
+        dim.spawnParticle(
+          look.coreParticle,
+          framePoint(c, frame, front - thick * Math.random() - Math.random() * smear, vert, (Math.random() - 0.5) * cfg.lateral * 0.4)
+        );
+      }
+    } catch (e) {}
+  }
+  // raios pretos saindo do corte, em zigue-zague
+  const bolts = lite ? 1 : look.bolts;
+  for (let b = 0; b < bolts; b++) {
+    const t = (Math.random() * 2 - 1) * 0.9;
+    const vert = t * cfg.radius;
+    let along = arcAlong(cfg, vert) - cfg.thickness * 0.5;
+    let v = vert;
+    let lat = 0;
+    const heading = {
+      along: -0.2 - Math.random() * 0.6,
+      vert: Math.sign(t || 1) * (0.3 + Math.random() * 0.7),
+      lat: (Math.random() - 0.5) * 2,
+    };
+    for (let s = 0; s < look.boltSegments; s++) {
+      along += heading.along * look.boltStep + (Math.random() - 0.5) * look.boltStep * 0.7;
+      v += heading.vert * look.boltStep + (Math.random() - 0.5) * look.boltStep * 0.7;
+      lat += heading.lat * look.boltStep + (Math.random() - 0.5) * look.boltStep * 0.7;
+      try {
+        dim.spawnParticle(look.boltParticle, framePoint(c, frame, along, v, lat));
+      } catch (e) {}
+    }
+  }
+}
+
+// dispara um corte. options: direction, origin, lite, hitSet, startAhead,
+// onHit(entity) -> true quando o golpe ja foi tratado (Getsuga Final no Hōgyoku)
+function fireCrescent(player, cfg, look, options = {}) {
+  const dim = player.dimension;
+  const origin = options.origin ?? player.location;
+  const frame = crescentFrame(options.direction ?? player.getViewDirection());
+  const hit = options.hitSet ?? new Set();
+  const lite = options.lite === true;
+  const start = { x: origin.x, y: origin.y + 1.1, z: origin.z };
+  const centerAt = (d) => ({
+    x: start.x + frame.dir.x * d,
+    y: start.y + frame.dir.y * d,
+    z: start.z + frame.dir.z * d,
+  });
+  let travelled = options.startAhead ?? cfg.startAhead;
+
+  const strikeAround = (c) => {
+    for (const entity of dim.getEntities({ location: c, maxDistance: cfg.radius + cfg.lateral + 2 })) {
+      if (entity.id === player.id || hit.has(entity.id)) continue;
+      if (!entity.getComponent("minecraft:health")) continue;
+      const l = entity.location;
+      const mid = { x: l.x - c.x, y: l.y + 1 - c.y, z: l.z - c.z };
+      const along = mid.x * frame.dir.x + mid.y * frame.dir.y + mid.z * frame.dir.z;
+      const vert = mid.x * frame.up.x + mid.y * frame.up.y + mid.z * frame.up.z;
+      const lat = mid.x * frame.side.x + mid.y * frame.side.y + mid.z * frame.side.z;
+      if (Math.abs(vert) > cfg.radius + 0.9 || Math.abs(lat) > cfg.lateral + 0.3) continue;
+      const front = arcAlong(cfg, vert);
+      if (along > front + 0.6 || along < front - cfg.thickness - 0.6) continue;
+      // so pra frente de quem lancou
+      const back = { x: l.x - start.x, y: l.y + 1 - start.y, z: l.z - start.z };
+      if (back.x * frame.dir.x + back.y * frame.dir.y + back.z * frame.dir.z < -0.5) continue;
+      hit.add(entity.id);
+      if (options.onHit?.(entity)) continue;
+      // o Getsuga Final atravessa tudo (Respira, Intocable, guarda); o Getsuga
+      // do Dangai respeita as defesas como qualquer golpe
+      if (!options.pierce && isRespiring(entity)) {
+        showRespiraGuard(entity);
+        continue;
+      }
+      try {
+        dealDamage(entity, options.damage * dmgMultiplier(player), player, {
+          bypassesIntocable: options.pierce === true,
+          breaksBlock: options.pierce === true,
+        });
+      } catch (e) {}
+    }
+  };
+
+  const interval = system.runInterval(() => {
+    try {
+      if (isDownOrGone(player)) {
+        system.clearRun(interval);
+        return;
+      }
+      const from = travelled;
+      travelled = Math.min(cfg.range, travelled + cfg.speed);
+      drawCrescent(dim, centerAt(travelled), frame, cfg, look, lite, travelled - from);
+      for (let k = 1; k <= cfg.subSteps; k++) {
+        const c = centerAt(from + ((travelled - from) * k) / cfg.subSteps);
+        cancelAttacksNear(player, dim, c, cfg.radius, cfg.cancelsUpToTier);
+        strikeAround(c);
+      }
+    } catch (e) {
+      system.clearRun(interval);
+      return;
+    }
+    if (travelled >= cfg.range) system.clearRun(interval);
+  }, 1);
+}
+
+function fireDangaiGetsuga(player, options = {}) {
+  fireCrescent(player, DANGAI.getsuga, CRESCENT_LOOKS.dangai, { damage: DAMAGE.dangaiGetsuga, ...options });
+}
+
+function getsugaSound(player, pitch = 0.6) {
+  try {
+    const dim = player.dimension;
+    const at = player.location;
+    dim.playSound("mob.wither.shoot", at, { volume: 1.6, pitch });
+    dim.playSound("item.trident.thunder", at, { volume: 0.7, pitch: 1.6 });
+  } catch (e) {}
+}
+
+/* ---------- Getsuga Tenshou (Dangai) ---------- */
+
+function castDangaiGetsuga(player) {
+  if (!tryUseSkill(player, "dangai:getsuga_tenshou")) return;
+  world.sendMessage(`§3${player.name}: §b§lGETSUGA TENSHOU!`);
+  getsugaSound(player);
+  fireDangaiGetsuga(player);
+}
+
+/* ---------- Omnidirectional Getsuga ---------- */
+
+function castOmnidirectionalGetsuga(player) {
+  if (!tryUseSkill(player, "dangai:omnidirectional_getsuga")) return;
+  world.sendMessage(`§3${player.name}: §b§lOMNIDIRECTIONAL GETSUGA!`);
+  getsugaSound(player, 0.45);
+  // oito cortes em volta, o primeiro pra onde ele olha; quem esta perto de
+  // dois cortes toma um so
+  const view = player.getViewDirection();
+  const base = Math.atan2(view.z, view.x);
+  const hit = new Set();
+  for (let i = 0; i < DANGAI.omni.count; i++) {
+    const a = base + (i / DANGAI.omni.count) * Math.PI * 2;
+    fireDangaiGetsuga(player, { direction: { x: Math.cos(a), y: 0, z: Math.sin(a) }, lite: true, hitSet: hit });
+  }
+}
+
+/* ---------- Arrogant's Counter ---------- */
+
+const dangaiCounters = new Map(); // id do Ichigo -> postura (5s parado)
+const dangaiCounterStrikes = new Map(); // id do Ichigo -> contra-ataque em andamento
+
+function castArrogantsCounter(player) {
+  if (dangaiCounters.has(player.id) || dangaiCounterStrikes.has(player.id)) {
+    player.sendMessage("§7O Arrogant's Counter já está de pé.");
+    return;
+  }
+  if (!tryUseSkill(player, "dangai:arrogants_counter")) return;
+  const cfg = DANGAI.counter;
+  const stance = { player, until: system.currentTick + cfg.stanceTicks, triggered: false };
+  dangaiCounters.set(player.id, stance);
+  world.sendMessage(`§3${player.name} §7ficou parado... §b§lArrogant's Counter`);
+  try {
+    player.dimension.playSound("item.trident.return", player.location, { volume: 1.2, pitch: 0.6 });
+  } catch (e) {}
+  stance.run = system.runInterval(() => {
+    if (
+      isDownOrGone(player) ||
+      getActiveCharacter(player)?.id !== "ichigo_dangai" ||
+      system.currentTick >= stance.until
+    ) {
+      endCounterStance(stance, "tempo");
+      return;
+    }
+    try {
+      player.addEffect("slowness", 6, { amplifier: 255, showParticles: false });
+      player.addEffect("jump_boost", 6, { amplifier: 128, showParticles: false });
+      const l = player.location;
+      const a = (system.currentTick % 20) * (Math.PI / 10);
+      for (let i = 0; i < 3; i++) {
+        const b = a + (i * Math.PI * 2) / 3;
+        player.dimension.spawnParticle("dangai:getsuga", { x: l.x + Math.cos(b) * 1.1, y: l.y + 0.2, z: l.z + Math.sin(b) * 1.1 });
+      }
+    } catch (e) {}
+  }, 2);
+}
+
+function endCounterStance(stance, reason) {
+  if (dangaiCounters.get(stance.player.id) === stance) dangaiCounters.delete(stance.player.id);
+  system.clearRun(stance.run);
+  try {
+    if (!isFrozen(stance.player)) {
+      stance.player.removeEffect("slowness");
+      stance.player.removeEffect("jump_boost");
+    }
+    if (reason === "tempo") stance.player.sendMessage("§7Ninguém caiu no Arrogant's Counter.");
+  } catch (e) {}
+}
+
+// chamada pelo dealDamage: qualquer golpe de alguem durante a postura vira o
+// contra-ataque, e o golpe em si nao entra
+function dangaiCounterIntercept(target, source) {
+  const stance = dangaiCounters.get(target?.id);
+  if (!stance || stance.triggered) return false;
+  if (!source || source.id === target.id) return false;
+  try {
+    if (!source.getComponent("minecraft:health") || isDownOrGone(source)) return false;
+  } catch (e) {
+    return false;
+  }
+  stance.triggered = true;
+  endCounterStance(stance, "golpe");
+  runCounterStrike(target, source);
+  return true;
+}
+
+function dangaiSlashAt(player, target, tilt) {
+  try {
+    const dim = player.dimension;
+    const from = player.location;
+    const to = target.location;
+    const dir = unitVector({ x: to.x - from.x, y: 0, z: to.z - from.z });
+    const side = { x: -dir.z, z: dir.x };
+    for (let i = 0; i <= 8; i++) {
+      const k = i / 8 - 0.5;
+      const p = {
+        x: to.x - dir.x * 0.4 + side.x * k * 2.4,
+        y: to.y + 1 + k * 2.4 * tilt,
+        z: to.z - dir.z * 0.4 + side.z * k * 2.4,
+      };
+      dim.spawnParticle(i % 2 ? "dangai:borda" : "dangai:getsuga", p);
+    }
+    dim.playSound("item.trident.riptide_3", to, { volume: 1, pitch: 1.4 });
+  } catch (e) {}
+}
+
+function runCounterStrike(player, attacker) {
+  const cfg = DANGAI.counter;
+  world.sendMessage(`§3${player.name}: §b§lArrogant's Counter!`);
+  try {
+    const spot = aizenSpotBehind(attacker, cfg.behind);
+    player.teleport(spot, {
+      dimension: attacker.dimension,
+      keepVelocity: false,
+      rotation: levelRotationToward(spot, attacker.location),
+    });
+    player.dimension.playSound("mob.endermen.portal", spot, { volume: 1, pitch: 0.7 });
+  } catch (e) {}
+  if (!isIntocable(attacker)) paralyzeFor(attacker, cfg.paralysisTicks, "§3Você caiu no Arrogant's Counter!");
+
+  const strike = { timers: [] };
+  dangaiCounterStrikes.set(player.id, strike);
+  const alive = () =>
+    dangaiCounterStrikes.get(player.id) === strike &&
+    !isDownOrGone(player) &&
+    !isDownOrGone(attacker) &&
+    getActiveCharacter(player)?.id === "ichigo_dangai";
+  const slash = (tilt) => {
+    if (!alive()) return;
+    dangaiSlashAt(player, attacker, tilt);
+    try {
+      dealDamage(attacker, DAMAGE.dangaiCounterSlash * dmgMultiplier(player), player, { breaksBlock: true });
+    } catch (e) {}
+  };
+  strike.timers.push(system.runTimeout(() => slash(1), cfg.delayTicks));
+  strike.timers.push(system.runTimeout(() => slash(-1), cfg.delayTicks + cfg.slashGapTicks));
+  strike.timers.push(
+    system.runTimeout(() => {
+      if (alive()) {
+        try {
+          const from = player.location;
+          const to = attacker.location;
+          getsugaSound(player);
+          fireDangaiGetsuga(player, {
+            direction: { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z },
+            startAhead: 0,
+          });
+        } catch (e) {}
+      }
+      if (dangaiCounterStrikes.get(player.id) === strike) dangaiCounterStrikes.delete(player.id);
+    }, cfg.delayTicks + 2 * cfg.slashGapTicks)
+  );
+}
+
+/* ---------- "Let's fight somewhere else." ---------- */
+
+const dangaiCarries = new Map(); // id do Ichigo -> carregando alguem
+
+// grama, flor, tocha e afins nao sao "bater num bloco"
+const DANGAI_SOFT_BLOCKS =
+  /^minecraft:(short_grass|tallgrass|tall_grass|fern|large_fern|dead_bush|snow_layer|vine|.*flower.*|.*tulip|dandelion|poppy|blue_orchid|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|wither_rose|sunflower|lilac|rose_bush|peony|.*sapling|.*torch|.*carpet|.*_button|lever|.*sign|seagrass|kelp|web|.*rail|.*pressure_plate|sweet_berry_bush|wheat|carrots|potatoes|beetroot|.*mushroom)$/;
+
+function dangaiCellSolid(dim, cache, x, y, z) {
+  const key = `${x},${y},${z}`;
+  if (cache.has(key)) return cache.get(key);
+  let solid = false;
+  try {
+    const block = dim.getBlock({ x, y, z });
+    if (!block) solid = true;
+    else solid = !(block.isAir || block.isLiquid) && !DANGAI_SOFT_BLOCKS.test(block.typeId);
+  } catch (e) {
+    solid = true;
+  }
+  cache.set(key, solid);
+  return solid;
+}
+
+// corpo de dois blocos de altura a partir dos pes
+function dangaiBodyBlocked(dim, cache, feet) {
+  const x = Math.floor(feet.x);
+  const y = Math.floor(feet.y + 0.1);
+  const z = Math.floor(feet.z);
+  return dangaiCellSolid(dim, cache, x, y, z) || dangaiCellSolid(dim, cache, x, y + 1, z);
+}
+
+function castFightSomewhereElse(player) {
+  const cfg = DANGAI.fightElsewhere;
+  if (dangaiCarries.has(player.id)) return;
+  const victim = targetInView(player, cfg.searchRange) ?? nearestTarget(player, cfg.grabRange);
+  if (!victim) {
+    player.sendMessage("§7Não tem ninguém na frente pra levar.");
+    return;
+  }
+  if (!tryUseSkill(player, "dangai:lets_fight_somewhere_else")) return;
+  world.sendMessage(`§3${player.name}: §b§o"Let's fight somewhere else."`);
+  try {
+    player.dimension.playSound("mob.enderdragon.flap", player.location, { volume: 1.4, pitch: 0.8 });
+  } catch (e) {}
+  const state = { player, victim, dim: player.dimension, ticks: 0, cache: new Map() };
+  dangaiCarries.set(player.id, state);
+  state.run = system.runInterval(() => stepCarry(state), 1);
+}
+
+function stepCarry(state) {
+  const cfg = DANGAI.fightElsewhere;
+  const { player, victim, dim } = state;
+  if (isDownOrGone(player) || isDownOrGone(victim) || getActiveCharacter(player)?.id !== "ichigo_dangai") {
+    endCarry(state, null);
+    return;
+  }
+  state.ticks++;
+  let next;
+  let grip;
+  try {
+    const view = unitVector(player.getViewDirection());
+    const at = player.location;
+    next = { x: at.x + view.x * cfg.speed, y: at.y + view.y * cfg.speed, z: at.z + view.z * cfg.speed };
+    // preso na frente, na altura do rosto (igual ao Face Hold do Yammy)
+    grip = {
+      x: next.x + view.x * cfg.holdDistance,
+      y: next.y + view.y * cfg.holdDistance + 1,
+      z: next.z + view.z * cfg.holdDistance,
+    };
+  } catch (e) {
+    endCarry(state, null);
+    return;
+  }
+  // o alvo vai na frente: e ele que bate primeiro
+  if (dangaiBodyBlocked(dim, state.cache, grip) || dangaiBodyBlocked(dim, state.cache, next)) {
+    endCarry(state, "parede");
+    return;
+  }
+  if (state.ticks > cfg.maxTicks) {
+    endCarry(state, "ar");
+    return;
+  }
+  try {
+    player.teleport(next, { keepVelocity: false });
+    victim.teleport(grip, { keepVelocity: false, rotation: levelRotationToward(grip, next) });
+    victim.addEffect("slowness", 10, { amplifier: 255, showParticles: false });
+    state.last = grip;
+    dim.spawnParticle("dangai:getsuga", { x: next.x, y: next.y + 1, z: next.z });
+    if (state.ticks % 2 === 0) dim.spawnParticle("dangai:raio", { x: grip.x, y: grip.y + 0.5, z: grip.z });
+  } catch (e) {
+    endCarry(state, null);
+  }
+}
+
+function endCarry(state, reason) {
+  system.clearRun(state.run);
+  if (dangaiCarries.get(state.player.id) === state) dangaiCarries.delete(state.player.id);
+  const { player, victim, dim } = state;
+  try {
+    if (!isFrozen(victim)) victim.removeEffect("slowness");
+  } catch (e) {}
+  if (!reason) return;
+  const cfg = DANGAI.fightElsewhere;
+  let at = state.last;
+  try {
+    at = victim.location;
+  } catch (e) {}
+  if (!at) return;
+  try {
+    dim.playSound("random.explode", at, { volume: 2, pitch: 0.8 });
+    dim.playSound("item.trident.thunder", at, { volume: 0.8, pitch: 1.2 });
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      const r = cfg.blastRadius * (0.4 + Math.random() * 0.6);
+      const p = { x: at.x + Math.cos(a) * r, y: at.y + 0.5 + Math.random() * 1.8, z: at.z + Math.sin(a) * r };
+      dim.spawnParticle(i % 3 === 0 ? "minecraft:large_explosion" : i % 3 === 1 ? "dangai:getsuga" : "dangai:raio", p);
+    }
+  } catch (e) {}
+  try {
+    dealDamage(victim, DAMAGE.dangaiFightElsewhere * dmgMultiplier(player), player);
+  } catch (e) {}
+}
+
+/* ---------- Awk-Mugetsu: Getsuga Tenshou Final ---------- */
+
+const dangaiMugetsu = new Map(); // id do Ichigo -> Mugetsu em andamento (5s)
+const mugetsuWeakened = new Set(); // ids dos Aizen Hōgyoku que sobreviveram
+
+function isMugetsuWeakened(entity) {
+  return !!entity && mugetsuWeakened.has(entity.id);
+}
+
+function clearMugetsuWeakness(playerId) {
+  mugetsuWeakened.delete(playerId);
+}
+
+// a roupa do Mugetsu so vale enquanto ele dura
+function mugetsuArmorOf(player) {
+  if (!dangaiMugetsu.has(player.id)) return undefined;
+  try {
+    if (getActiveCharacter(player)?.id !== "ichigo_dangai") return undefined;
+  } catch (e) {
+    return undefined;
+  }
+  return DANGAI.mugetsu.armorPiece;
+}
+
+function tryTriggerMugetsu(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+  if (dangaiMugetsu.has(player.id)) return false;
+  player.setDynamicProperty(DP.awakening, 0);
+  startMugetsu(player);
+  return true;
+}
+
+function startMugetsu(player) {
+  const cfg = DANGAI.mugetsu;
+  const state = { timers: [] };
+  dangaiMugetsu.set(player.id, state);
+  equipArmorPiece(player, cfg.armorPiece);
+  world.sendMessage(`§8§l${player.name}: §0§lMUGETSU`);
+  const dim = player.dimension;
+  const center = player.location;
+  try {
+    dim.playSound("mob.wither.spawn", center, { volume: 2, pitch: 0.4 });
+    dim.playSound("ambient.weather.thunder", center, { volume: 2, pitch: 0.5 });
+  } catch (e) {}
+  for (const other of world.getPlayers()) {
+    try {
+      if (other.dimension.id !== dim.id) continue;
+      const l = other.location;
+      if (Math.hypot(l.x - center.x, l.y - center.y, l.z - center.z) > 120) continue;
+      other.onScreenDisplay.setTitle("§0§lMUGETSU", {
+        subtitle: "§8Getsuga Tenshou Final",
+        fadeInDuration: 5,
+        stayDuration: 30,
+        fadeOutDuration: 10,
+      });
+      if (other.id !== player.id) other.addEffect("darkness", 60, { amplifier: 0, showParticles: false });
+    } catch (e) {}
+  }
+  // aura preta subindo enquanto carrega
+  state.aura = system.runInterval(() => {
+    try {
+      const l = player.location;
+      for (let i = 0; i < 4; i++) {
+        dim.spawnParticle("dangai:mugetsu", {
+          x: l.x + (Math.random() - 0.5) * 1.6,
+          y: l.y + Math.random() * 2.4,
+          z: l.z + (Math.random() - 0.5) * 1.6,
+        });
+      }
+    } catch (e) {}
+  }, 2);
+  state.timers.push(
+    system.runTimeout(() => {
+      system.clearRun(state.aura);
+      if (dangaiMugetsu.get(player.id) !== state || isDownOrGone(player)) return;
+      fireGetsugaFinal(player);
+    }, cfg.chargeTicks)
+  );
+  state.timers.push(system.runTimeout(() => endMugetsu(player, state), cfg.deactivateTicks));
+}
+
+function fireGetsugaFinal(player) {
+  const cfg = DANGAI.mugetsu;
+  world.sendMessage(`§8§l${player.name}: §0§lGETSUGA TENSHOU FINAL!`);
+  try {
+    const at = player.location;
+    player.dimension.playSound("mob.warden.sonic_boom", at, { volume: 2, pitch: 0.5 });
+    player.dimension.playSound("mob.wither.death", at, { volume: 2, pitch: 0.3 });
+  } catch (e) {}
+  fireCrescent(player, cfg, CRESCENT_LOOKS.mugetsu, {
+    damage: DAMAGE.getsugaFinal,
+    pierce: true,
+    onHit: (entity) => {
+      // o Aizen Hōgyoku nao morre: fica com 10% e sem forcas
+      if (!isHogyoku(entity)) return false;
+      weakenHogyoku(entity, player);
+      return true;
+    },
+  });
+}
+
+function weakenHogyoku(aizen, ichigo) {
+  const cfg = DANGAI.mugetsu;
+  try {
+    const hp = aizen.getComponent("minecraft:health");
+    const max = hp.effectiveMax * healthScaleOf(aizen);
+    setVirtualHealth(aizen, Math.min(virtualHealth(aizen), max * cfg.hogyokuHealthFraction));
+  } catch (e) {}
+  // desfaz Switch, Kanzen e casulo; a Evolution para onde estava
+  hogyokuCleanup(aizen.id);
+  mugetsuWeakened.add(aizen.id);
+  applyMugetsuWeakness(aizen);
+  world.sendMessage(`§8§l${aizen.name} sobreviveu ao Getsuga Tenshou Final... §r§7mas ficou sem forças.`);
+  try {
+    aizen.sendMessage("§8Você não regenera, está lento e não consegue usar skills nem causar dano.");
+    ichigo.sendMessage("§8O Hōgyoku não deixou o Aizen morrer.");
+  } catch (e) {}
+}
+
+function applyMugetsuWeakness(aizen) {
+  try {
+    aizen.removeEffect("regeneration");
+    aizen.addEffect("slowness", 40, {
+      amplifier: DANGAI.mugetsu.weaknessSlowAmplifier,
+      showParticles: false,
+    });
+  } catch (e) {}
+}
+
+system.runInterval(() => {
+  for (const id of [...mugetsuWeakened]) {
+    const aizen = world.getPlayers().find((p) => p.id === id);
+    if (!aizen || !isHogyoku(aizen)) {
+      mugetsuWeakened.delete(id);
+      continue;
+    }
+    applyMugetsuWeakness(aizen);
+  }
+}, 20);
+
+function endMugetsu(player, state) {
+  if (dangaiMugetsu.get(player.id) !== state) return;
+  dangaiMugetsu.delete(player.id);
+  system.clearRun(state.aura);
+  try {
+    clearArmorPiece(player, DANGAI.mugetsu.armorPiece);
+    if (getActiveCharacter(player)?.id !== "ichigo_dangai") return;
+    world.sendMessage(`§8${player.name} usou tudo no Getsuga Tenshou Final e perdeu os poderes de Shinigami.`);
+    deactivateCharacter(player);
+  } catch (e) {}
+}
+
+/* ---------- limpeza ---------- */
+
+// full = trocou de personagem ou saiu. Morrer (full = false) solta a postura e
+// o arrasto, mas o Mugetsu continua contando: ele tira o Ichigo mesmo assim.
+function dangaiCleanup(player, full) {
+  const id = player.id;
+  const stance = dangaiCounters.get(id);
+  if (stance) endCounterStance(stance, "limpeza");
+  const strike = dangaiCounterStrikes.get(id);
+  if (strike) {
+    for (const timer of strike.timers) system.clearRun(timer);
+    dangaiCounterStrikes.delete(id);
+  }
+  const carry = dangaiCarries.get(id);
+  if (carry) endCarry(carry, null);
+  if (!full) return;
+  const mugetsu = dangaiMugetsu.get(id);
+  if (mugetsu) {
+    dangaiMugetsu.delete(id);
+    for (const timer of mugetsu.timers) system.clearRun(timer);
+    system.clearRun(mugetsu.aura);
+  }
+  try {
+    clearArmorPiece(player, DANGAI.mugetsu.armorPiece);
+  } catch (e) {}
+  dangaiSprinting.delete(id);
+}
+
+function dangaiCleanupId(playerId) {
+  const stance = dangaiCounters.get(playerId);
+  if (stance) {
+    dangaiCounters.delete(playerId);
+    system.clearRun(stance.run);
+  }
+  const strike = dangaiCounterStrikes.get(playerId);
+  if (strike) for (const timer of strike.timers) system.clearRun(timer);
+  dangaiCounterStrikes.delete(playerId);
+  const carry = dangaiCarries.get(playerId);
+  if (carry) endCarry(carry, null);
+  const mugetsu = dangaiMugetsu.get(playerId);
+  if (mugetsu) {
+    for (const timer of mugetsu.timers) system.clearRun(timer);
+    system.clearRun(mugetsu.aura);
+  }
+  dangaiMugetsu.delete(playerId);
+  dangaiSprinting.delete(playerId);
+}
+
+/* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
 // registro generico de armas m1 - facilita adicionar novos personagens
 const MELEE_WEAPONS = {
+  "dangai:m1_zangetsu": {
+    baseDamage: DAMAGE.dangaiM1,
+    particle: "dangai:getsuga",
+    dot: null,
+  },
   "aizen:m1_kyoka_suigetsu": {
     baseDamage: DAMAGE.aizenM1,
     particle: "aizen:reiatsu",
@@ -16278,9 +17266,10 @@ system.runInterval(() => {
         setCooldown(player, DP.dashCd, now);
 
         // o Vasto Lorde nao avanca: ele aparece em cima do alvo
-        const teleportTarget = activeFormOf(player)?.dashTeleports
-          ? nearestTarget(player, DASH_TELEPORT_RANGE)
-          : undefined;
+        const teleportTarget =
+          activeFormOf(player)?.dashTeleports || character.dashTeleports
+            ? nearestTarget(player, DASH_TELEPORT_RANGE)
+            : undefined;
 
         if (teleportTarget) {
           try {
@@ -16689,7 +17678,7 @@ system.runInterval(() => {
     const character = getActiveCharacter(player);
 
     // roda mesmo sem personagem: e assim que a peca sobrando some da mochila
-    sweepFormArmor(player, activeFormOf(player, character)?.armorPiece);
+    sweepFormArmor(player, mugetsuArmorOf(player) ?? activeFormOf(player, character)?.armorPiece);
 
     if (!character) continue;
 
@@ -16919,6 +17908,7 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   resetTosenVisoredChargeId(playerId);
   tosenOldHelmet.delete(playerId);
   aizenCleanup(playerId);
+  dangaiCleanupId(playerId);
 });
 
 
@@ -16947,4 +17937,5 @@ export {
   TOXIC_FOG,
   AIZEN,
   HOGYOKU,
+  DANGAI,
 };

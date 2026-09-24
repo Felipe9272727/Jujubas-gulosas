@@ -41,12 +41,14 @@ o tier abre os personagens daquela raça naquele tier.
 | 3 | Kaname Tōsen (Suzumushi) | 1500 | super: Enma Kōrogi; Visored como forma alternativa |
 | 4 | Shinji Hirako | 2600 | Sakanade (em `shinji.js`) |
 | 4 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
-| 8 | **Sousuke Aizen (Hōgyoku)** | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
+| 7 | **Sousuke Aizen (Hōgyoku)** | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
+| 7 | **Ichigo Kurosaki (Dangai)** | 7500 | super: Mugetsu (Getsuga Tenshou Final) |
 
 O **tier** não é só etiqueta: a Pressão Espiritual (skill genérica do slot 7)
 machuca quem está 2+ tiers abaixo e **mata na hora** quem está 5+ abaixo, e o
 Air Step exige tier 5+. O Aizen (6) apaga qualquer tier 1 dentro de 60 blocos
-com a pressão ligada; o Aizen Hōgyoku (8) apaga até o tier 3.
+com a pressão ligada; o Aizen Hōgyoku (7) apaga até o tier 2. O Ichigo (Dangai)
+é imune à pressão de qualquer tier.
 
 ## Layout
 
@@ -60,7 +62,7 @@ BP/                     behavior pack
 RP/                     resource pack
   manifest.json
   entity/               override do player (escala do modelo por Molang), boneco, clone
-  attachables/          Hollowficação/Vasto Lorde (Vizard) e Daiguren (Hitsugaya)
+  attachables/          Hollowficação/Vasto Lorde (Vizard), Daiguren (Hitsugaya) e Mugetsu (Dangai)
   particles/            partículas customizadas (sakura:leaf, mayuri:poison_fog, grimmjow:cero, ...)
   textures/items/*.png  uma textura por item
   textures/item_texture.json
@@ -71,6 +73,7 @@ tools/
   hollow_model.py       modelo do Ichigo Vizard (attachable)
   aizen_clone_model.py  modelo do clone dos dois Aizen
   daiguren_model.py     asas, cauda e braço de gelo da Daiguren (attachable)
+  mugetsu_model.py      roupa do Mugetsu do Ichigo Dangai (attachable)
   gen_model.py          renderiza os modelos em .geo.json
   vanilla_sounds.txt    IDs de som do Bedrock, pra validar os sons do script
   validate.py           JSON, itens, texturas, manifests, versões, sons, entidades
@@ -183,7 +186,7 @@ dynamic properties e formulários com resposta roteirizada.
 O harness dispara todos os eventos (`playerSpawn`, `itemUse`,
 `entityHitEntity`, `entityHitBlock`, `entitySpawn`, `playerLeave`...), usa as
 skills, ativa awakenings e supers, mata alvos no meio de um DoT, simula reload
-do mundo e desconexão, e roda 2000 ticks livres no fim. São 915 checks —
+do mundo e desconexão, e roda 2000 ticks livres no fim. São 991 checks —
 qualquer exceção em qualquer callback é capturada e reportada, inclusive a que
 o anti-lag do `main.js` engole dentro dos loops. Os números vêm do próprio
 `main.js` (ele exporta o registro), então rebalancear não quebra a simulação.

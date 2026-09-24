@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "dangai:getsuga_tenshou",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "dangai:getsuga_tenshou",
+      "minecraft:display_name": {
+        "value": "Getsuga Tenshou (Dangai)"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "dangai_getsuga_tenshou",
+        "duration": 20
+      }
+    }
+  }
+}

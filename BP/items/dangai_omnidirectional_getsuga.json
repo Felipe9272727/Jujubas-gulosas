@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "dangai:omnidirectional_getsuga",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "dangai:omnidirectional_getsuga",
+      "minecraft:display_name": {
+        "value": "Omnidirectional Getsuga"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "dangai_omnidirectional_getsuga",
+        "duration": 35
+      }
+    }
+  }
+}

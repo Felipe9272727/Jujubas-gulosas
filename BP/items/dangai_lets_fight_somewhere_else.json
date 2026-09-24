@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "dangai:lets_fight_somewhere_else",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "dangai:lets_fight_somewhere_else",
+      "minecraft:display_name": {
+        "value": "Let's fight somewhere else."
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "dangai_lets_fight_somewhere_else",
+        "duration": 15
+      }
+    }
+  }
+}

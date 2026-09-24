@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 915 checks na simulação, zero exceções. Packs na versão 1.21.0.
+- **Estado**: 991 checks na simulação, zero exceções. Packs na versão 1.22.0.
 - **Base**: a partir da 1.20.0 o repo parte da **1.19.25 (TosenVisored)** que o
   usuário mandou em `.mcaddon` — ela descende da 1.14.0 daqui (mesmos UUIDs) e foi
   desenvolvida fora deste branch. Foi importada byte a byte no commit
@@ -17,7 +17,7 @@ commitado e enviado.
 python3 tools/build.py          # valida + simula + empacota (falha se algo quebrar)
 python3 tools/validate.py       # JSON, itens, texturas, manifests, sons, entidades
 python3 tools/gen_textures.py   # renderiza os grids de tools/textures.py em PNG
-python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen, Daiguren)
+python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen, Daiguren, Mugetsu)
 python3 tools/bump_version.py minor   # OBRIGATÓRIO a cada release de conteúdo
 node --import ./sim/register.mjs sim/run.mjs   # só a simulação
 ```
@@ -29,7 +29,7 @@ O `build.py` roda tudo e **se recusa a empacotar** se qualquer etapa falhar.
 ```
 BP/                     behavior pack
   manifest.json         versão dos packs (ver "cache de pack" abaixo)
-  items/*.json          196 itens, um arquivo cada (format_version 1.26.40)
+  items/*.json          202 itens, um arquivo cada (format_version 1.26.40)
   entities/*.json       boneco de teste, clone do Aizen
   scripts/main.js       ~17 mil linhas: TODO o gameplay (menos o Shinji)
   scripts/shinji.js     o Shinji Hirako, importado pelo main.js
@@ -43,6 +43,7 @@ tools/
   hollow_model.py       modelo dos attachables do Ichigo Vizard
   aizen_clone_model.py  modelo do clone dos dois Aizen
   daiguren_model.py     asas, cauda e braço de gelo da Daiguren Hyōrinmaru
+  mugetsu_model.py      cabelo, faixas e hakama do Mugetsu (Ichigo Dangai)
   gen_textures.py       grids -> PNG (e --check)
   gen_model.py          modelos -> .geo.json (e --check)
   vanilla_sounds.txt    IDs de som do Bedrock (Mojang/bedrock-samples)
@@ -51,7 +52,7 @@ tools/
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~5200 linhas, 915 checks
+  run.mjs               ~5500 linhas, 991 checks
 ```
 
 ### A simulação
@@ -117,12 +118,14 @@ menu**. Tabela gerada do registro do `main.js`:
 | 3 | Kaname Tōsen (Suzumushi) | 1500 | super: Enma Kōrogi; Visored como forma alternativa |
 | 4 | Shinji Hirako | 2600 | Sakanade (em `shinji.js`) |
 | 4 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
-| 8 | **Sousuke Aizen (Hōgyoku)** | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
+| 7 | **Sousuke Aizen (Hōgyoku)** | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
+| 7 | **Ichigo Kurosaki (Dangai)** | 7500 | super: Mugetsu (Getsuga Tenshou Final) |
 
 O **tier** não é só etiqueta: a Pressão Espiritual (skill genérica do slot 7)
 machuca quem está 2+ tiers abaixo e **mata na hora** quem está 5+ abaixo, e o
 Air Step exige tier 5+. O Aizen (6) apaga qualquer tier 1 dentro de 60 blocos
-com a pressão ligada; o Aizen Hōgyoku (8) apaga até o tier 3.
+com a pressão ligada; o Aizen Hōgyoku (7) apaga até o tier 2. O Ichigo (Dangai)
+é imune à pressão de qualquer tier.
 
 ## Sistemas genéricos (reusar, não duplicar)
 
@@ -424,7 +427,7 @@ o mesmo (2500).
 
 ## Sousuke Aizen (Hōgyoku)
 
-Tier 8, **Híbrido**, 7000 de vida, cura 300 a cada 4s. Itens: Kyōka Suigetsu
+Tier 7, **Híbrido**, 7000 de vida, cura 100 a cada 4s. Itens: Kyōka Suigetsu
 (m1, 160, também marca), **Illusions**, Hadō #90 Kurohitsugi (Encantado) e
 Fragor. Divide com o Aizen Capitão a marca da Kyōka, o clone (`aizen:clone`),
 a Kyōka oculta, o som da Kyōka quebrando e o `runKurohitsugi` (parametrizado
@@ -472,7 +475,7 @@ blocos, inquebrável, `LEDGER_PROTECTED_BLOCKS`), paralisado; 5s depois o
 casulo abre e a **Metamorfose** ativa na hora.
 
 **Monster Aizen** é awakening **permanente** (`awakening.permanent`: o loop de
-drenar pula ele): 8000 de vida, cura 400/4s, "Aizen atingiu sua
+drenar pula ele): 8000 de vida, cura 200/4s, "Aizen atingiu sua
 Metamorfose..." pra todos, Kyōka em dobro (320; com o +25% da Evolution cheia,
 400). Fragor vira **UltraFragor** (60s, 2000, raio 40, estilhaços de 200 com
 alcance 60) e a Kurohitsugi vira **Fragor Barrage** (60s, 5 Fragors de metade
@@ -498,6 +501,78 @@ continua por cima. A peça segue as mesmas regras de armadura de forma
 `tools/boxmodel.py` virou a base comum dos modelos de caixa: rig do player,
 empacotador de UV e textura. O clone do Aizen foi migrado pra ela (saída
 idêntica byte a byte).
+
+## Ichigo Kurosaki (Dangai)
+
+Tier 7, **Híbrido**, 7500 de vida. Itens: Zangetsu (m1, 200), Getsuga Tenshou
+(Dangai), Omnidirectional Getsuga, Arrogant's Counter e "Let's fight
+somewhere else.". Super: **Mugetsu**. Tudo dele vive no bloco `DANGAI` do
+`main.js`.
+
+**Individualidade** — flags no registro, lidas por quem precisa:
+`pressureImmune` (a Pressão Espiritual genérica e a do Kenpachi pulam ele),
+`illusionImmune` (`hasKyokaMark` devolve falso pra ele mesmo com a marca de
+antes, e a Kyōka não marca), `sprintSpeedAmplifier` (um loop troca pra speed 5
+quando `isSprinting` liga e volta pro base quando desliga) e `dashTeleports` no
+personagem base (o dash universal já lia isso da forma do Vasto Lorde).
+
+### O corte (`fireCrescent`)
+
+Getsuga Dangai e Getsuga Final são o mesmo motor: um arco vertical que anda na
+mira 3D, com o meio na frente e as pontas pra trás. O acerto é medido no
+referencial do corte (`crescentFrame`: frente, altura, largura), não numa
+esfera — por isso ele pega quem está 3 blocos acima e não pega quem está 6 pro
+lado. Anda 4 blocos por tick em 5 sub-passos. O visual é fio claro
+(`dangai:borda`), corpo azul espalhado pelo trecho andado no tick (senão vira
+um carimbo a cada 4 blocos) e raios pretos em zigue-zague (`dangai:raio`).
+O Omnidirectional usa o modo `lite` (menos partícula por corte) porque são 8
+de uma vez e o anti-lag corta o que passa de ~80 partículas por tick.
+
+### Desfazer ataques de tier ≤ 4
+
+Os ataques que viajam se registram em `travellingAttacks` (`trackAttack` +
+`touchAttack` a cada tick com posição e raio): `fireCrescentWave` (todos os
+getsugas antigos), `fireEnergySphere` (todos os ceros), Lanza del Relámpago,
+Tripleshot do Byakuya, Tsunami, estacas do Hitsugaya, projéteis da White Wave
+e o míssil do Jakuhō. O corte do Dangai, a cada sub-passo, desfaz o que estiver
+no caminho com dono de tier ≤ 4: o loop do ataque vê `cancelled` e para sem
+dano nem explosão, e o dono recebe aviso. Ataque que para de dar
+`touchAttack` sai do registro sozinho em 2s. **Ataque novo que viaja deve se
+registrar**, senão atravessa o Getsuga.
+
+### Arrogant's Counter
+
+5s parado (lentidão 255 + pulo travado). O primeiro dano que alguém tenta dar
+nele (`dangaiCounterIntercept`, no topo do `dealDamage`) não entra: ele aparece
+atrás de quem bateu, com a mira reta, e paralisa o atacante 3,5s. 2s depois,
+dois cortes de 250 e um Getsuga Dangai à queima-roupa.
+
+### "Let's fight somewhere else."
+
+Pega quem está na mira (ou o mais perto a 5 blocos), segura na frente na
+altura do rosto como o Face Hold, e avança 1,5 bloco por tick na mira. Quando
+o corpo do alvo ou o dele encosta num bloco sólido (grama, flor, tocha e afins
+não contam), explode: 400 no alvo, e solta. Sem bloco em 60 blocos, explode no
+ar.
+
+### Mugetsu
+
+Agachar + usar a Zangetsu com o medidor em 100%: veste o peitoral
+`dangai:mugetsu_chest` (attachable gerado por `tools/mugetsu_model.py`: cabelo
+até o meio das pernas, pano na boca, faixas no peito e no braço direito,
+hakama rasgada), "MUGETSU" na tela de quem está a 120 blocos (e escuridão de
+3s em quem não é ele), e 1s depois o **Getsuga Tenshou Final**: preto, raio
+3× o do Super Nuke (16,2), 10000 de dano, atravessa Respira, Intocable e
+guarda, e desfaz qualquer ataque no caminho. **5s depois do Mugetsu o
+personagem é desativado** (`endMugetsu`), mesmo se ele morrer no meio.
+
+O **Aizen Hōgyoku** atingido não toma os 10000: fica com 10% da vida máxima e
+**enfraquecido** (`mugetsuWeakened`): não cura (o loop do Hōgyoku pula e a
+regeneração é arrancada todo segundo), lentidão 3, não usa item nenhum (o
+`itemUse` barra antes de tudo, sem gastar cooldown) e não causa dano (o
+`dealDamage` ignora quem ele for a fonte). Switch, Kanzen e casulo são
+desfeitos e a Evolution para. Dura até ele morrer, desativar ou sair —
+preparado pro selamento do próximo update.
 
 ## Animações
 
@@ -620,9 +695,15 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Fragor | raio 30 (maior do addon); estilhaços com alcance 45 que param em bloco |
 | UltraFragor | raio 40, estilhaços de 200 com alcance 60 |
 | Fragor Barrage | 5 explosões de raio 15, 0,6s entre elas, centradas no Aizen |
-| Evolution | o bônus de dano (+25% em 100%) continua valendo no Monster; a cura do Monster é 400 fixa |
+| Evolution | o bônus de dano (+25% em 100%) continua valendo no Monster; a cura do Monster é 200 fixa (os +20 por degrau ficam na forma base) |
 | Casulo | 3×4×3 de concreto branco, inquebrável |
 | Monster Aizen | permanente (não drena); aura roxa |
+| Getsuga Dangai | 8 blocos de altura, 4 blocos por tick, alcance 56; respeita Respira, Intocable e guarda do alvo (desfazer é só pra ataque, não pra defesa) |
+| Omnidirectional | o primeiro corte sai pra onde ele olha; quem está entre dois cortes toma um só |
+| Arrogant's Counter | qualquer dano de alguém dispara (skill e DoT também); cortes de 250; atacante paralisado 3,5s |
+| Let's fight somewhere else | 1,5 bloco por tick, no máximo 60 blocos (sem parede, explode no ar); só o alvo toma os 400 |
+| Mugetsu | Getsuga Final 1s depois; desfaz ataque de qualquer tier; escuridão de 3s em quem está perto |
+| Aizen enfraquecido | o estado dura até morrer/desativar; outros golpes ainda podem matar ele |
 
 ## Próximos passos sugeridos
 
@@ -634,6 +715,8 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
    do Fragor/UltraFragor (muita partícula de uma vez — o anti-lag corta a
    `large_explosion`) e o casulo em terreno irregular.
    Na Daiguren: se as asas/cauda aparecem com o outro resource pack ativo.
+   No Dangai: o visual do Getsuga (e o do Final, que é enorme) com o anti-lag,
+   o arrastão do "Let's fight" em terreno irregular e a roupa do Mugetsu.
 2. **Invulnerabilidade pós-dano**: várias skills do addon batem a cada tick
    (Grito del Diablo, Rugido del Diablo) ou a cada 4–6 ticks (Palacio de las
    Espadas, Los Nueve Aspectos). Se o `applyDamage` respeitar a janela de
@@ -654,5 +737,8 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 4. Registrar em `RP/textures/item_texture.json`.
 5. Ligar as skills: `case` no switch do `itemUse`, cooldown, nome, dano,
    `MELEE_WEAPONS`.
-6. Cobrir na simulação (`sim/run.mjs`).
-7. `python3 tools/bump_version.py minor && python3 tools/build.py`
+6. Skill que lança algo que **viaja** (onda, cero, projétil): registrar com
+   `trackAttack` + `touchAttack` e parar quando `attack.cancelled`, senão o
+   Getsuga do Dangai não consegue desfazer ela.
+7. Cobrir na simulação (`sim/run.mjs`).
+8. `python3 tools/bump_version.py minor && python3 tools/build.py`
