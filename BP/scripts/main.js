@@ -931,6 +931,22 @@ const CHARACTERS = {
       },
     },
   },
+  unohana: {
+    id: "unohana",
+    name: "Retsu Unohana",
+    health: 2000,
+    items: {
+      0: "unohana:m1_zanpakuto",
+      1: "unohana:hados",
+      2: "unohana:bakudos",
+      3: "unohana:kaidos",
+    },
+    // Awk: Kaidō Expert como super - agachar + usar a zanpakuto com 100%
+    superAttack: {
+      onTrigger: "kaido_expert",
+      triggerItem: "unohana:m1_zanpakuto",
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -1000,6 +1016,7 @@ const CHARACTER_RACE_TIER = {
   aizen_hogyoku: { race: "hybrid", tier: 7 },
   ichigo_dangai: { race: "hybrid", tier: 7 },
   yamamoto: { race: "shinigami", tier: 7 },
+  unohana: { race: "shinigami", tier: 3 },
 
   grimmjow: { race: "hollow", tier: 2 },
   szayelaporro: { race: "hollow", tier: 2 },
@@ -1237,8 +1254,12 @@ function dealDamage(target, amount, source, options) {
   if (target?.typeId === AIZEN.cloneType) return;
   // o Aizen enfraquecido pelo Getsuga Tenshou Final nao causa dano nenhum
   if (source && isMugetsuWeakened(source)) return;
+  // Kaidō Expert: a Unohana lembra de quem tentou machucar ela (mesmo barrado)
+  recordUnohanaAttacker(target, source);
   // Arrogant's Counter do Ichigo (Dangai): o golpe nao entra e vira o contra-ataque
   if (source && dangaiCounterIntercept(target, source)) return;
+  // Seki e Dankū da Unohana
+  if (source && unohanaBarrierBlocks(target, source)) return;
   if (isIntocable(target)) {
     if (!options?.bypassesIntocable) {
       try {
@@ -1443,6 +1464,19 @@ const SKILL_COOLDOWN_TICKS = {
   "yamamoto:nishi": 500, // 25s
   "yamamoto:higashi": 800, // 40s
   "yamamoto:kita": 100, // o Bankai acaba junto: o cooldown de verdade e encher o medidor de novo
+  // Unohana: cada kidō do menu tem o proprio cooldown (o ponto evita que o
+  // validador ache que e um item)
+  "unohana:hados.byakurai": 200, // 10s
+  "unohana:hados.sokatsui": 300, // 15s
+  "unohana:hados.soren_sokatsui": 500, // 25s
+  "unohana:bakudos.seki": 300, // 15s
+  "unohana:bakudos.sajo_sabaku": 500, // 25s
+  "unohana:bakudos.danku": 800, // 40s
+  "unohana:kaidos.basico": 600, // 30s
+  "unohana:kaidos.avancado": 1000, // 50s
+  "unohana:kaidos.chiyu": 300, // 15s
+  "unohana:kaidos.diagnostico": 200, // 10s
+  "unohana:kaidos.tratamento": 600, // 30s (o mesmo do Kaidō Básico)
 };
 
 const SKILL_NAMES = {
@@ -1603,6 +1637,17 @@ const SKILL_NAMES = {
   "yamamoto:nishi": "Nishi — Zanjitsu Gokui",
   "yamamoto:higashi": "Higashi — Kyokujitsujin",
   "yamamoto:kita": "Kita — Tenchi Kaijin",
+  "unohana:hados.byakurai": "Hadō #4 — Byakurai",
+  "unohana:hados.sokatsui": "Hadō #33 — Sōkatsui",
+  "unohana:hados.soren_sokatsui": "Hadō #73 — Sōren Sōkatsui",
+  "unohana:bakudos.seki": "Bakudō #8 — Seki",
+  "unohana:bakudos.sajo_sabaku": "Bakudō #63 — Sajō Sabaku",
+  "unohana:bakudos.danku": "Bakudō #81 — Dankū",
+  "unohana:kaidos.basico": "Kaidō Básico",
+  "unohana:kaidos.avancado": "Kaidō Avançado",
+  "unohana:kaidos.chiyu": "Chiyu",
+  "unohana:kaidos.diagnostico": "Diagnóstico",
+  "unohana:kaidos.tratamento": "Tratamento em área",
 };
 
 // dano aumentado
@@ -1807,6 +1852,11 @@ const DAMAGE = {
   minamiHit: 50,
   higashi: 650,
   kita: 6000,
+  // Retsu Unohana
+  unohanaM1: 30,
+  byakurai: 40,
+  sokatsui: 70,
+  sorenSokatsui: 140,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -2613,6 +2663,32 @@ function dmgMultiplier(player) {
 }
 
 // dano ao longo do tempo generico (sangramento) - reutilizavel por qualquer personagem
+// DoTs e marcas visuais ativos por alvo: o Diagnóstico da Unohana limpa tudo
+const activeDots = new Map(); // id do alvo -> Set de ids de interval
+
+function trackDot(entity, intervalId) {
+  let set = activeDots.get(entity.id);
+  if (!set) {
+    set = new Set();
+    activeDots.set(entity.id, set);
+  }
+  set.add(intervalId);
+}
+
+function untrackDot(entity, intervalId) {
+  const set = activeDots.get(entity?.id);
+  if (!set) return;
+  set.delete(intervalId);
+  if (!set.size) activeDots.delete(entity.id);
+}
+
+function clearDots(entityId) {
+  const set = activeDots.get(entityId);
+  if (!set) return;
+  for (const id of set) system.clearRun(id);
+  activeDots.delete(entityId);
+}
+
 function applyDot(entity, player, perSecond, totalSeconds) {
   let ticks = 0;
   const dotInterval = system.runInterval(() => {
@@ -2623,12 +2699,15 @@ function applyDot(entity, player, perSecond, totalSeconds) {
       }
     } catch (e) {
       system.clearRun(dotInterval);
+      untrackDot(entity, dotInterval);
       return;
     }
     if (ticks >= totalSeconds) {
       system.clearRun(dotInterval);
+      untrackDot(entity, dotInterval);
     }
   }, 20);
+  trackDot(entity, dotInterval);
 }
 
 /* ---------------------------------------------------------
@@ -2654,10 +2733,15 @@ function applyDeterioration(target, player, perSecond, seconds) {
       }
     } catch (e) {
       system.clearRun(interval); // alvo morreu ou saiu do mundo
+      untrackDot(target, interval);
       return;
     }
-    if (ticks >= seconds * 20) system.clearRun(interval);
+    if (ticks >= seconds * 20) {
+      system.clearRun(interval);
+      untrackDot(target, interval);
+    }
   }, 5);
+  trackDot(target, interval);
 }
 
 // A Respira come todo ataque de longo alcance: os tres sistemas genericos de
@@ -2898,6 +2982,8 @@ function activateCharacter(player, characterId) {
   player.setDynamicProperty(DP.starkkForm, "starkk");
   if (characterId === "aaroniero") { clearAaronieroDevoured(player); player.setDynamicProperty("mv:aaroniero_selected", 0); player.setDynamicProperty(DP.aaronieroMaskEnd, 0); }
   if (characterId === "aizen_hogyoku") resetHogyoku(player);
+  // o Kaidō Expert conta ataques so a partir de agora
+  if (characterId === "unohana") unohanaAttackers.set(player.id, new Set());
   clearComboCounters(player);
 
   applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
@@ -2930,6 +3016,7 @@ function deactivateCharacter(player) {
   if (character.id === "aizen_hogyoku") resetHogyoku(player);
   if (character.id === "ichigo_dangai") dangaiCleanup(player, true);
   if (character.id === "yamamoto") yamamotoCleanup(player.id);
+  if (character.id === "unohana") unohanaCleanup(player.id, true);
 
   if (isMasked(player)) {
     try {
@@ -3395,6 +3482,9 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     dangaiCleanup(player, false); // o Mugetsu continua contando depois da morte
     yamamotoCleanup(player.id);
     burns.delete(player.id);
+    unohanaCleanup(player.id, false); // quem atacou antes de morrer continua marcado
+    unohanaHeals.delete(player.id);
+    clearDots(player.id);
     ukitakeAbsorb.delete(player.id);
     player.setDynamicProperty(UKITAKE_STORED, 0);
     // respawn depois de morrer: reaplica personagem se tinha um ativo
@@ -4145,6 +4235,12 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "yamamoto:kita":
       castKita(player);
+      break;
+    case "unohana:hados":
+    case "unohana:bakudos":
+    case "unohana:kaidos":
+      if (player.isSneaking) openSpellBook(player, itemStack.typeId);
+      else castFromBook(player, itemStack.typeId);
       break;
   }
 });
@@ -5197,6 +5293,8 @@ function tryTriggerSuperAttack(player, character) {
       return tryTriggerKurohitsugi(player);
     case "mugetsu":
       return tryTriggerMugetsu(player);
+    case "kaido_expert":
+      return tryTriggerKaidoExpert(player);
   }
   return false;
 }
@@ -11035,14 +11133,14 @@ function showIceSpark(entity) {
 // Pausa os cooldowns de skill do player. Sem stack: enquanto um congelamento esta
 // ativo, outro do mesmo tamanho (ou menor) e ignorado; so um MAIOR (o do Dragon's
 // Breath, 10s) toma o lugar.
-function freezeCooldowns(entity, ticks) {
+function freezeCooldowns(entity, ticks, message) {
   try {
     if (entity.typeId !== "minecraft:player") return;
     const now = system.currentTick;
     const cur = cdFrozen.get(entity.id);
     if (cur && cur.end > now && ticks <= cur.ticks) return;
     cdFrozen.set(entity.id, { end: now + ticks, ticks });
-    entity.sendMessage(`§b❄ Seus cooldowns foram congelados por ${Math.round(ticks / 20)}s!`);
+    entity.sendMessage(message ?? `§b❄ Seus cooldowns foram congelados por ${Math.round(ticks / 20)}s!`);
   } catch (e) {}
 }
 
@@ -17816,11 +17914,692 @@ function yamamotoCleanup(playerId) {
 }
 
 /* ---------------------------------------------------------
+   Retsu Unohana - Tier 3 (Shinigami)
+   Três livros de kidō (Hadōs, Bakudōs, Kaidōs): agachar + usar abre o menu,
+   usar lança a escolhida - igual ao Illusions do Aizen Hōgyoku. Super:
+   Kaidō Expert.
+   --------------------------------------------------------- */
+
+const UNOHANA = {
+  books: {
+    "unohana:hados": {
+      title: "Hadōs",
+      color: "§b",
+      dp: "mv:unohana_hado",
+      spells: [
+        { key: "unohana:hados.byakurai", name: "Hadō #4 — Byakurai" },
+        { key: "unohana:hados.sokatsui", name: "Hadō #33 — Sōkatsui" },
+        { key: "unohana:hados.soren_sokatsui", name: "Hadō #73 — Sōren Sōkatsui" },
+      ],
+    },
+    "unohana:bakudos": {
+      title: "Bakudōs",
+      color: "§e",
+      dp: "mv:unohana_bakudo",
+      spells: [
+        { key: "unohana:bakudos.seki", name: "Bakudō #8 — Seki" },
+        { key: "unohana:bakudos.sajo_sabaku", name: "Bakudō #63 — Sajō Sabaku" },
+        { key: "unohana:bakudos.danku", name: "Bakudō #81 — Dankū" },
+      ],
+    },
+    "unohana:kaidos": {
+      title: "Kaidōs",
+      color: "§a",
+      dp: "mv:unohana_kaido",
+      spells: [
+        { key: "unohana:kaidos.basico", name: "Kaidō Básico" },
+        { key: "unohana:kaidos.avancado", name: "Kaidō Avançado" },
+        { key: "unohana:kaidos.chiyu", name: "Chiyu" },
+        { key: "unohana:kaidos.diagnostico", name: "Diagnóstico" },
+        { key: "unohana:kaidos.tratamento", name: "Tratamento em área" },
+      ],
+    },
+  },
+  byakurai: { range: 30, speed: 4, hitRadius: 0.8 },
+  sokatsui: { range: 22, speed: 1.6, radius: 0.8, blastRadius: 3, shell: 10 },
+  soren: { range: 28, speed: 1.8, radius: 1.4, blastRadius: 5, shell: 20 },
+  seki: { durationTicks: 100, frontCos: 0.3, repelRange: 5, repelStrength: 1.6, distance: 1.3 },
+  sajo: { range: 20, maxTier: 5, restrainTicks: 60, pauseTicks: 200 },
+  danku: { durationTicks: 200, maxTier: 6, radius: 3 },
+  kaido: {
+    basico: { perSecond: 50, seconds: 5 },
+    avancado: { perSecond: 100, seconds: 10 },
+    chiyu: 200,
+    tratamentoRange: 20,
+  },
+  // os efeitos que o Diagnóstico tira (os do addon ficam em mapas próprios)
+  negativeEffects: [
+    "slowness",
+    "weakness",
+    "poison",
+    "fatal_poison",
+    "wither",
+    "blindness",
+    "nausea",
+    "hunger",
+    "mining_fatigue",
+    "darkness",
+    "levitation",
+  ],
+  expert: { half: 3.5, height: 3 }, // 7x7
+};
+
+function isUnohana(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === "unohana";
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ---------- os três menus ---------- */
+
+function selectedSpell(player, book) {
+  const index = Number(player.getDynamicProperty(book.dp));
+  return index >= 0 && index < book.spells.length ? index : 0;
+}
+
+function openSpellBook(player, itemId) {
+  const book = UNOHANA.books[itemId];
+  if (!book) return;
+  const current = selectedSpell(player, book);
+  const now = system.currentTick;
+  const form = new ActionFormData()
+    .title(book.title)
+    .body(`${book.color}Escolha o kidō.§r\n§7Usar o item lança o escolhido; agachar + usar abre este menu.`);
+  book.spells.forEach((spell, index) => {
+    const key = cdKeyForSkill(spell.key);
+    const duration = SKILL_COOLDOWN_TICKS[spell.key];
+    const last = tickOf(player, key);
+    const waiting = onCooldown(player, key, duration, now)
+      ? `§c${Math.ceil((duration - (now - (last ?? now))) / 20)}s`
+      : "§apronto";
+    form.button(`${index === current ? `${book.color}▶ ` : ""}${spell.name}\n§8${duration / 20}s • ${waiting}`);
+  });
+  form.show(player).then((res) => {
+    if (res.canceled || res.selection === undefined) return;
+    const spell = book.spells[res.selection];
+    if (!spell) return;
+    player.setDynamicProperty(book.dp, res.selection);
+    player.sendMessage(`${book.color}Escolhido: §f${spell.name}`);
+  });
+}
+
+function castFromBook(player, itemId) {
+  const book = UNOHANA.books[itemId];
+  if (!book) return;
+  if (isFrozen(player) || isMayuriParalyzed(player)) {
+    player.sendMessage("§7Você está paralisado e não consegue usar skills.");
+    return;
+  }
+  const blocking = skillBlockingZoneFor(player);
+  if (blocking) {
+    player.sendMessage(blocking.blockMessage);
+    return;
+  }
+  switch (book.spells[selectedSpell(player, book)].key) {
+    case "unohana:hados.byakurai":
+      return castByakurai(player);
+    case "unohana:hados.sokatsui":
+      return castSokatsui(player, false);
+    case "unohana:hados.soren_sokatsui":
+      return castSokatsui(player, true);
+    case "unohana:bakudos.seki":
+      return castSeki(player);
+    case "unohana:bakudos.sajo_sabaku":
+      return castSajoSabaku(player);
+    case "unohana:bakudos.danku":
+      return castDanku(player);
+    case "unohana:kaidos.basico":
+      return castKaidoGradual(player, "unohana:kaidos.basico", UNOHANA.kaido.basico, "Kaidō Básico");
+    case "unohana:kaidos.avancado":
+      return castKaidoGradual(player, "unohana:kaidos.avancado", UNOHANA.kaido.avancado, "Kaidō Avançado");
+    case "unohana:kaidos.chiyu":
+      return castChiyu(player);
+    case "unohana:kaidos.diagnostico":
+      return castDiagnostico(player);
+    case "unohana:kaidos.tratamento":
+      return castTratamento(player);
+  }
+}
+
+/* ---------- Hadōs ---------- */
+
+// alguem (com vida) encostado no ponto, medindo o corpo inteiro e nao so os pes
+function kidoVictimAt(player, dim, point, radius) {
+  for (const entity of dim.getEntities({ location: point, maxDistance: radius + 2.5 })) {
+    if (entity.id === player.id) continue;
+    try {
+      if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+    } catch (e) {
+      continue;
+    }
+    const l = entity.location;
+    if (Math.hypot(l.x - point.x, l.z - point.z) > radius + 0.3) continue;
+    if (point.y < l.y - 0.3 || point.y > l.y + 2.1) continue;
+    return entity;
+  }
+  return undefined;
+}
+
+function kidoOrigin(player) {
+  const dir = unitVector(player.getViewDirection());
+  const head = player.getHeadLocation();
+  return { dir, pos: { x: head.x + dir.x * 0.8, y: head.y - 0.25 + dir.y * 0.8, z: head.z + dir.z * 0.8 } };
+}
+
+function castByakurai(player) {
+  if (!tryUseSkill(player, "unohana:hados.byakurai")) return;
+  const cfg = UNOHANA.byakurai;
+  const dim = player.dimension;
+  world.sendMessage(`§b${player.name}: §f§lHadō #4 — Byakurai`);
+  try {
+    dim.playSound("ambient.weather.lightning.impact", player.location, { volume: 0.5, pitch: 2 });
+  } catch (e) {}
+  let { dir, pos } = kidoOrigin(player);
+  const cache = new Map();
+  const attack = trackAttack(player, 0.6);
+  let travelled = 0;
+  const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
+    touchAttack(attack, pos);
+    try {
+      // um raio fino e rapido: anda de bloco em bloco pra nao atravessar ninguem
+      for (let s = 0; s < cfg.speed; s++) {
+        const next = { x: pos.x + dir.x, y: pos.y + dir.y, z: pos.z + dir.z };
+        if (dangaiCellSolid(dim, cache, Math.floor(next.x), Math.floor(next.y), Math.floor(next.z))) {
+          dim.spawnParticle("unohana:raio", pos);
+          system.clearRun(interval);
+          return;
+        }
+        const victim = kidoVictimAt(player, dim, next, cfg.hitRadius);
+        if (victim) {
+          if (isRespiring(victim)) showRespiraGuard(victim);
+          else dealDamage(victim, DAMAGE.byakurai * dmgMultiplier(player), player);
+          for (let i = 0; i < 4; i++) dim.spawnParticle("unohana:raio", next);
+          system.clearRun(interval);
+          return;
+        }
+        pos = next;
+        travelled++;
+        dim.spawnParticle("unohana:raio", pos);
+        if (travelled >= cfg.range) {
+          system.clearRun(interval);
+          return;
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 1);
+}
+
+// bola de fogo azul que estoura no primeiro que tocar (Sōkatsui e Sōren)
+function castSokatsui(player, soren) {
+  const key = soren ? "unohana:hados.soren_sokatsui" : "unohana:hados.sokatsui";
+  if (!tryUseSkill(player, key)) return;
+  const cfg = soren ? UNOHANA.soren : UNOHANA.sokatsui;
+  const damage = soren ? DAMAGE.sorenSokatsui : DAMAGE.sokatsui;
+  const dim = player.dimension;
+  world.sendMessage(
+    soren ? `§b${player.name}: §9§lHadō #73 — Sōren Sōkatsui` : `§b${player.name}: §9§lHadō #33 — Sōkatsui`
+  );
+  try {
+    dim.playSound("mob.blaze.shoot", player.location, { volume: 1.4, pitch: soren ? 0.6 : 1 });
+  } catch (e) {}
+  let { dir, pos } = kidoOrigin(player);
+  const cache = new Map();
+  const attack = trackAttack(player, cfg.radius);
+  let travelled = 0;
+  const step = Math.min(cfg.speed, cfg.radius);
+  const explode = (at) => {
+    system.clearRun(interval);
+    try {
+      dim.playSound("random.explode", at, { volume: soren ? 2 : 1.3, pitch: soren ? 0.7 : 1.1 });
+      const n = soren ? 26 : 14;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const r = cfg.blastRadius * (0.3 + Math.random() * 0.7);
+        dim.spawnParticle(i % 5 === 0 ? "minecraft:large_explosion" : "unohana:fogo_azul", {
+          x: at.x + Math.cos(a) * r,
+          y: at.y - 0.6 + Math.random() * 1.8,
+          z: at.z + Math.sin(a) * r,
+        });
+      }
+    } catch (e) {}
+    for (const entity of dim.getEntities({ location: at, maxDistance: cfg.blastRadius + 2 })) {
+      if (entity.id === player.id) continue;
+      try {
+        if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+        const l = entity.location;
+        if (Math.hypot(l.x - at.x, l.y + 1 - at.y, l.z - at.z) > cfg.blastRadius + 0.6) continue;
+        if (isRespiring(entity)) {
+          showRespiraGuard(entity);
+          continue;
+        }
+        dealDamage(entity, damage * dmgMultiplier(player), player);
+      } catch (e) {}
+    }
+  };
+  const interval = system.runInterval(() => {
+    if (attack.cancelled) {
+      system.clearRun(interval);
+      return;
+    }
+    touchAttack(attack, pos);
+    try {
+      for (let i = 0; i < cfg.shell; i++) {
+        const t = Math.random() * Math.PI * 2;
+        const f = Math.acos(2 * Math.random() - 1);
+        const r = cfg.radius * (0.6 + Math.random() * 0.4);
+        dim.spawnParticle("unohana:fogo_azul", {
+          x: pos.x + r * Math.sin(f) * Math.cos(t),
+          y: pos.y + r * Math.cos(f),
+          z: pos.z + r * Math.sin(f) * Math.sin(t),
+        });
+      }
+      for (let moved = 0; moved < cfg.speed; moved += step) {
+        const next = { x: pos.x + dir.x * step, y: pos.y + dir.y * step, z: pos.z + dir.z * step };
+        if (dangaiCellSolid(dim, cache, Math.floor(next.x), Math.floor(next.y), Math.floor(next.z))) {
+          explode(pos);
+          return;
+        }
+        if (kidoVictimAt(player, dim, next, cfg.radius)) {
+          explode(next);
+          return;
+        }
+        pos = next;
+        travelled += step;
+        if (travelled >= cfg.range) {
+          explode(pos);
+          return;
+        }
+      }
+    } catch (e) {
+      system.clearRun(interval);
+    }
+  }, 1);
+}
+
+/* ---------- Bakudōs ---------- */
+
+const unohanaSeki = new Map(); // id -> tick em que acaba
+const unohanaDanku = new Map();
+
+function castSeki(player) {
+  if (!tryUseSkill(player, "unohana:bakudos.seki")) return;
+  unohanaSeki.set(player.id, system.currentTick + UNOHANA.seki.durationTicks);
+  world.sendMessage(`§e${player.name}: §6§lBakudō #8 — Seki`);
+  try {
+    player.dimension.playSound("random.anvil_land", player.location, { volume: 0.6, pitch: 1.8 });
+  } catch (e) {}
+}
+
+function castDanku(player) {
+  if (!tryUseSkill(player, "unohana:bakudos.danku")) return;
+  unohanaDanku.set(player.id, system.currentTick + UNOHANA.danku.durationTicks);
+  world.sendMessage(`§e${player.name}: §6§lBakudō #81 — Dankū`);
+  try {
+    player.dimension.playSound("beacon.activate", player.location, { volume: 1.5, pitch: 1.4 });
+  } catch (e) {}
+}
+
+function barrierSpark(entity, particle) {
+  try {
+    const l = entity.location;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      entity.dimension.spawnParticle(particle, { x: l.x + Math.cos(a) * 1.1, y: l.y + 1.2, z: l.z + Math.sin(a) * 1.1 });
+    }
+    entity.dimension.playSound("random.glass", l, { volume: 0.5, pitch: 1.8 });
+  } catch (e) {}
+}
+
+// chamada pelo dealDamage: Dankū segura tudo de tier <= 6; Seki segura o que
+// vem pela frente e empurra quem estiver perto
+function unohanaBarrierBlocks(target, source) {
+  if (!target || !source || source.id === target.id) return false;
+  const now = system.currentTick;
+  if ((unohanaDanku.get(target.id) ?? 0) > now) {
+    let tier = 0;
+    try {
+      tier = source.typeId === "minecraft:player" ? tierOfPlayer(source) : 0;
+    } catch (e) {}
+    if (tier <= UNOHANA.danku.maxTier) {
+      barrierSpark(target, "unohana:escudo");
+      return true;
+    }
+  }
+  if ((unohanaSeki.get(target.id) ?? 0) > now) {
+    const cfg = UNOHANA.seki;
+    try {
+      const view = forwardDirection(target);
+      const l = target.location;
+      const s = source.location;
+      const dx = s.x - l.x;
+      const dz = s.z - l.z;
+      const length = Math.hypot(dx, dz) || 1;
+      if ((dx * view.x + dz * view.z) / length >= cfg.frontCos) {
+        barrierSpark(target, "unohana:escudo");
+        if (length <= cfg.repelRange) {
+          source.applyKnockback({ x: (dx / length) * cfg.repelStrength, z: (dz / length) * cfg.repelStrength }, 0.35);
+        }
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+}
+
+// visual das barreiras e os ataques que viajam sendo segurados
+system.runInterval(() => {
+  const now = system.currentTick;
+  for (const [map, isDanku] of [
+    [unohanaSeki, false],
+    [unohanaDanku, true],
+  ]) {
+    for (const [id, until] of map) {
+      const player = world.getPlayers().find((p) => p.id === id);
+      if (!player || now >= until || !isUnohana(player) || isDownOrGone(player)) {
+        map.delete(id);
+        continue;
+      }
+      try {
+        const dim = player.dimension;
+        const l = player.location;
+        const chest = { x: l.x, y: l.y + 1.2, z: l.z };
+        if (isDanku) {
+          const r = UNOHANA.danku.radius;
+          for (let i = 0; i < 12; i++) {
+            const t = Math.random() * Math.PI * 2;
+            const f = Math.acos(Math.random() * 1.6 - 0.6); // mais cupula que esfera
+            dim.spawnParticle("unohana:escudo", {
+              x: l.x + r * Math.sin(f) * Math.cos(t),
+              y: l.y + 0.2 + r * Math.cos(f),
+              z: l.z + r * Math.sin(f) * Math.sin(t),
+            });
+          }
+          cancelAttacksNear(player, dim, chest, r, UNOHANA.danku.maxTier, {
+            label: "Bakudō #81: Dankū",
+            particles: ["unohana:escudo", "unohana:raio"],
+          });
+        } else {
+          const cfg = UNOHANA.seki;
+          const frame = crescentFrame(player.getViewDirection());
+          const c = framePoint(chest, frame, cfg.distance, 0, 0);
+          for (let i = 0; i < 10; i++) {
+            const a = (i / 10) * Math.PI * 2;
+            dim.spawnParticle("unohana:escudo", framePoint(c, frame, 0, Math.sin(a) * 0.9, Math.cos(a) * 0.9));
+          }
+          cancelAttacksNear(player, dim, c, 1.4, 99, {
+            label: "Bakudō #8: Seki",
+            particles: ["unohana:escudo", "unohana:raio"],
+          });
+        }
+      } catch (e) {}
+    }
+  }
+}, 2);
+
+function castSajoSabaku(player) {
+  const cfg = UNOHANA.sajo;
+  const target = targetInView(player, cfg.range);
+  if (!target) {
+    player.sendMessage("§eMire em alguém pra prender com o Sajō Sabaku.");
+    return;
+  }
+  let tier = 0;
+  try {
+    tier = target.typeId === "minecraft:player" ? tierOfPlayer(target) : 0;
+  } catch (e) {}
+  if (tier > cfg.maxTier) {
+    player.sendMessage(`§e${nameOf(target)} é forte demais pro Sajō Sabaku §7(tier ${tier}; só pega até o tier ${cfg.maxTier}).`);
+    return;
+  }
+  if (!tryUseSkill(player, "unohana:bakudos.sajo_sabaku")) return;
+  const dim = player.dimension;
+  world.sendMessage(`§e${player.name}: §6§lBakudō #63 — Sajō Sabaku`);
+  try {
+    const from = player.getHeadLocation();
+    const to = target.location;
+    const length = Math.hypot(to.x - from.x, to.y + 1 - from.y, to.z - from.z);
+    for (let s = 0.5; s < length; s += 0.6) {
+      const k = s / length;
+      dim.spawnParticle("unohana:corrente", {
+        x: from.x + (to.x - from.x) * k,
+        y: from.y + (to.y + 1 - from.y) * k,
+        z: from.z + (to.z - from.z) * k,
+      });
+    }
+    dim.playSound("random.anvil_land", to, { volume: 0.8, pitch: 1.2 });
+  } catch (e) {}
+  if (!isIntocable(target)) paralyzeFor(target, cfg.restrainTicks, "§6Sajō Sabaku: correntes de energia te prendem!");
+  freezeCooldowns(target, cfg.pauseTicks, `§6Sajō Sabaku: seus cooldowns pararam por ${cfg.pauseTicks / 20}s!`);
+  // as correntes enroladas no alvo enquanto ele esta preso
+  let tick = 0;
+  const chains = system.runInterval(() => {
+    tick += 4;
+    try {
+      if (isDownOrGone(target) || tick > cfg.restrainTicks) {
+        system.clearRun(chains);
+        return;
+      }
+      const l = target.location;
+      for (const h of [0.6, 1.1, 1.6]) {
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + tick * 0.2;
+          dim.spawnParticle("unohana:corrente", { x: l.x + Math.cos(a) * 0.55, y: l.y + h, z: l.z + Math.sin(a) * 0.55 });
+        }
+      }
+    } catch (e) {
+      system.clearRun(chains);
+    }
+  }, 4);
+}
+
+/* ---------- Kaidōs ---------- */
+
+const unohanaHeals = new Map(); // id -> { entity, list: [{ perSecond, left }] }
+
+function healVirtual(entity, amount) {
+  try {
+    const hp = entity.getComponent("minecraft:health");
+    if (!hp || isDownOrGone(entity)) return 0;
+    const max = hp.effectiveMax * healthScaleOf(entity);
+    const before = virtualHealth(entity);
+    const after = Math.min(max, before + amount);
+    if (after > before) setVirtualHealth(entity, after);
+    const l = entity.location;
+    for (let i = 0; i < 4; i++) {
+      entity.dimension.spawnParticle("unohana:cura", {
+        x: l.x + (Math.random() - 0.5) * 0.9,
+        y: l.y + 0.3 + Math.random() * 1.6,
+        z: l.z + (Math.random() - 0.5) * 0.9,
+      });
+    }
+    return after - before;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function fullHeal(entity) {
+  try {
+    const hp = entity.getComponent("minecraft:health");
+    if (!hp) return;
+    healVirtual(entity, hp.effectiveMax * healthScaleOf(entity));
+  } catch (e) {}
+}
+
+// cura gradual: exatamente `seconds` curas, uma por segundo
+function startHealOverTime(entity, perSecond, seconds) {
+  let state = unohanaHeals.get(entity.id);
+  if (!state) {
+    state = { entity, list: [] };
+    unohanaHeals.set(entity.id, state);
+  }
+  state.list.push({ perSecond, left: seconds });
+}
+
+system.runInterval(() => {
+  for (const [id, state] of unohanaHeals) {
+    if (isDownOrGone(state.entity)) {
+      unohanaHeals.delete(id);
+      continue;
+    }
+    for (const heal of state.list) {
+      healVirtual(state.entity, heal.perSecond);
+      heal.left--;
+    }
+    state.list = state.list.filter((heal) => heal.left > 0);
+    if (!state.list.length) unohanaHeals.delete(id);
+  }
+}, 20);
+
+function castKaidoGradual(player, key, cfg, label) {
+  if (!tryUseSkill(player, key)) return;
+  player.sendMessage(`§a${label}: §f${cfg.perSecond} de vida por segundo por ${cfg.seconds}s.`);
+  try {
+    player.dimension.playSound("beacon.power", player.location, { volume: 0.8, pitch: 1.6 });
+  } catch (e) {}
+  startHealOverTime(player, cfg.perSecond, cfg.seconds);
+}
+
+function castChiyu(player) {
+  if (!tryUseSkill(player, "unohana:kaidos.chiyu")) return;
+  const healed = healVirtual(player, UNOHANA.kaido.chiyu);
+  player.sendMessage(`§aChiyu: §f+${Math.round(healed)} de vida.`);
+  try {
+    player.dimension.playSound("random.orb", player.location, { volume: 1, pitch: 1.4 });
+  } catch (e) {}
+}
+
+// tira os efeitos ruins, os vanilla e os unicos do addon
+function cleanseNegativeEffects(entity) {
+  for (const effect of UNOHANA.negativeEffects) {
+    try {
+      entity.removeEffect(effect);
+    } catch (e) {}
+  }
+  const id = entity.id;
+  burns.delete(id); // Queimadura / Queimadura Infernal (Yamamoto)
+  clearDots(id); // Deterioração (Barragan) e os outros DoTs
+  activeMayuriPoisons.delete(id); // veneno do Mayuri
+  fragility.delete(id); // Fragilização (Rukia)
+  cdFrozen.delete(id); // cooldowns congelados (Hitsugaya)
+  vulnerableUntil.delete(id); // Jokenpo do Shunsui
+  try {
+    entity.setDynamicProperty(DP.noDash, undefined); // Ice Age: sem dash
+    entity.setDynamicProperty(DP.markedEnd, 0); // Pesquisa do Ulquiorra
+  } catch (e) {}
+}
+
+function castDiagnostico(player) {
+  if (!tryUseSkill(player, "unohana:kaidos.diagnostico")) return;
+  cleanseNegativeEffects(player);
+  player.sendMessage("§aDiagnóstico: §fos efeitos negativos foram tratados.");
+  try {
+    const l = player.location;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      player.dimension.spawnParticle("unohana:cura", { x: l.x + Math.cos(a) * 0.9, y: l.y + 0.2 + (i % 4) * 0.5, z: l.z + Math.sin(a) * 0.9 });
+    }
+    player.dimension.playSound("random.orb", l, { volume: 1, pitch: 0.8 });
+  } catch (e) {}
+}
+
+function castTratamento(player) {
+  const target = targetInView(player, UNOHANA.kaido.tratamentoRange);
+  if (!target) {
+    player.sendMessage("§aOlhe pra quem você quer tratar.");
+    return;
+  }
+  if (!tryUseSkill(player, "unohana:kaidos.tratamento")) return;
+  const cfg = UNOHANA.kaido.basico;
+  player.sendMessage(`§aTratamento em área: §f${nameOf(target)} recebe ${cfg.perSecond} de vida por segundo por ${cfg.seconds}s.`);
+  try {
+    if (target.typeId === "minecraft:player") target.sendMessage(`§a${player.name} está tratando você.`);
+  } catch (e) {}
+  startHealOverTime(target, cfg.perSecond, cfg.seconds);
+}
+
+/* ---------- Awk: Kaidō Expert ---------- */
+
+// quem atacou a Unohana DESDE que ela escolheu a personagem nao e curado
+const unohanaAttackers = new Map(); // id da Unohana -> Set de ids
+
+function recordUnohanaAttacker(target, source) {
+  const set = unohanaAttackers.get(target?.id);
+  if (!set || !source || source.id === target.id) return;
+  set.add(source.id);
+}
+
+function tryTriggerKaidoExpert(player) {
+  if (getAwakening(player) < 100) return false;
+  if (skillBlockingZoneFor(player)) return false;
+  player.setDynamicProperty(DP.awakening, 0);
+  const cfg = UNOHANA.expert;
+  const dim = player.dimension;
+  const o = player.location;
+  const attackers = unohanaAttackers.get(player.id) ?? new Set();
+  world.sendMessage(`§a${player.name}: §2§lKaidō Expert`);
+  let healed = 0;
+  let refused = 0;
+  for (const entity of dim.getEntities({ location: o, maxDistance: cfg.half * 1.5 + cfg.height })) {
+    try {
+      const l = entity.location;
+      if (Math.abs(l.x - o.x) > cfg.half || Math.abs(l.z - o.z) > cfg.half || Math.abs(l.y - o.y) > cfg.height) continue;
+      if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+      if (entity.typeId === AIZEN.cloneType) continue;
+      if (attackers.has(entity.id)) {
+        refused++;
+        if (entity.typeId === "minecraft:player") entity.sendMessage("§7O Kaidō Expert não cura quem atacou a Unohana.");
+        continue;
+      }
+      fullHeal(entity);
+      healed++;
+    } catch (e) {}
+  }
+  try {
+    dim.playSound("beacon.activate", o, { volume: 1.6, pitch: 1.6 });
+    // o quadrado de 7x7 no chao, e a cura subindo dentro dele
+    for (let u = -cfg.half; u <= cfg.half; u += 0.7) {
+      for (const [x, z] of [
+        [u, -cfg.half],
+        [u, cfg.half],
+        [-cfg.half, u],
+        [cfg.half, u],
+      ]) {
+        dim.spawnParticle("unohana:cura", { x: o.x + x, y: o.y + 0.2, z: o.z + z });
+      }
+    }
+  } catch (e) {}
+  player.sendMessage(`§aKaidō Expert: §f${healed} curado(s)${refused ? `, §7${refused} que te atacaram ficaram de fora` : ""}.`);
+  return true;
+}
+
+/* ---------- limpeza ---------- */
+
+function unohanaCleanup(playerId, full) {
+  unohanaSeki.delete(playerId);
+  unohanaDanku.delete(playerId);
+  if (full) unohanaAttackers.delete(playerId);
+}
+
+/* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
 // registro generico de armas m1 - facilita adicionar novos personagens
 const MELEE_WEAPONS = {
+  "unohana:m1_zanpakuto": {
+    baseDamage: DAMAGE.unohanaM1,
+    particle: "minecraft:crit_particle",
+    dot: null,
+  },
   // Ryūjin Jakka: Queimadura de 5s; no Bankai, Queimadura Infernal de 2s
   "yamamoto:m1_ryujin_jakka": {
     baseDamage: DAMAGE.yamamotoM1,
@@ -18891,6 +19670,9 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   jumpLockUntil.delete(playerId);
   yamamotoCleanup(playerId);
   burns.delete(playerId);
+  unohanaCleanup(playerId, true);
+  unohanaHeals.delete(playerId);
+  clearDots(playerId);
 });
 
 
@@ -18922,4 +19704,11 @@ export {
   DANGAI,
   YAMAMOTO,
   TIER_DAMAGE_REDUCTION,
+  UNOHANA,
+  // efeitos negativos pro Diagnóstico da Unohana ter o que limpar na simulacao
+  applyBurn,
+  applyDeterioration,
+  applyMayuriPoison,
+  addFragility,
+  freezeCooldowns,
 };

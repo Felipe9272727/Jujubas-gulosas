@@ -631,6 +631,18 @@
     },
     "yamamoto:kita": {
       "textures": "textures/items/yamamoto_kita"
+    },
+    "unohana:m1_zanpakuto": {
+      "textures": "textures/items/unohana_m1_zanpakuto"
+    },
+    "unohana:hados": {
+      "textures": "textures/items/unohana_hados"
+    },
+    "unohana:bakudos": {
+      "textures": "textures/items/unohana_bakudos"
+    },
+    "unohana:kaidos": {
+      "textures": "textures/items/unohana_kaidos"
     }
   }
 }

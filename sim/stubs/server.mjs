@@ -593,6 +593,12 @@ export class Entity {
     return hits;
   }
 
+  // olhos do player: 1.62 acima dos pes (mob tambem responde, como no jogo)
+  getHeadLocation() {
+    this._assertValid();
+    return { x: this._location.x, y: this._location.y + 1.62, z: this._location.z };
+  }
+
   getViewDirection() {
     this._assertValid();
     return { ...this._view };

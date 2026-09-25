@@ -5744,6 +5744,288 @@ check("mortos removidos", overworld.getEntities({ type: "yamamoto:morto" }).leng
 check("a tag sai", !yama.hasTag(YM.tag));
 noNewErrors("desativar sem erro", mark);
 
+/* ================= Retsu Unohana ================= */
+
+const UH = game.UNOHANA;
+function uhHits(target, since, amount) {
+  return log.damages.slice(since).filter((d) => d.target === target.name && (amount === undefined || virtualDamage(target, d) === amount));
+}
+async function chooseSpell(p, book, index) {
+  p.isSneaking = true;
+  queueFormResponse(index);
+  useItem(p, book);
+  p.isSneaking = false;
+  await settleForms();
+}
+function resetSpell(p, key) {
+  p.setDynamicProperty("mv:cd_" + key.replace(":", "_"), undefined);
+}
+async function newPlayerAs(name, loc, characterId) {
+  const p = createPlayer(name, loc);
+  emit("playerSpawn", { player: p, initialSpawn: true });
+  advanceTicks(5, `spawn-${name}`);
+  if (characterId) {
+    await pickCharacter(p, characterId);
+    advanceTicks(10, `ativar-${name}`);
+  }
+  p.teleport(loc);
+  return p;
+}
+
+scenario("Retsu Unohana: ativação (Shinigami, Tier 3)");
+mark = errors.length;
+// quem bate ANTES dela virar a Unohana ainda pode ser curado pelo Kaidō Expert
+const uno = await newPlayerAs("UnohanaPlayer", { x: 50000, y: 64, z: 50000 }, "rukia");
+const antes = await newPlayerAs("AntesUno", { x: 50002, y: 64, z: 50000 }, "grimmjow");
+hitWith(antes, uno, "grimmjow:m1_zanpakuto");
+advanceTicks(5, "antes-bate");
+check("registro: Shinigami, Tier 3", RACE_TIER.unohana?.race === "shinigami" && RACE_TIER.unohana?.tier === 3);
+// troca de personagem: desativa a Rukia e escolhe a Unohana
+queueFormResponse(deactivateButtonIndex());
+useItem(uno, "multiversal:character_selector");
+await settleForms();
+advanceTicks(5, "desativa-rukia");
+await pickCharacter(uno, "unohana");
+advanceTicks(20, "ativar-uno");
+noNewErrors("ativar a Unohana sem erro", mark);
+check("vida maxima 2000", virtualMax(uno) === 2000, String(virtualMax(uno)));
+check(
+  "Zanpakuto, Hadōs, Bakudōs e Kaidōs nos slots 0-3",
+  JSON.stringify(slotIds(uno, 4)) === JSON.stringify(["unohana:m1_zanpakuto", "unohana:hados", "unohana:bakudos", "unohana:kaidos"]),
+  JSON.stringify(slotIds(uno, 4))
+);
+const alvoUno = createDummy("AlvoUno", { x: 50000, y: 64, z: 50002 }, 500000);
+dmgBefore = log.damages.length;
+hitWith(uno, alvoUno, "unohana:m1_zanpakuto");
+check("m1 Zanpakuto: 30", uhHits(alvoUno, dmgBefore, 30).length === 1);
+alvoUno.kill();
+
+scenario("Unohana: agachar + usar abre cada menu de kidō");
+mark = errors.length;
+for (const [book, n] of [
+  ["unohana:hados", 3],
+  ["unohana:bakudos", 3],
+  ["unohana:kaidos", 5],
+]) {
+  const formsAntes = shownForms.length;
+  await chooseSpell(uno, book, n - 1);
+  const form = shownForms[formsAntes];
+  check(`${book}: menu com ${n} kidōs`, form?.buttons?.length === n, JSON.stringify(form?.buttons));
+  check(`${book}: a escolha fica salva`, uno.getDynamicProperty(UH.books[book].dp) === n - 1);
+}
+noNewErrors("menus sem erro", mark);
+
+scenario("Hadōs: Byakurai, Sōkatsui e Sōren Sōkatsui");
+mark = errors.length;
+uno.teleport({ x: 50200, y: 64, z: 50000 });
+uno._view = { x: 1, y: 0, z: 0 };
+const alvoBUh = createDummy("AlvoByakurai", { x: 50215, y: 64, z: 50000 }, 500000);
+const atrasB = createDummy("AtrasByakurai", { x: 50220, y: 64, z: 50000 }, 500000);
+await chooseSpell(uno, "unohana:hados", 0);
+dmgBefore = log.damages.length;
+useItem(uno, "unohana:hados");
+advanceTicks(5, "byakurai");
+check("Byakurai: 40, rápido (15 blocos em 5 ticks)", uhHits(alvoBUh, dmgBefore, 40).length === 1);
+check("é um disparo concentrado: para no primeiro", uhHits(atrasB, dmgBefore).length === 0);
+check("cooldown de 10s", uno.getDynamicProperty("mv:cd_unohana_hados.byakurai") !== undefined);
+alvoBUh.kill();
+atrasB.kill();
+const alvoS = createDummy("AlvoSokatsui", { x: 50210, y: 64, z: 50000 }, 500000);
+const vizS = createDummy("VizinhoSokatsui", { x: 50211, y: 64, z: 50002 }, 500000);
+const longeS = createDummy("LongeSokatsui", { x: 50210, y: 64, z: 50007 }, 500000);
+await chooseSpell(uno, "unohana:hados", 1);
+dmgBefore = log.damages.length;
+useItem(uno, "unohana:hados");
+advanceTicks(12, "sokatsui");
+check("Sōkatsui: explosão azul de 70", uhHits(alvoS, dmgBefore, 70).length === 1 && uhHits(vizS, dmgBefore, 70).length === 1);
+check("Sōkatsui não pega a 7 blocos", uhHits(longeS, dmgBefore).length === 0);
+await chooseSpell(uno, "unohana:hados", 2);
+dmgBefore = log.damages.length;
+useItem(uno, "unohana:hados");
+advanceTicks(12, "soren");
+check("Sōren Sōkatsui: 140 e bem maior (pega a 4-5 blocos)", uhHits(alvoS, dmgBefore, 140).length === 1 && uhHits(vizS, dmgBefore, 140).length === 1);
+check("fogo azul", log.particles.some((p) => p.particleId === "unohana:fogo_azul"));
+for (const d of [alvoS, vizS, longeS]) d.kill();
+noNewErrors("Hadōs sem erro", mark);
+
+scenario("Bakudō #8 Seki: escudo que repele o que vem pela frente");
+mark = errors.length;
+const grimUno = await newPlayerAs("GrimUno", { x: 50402, y: 64, z: 50000 }, "grimmjow");
+uno.teleport({ x: 50400, y: 64, z: 50000 });
+uno._view = { x: 1, y: 0, z: 0 };
+fullHp(uno);
+await chooseSpell(uno, "unohana:bakudos", 0);
+useItem(uno, "unohana:bakudos");
+advanceTicks(2, "seki");
+dmgBefore = log.damages.length;
+const kbSeki = log.knockbacks.length;
+hitWith(grimUno, uno, "grimmjow:m1_zanpakuto");
+check("golpe de frente não entra", uhHits(uno, dmgBefore).length === 0);
+check("e quem bateu é empurrado", log.knockbacks.slice(kbSeki).some((k) => k.target === "GrimUno"));
+grimUno.teleport({ x: 50398, y: 64, z: 50000 });
+hitWith(grimUno, uno, "grimmjow:m1_zanpakuto");
+check("pelas costas o golpe entra (o escudo é pequeno)", uhHits(uno, dmgBefore).length === 1);
+advanceTicks(100, "seki-acaba");
+grimUno.teleport({ x: 50402, y: 64, z: 50000 });
+dmgBefore = log.damages.length;
+hitWith(grimUno, uno, "grimmjow:m1_zanpakuto");
+check("depois de 5s o escudo some", uhHits(uno, dmgBefore).length === 1);
+noNewErrors("Seki sem erro", mark);
+
+scenario("Bakudō #63 Sajō Sabaku: prende e pausa os cooldowns (até tier 5)");
+mark = errors.length;
+fullHp(uno);
+uno.teleport({ x: 50600, y: 64, z: 50000 });
+grimUno.teleport({ x: 50608, y: 64, z: 50000 });
+aim(uno, grimUno);
+await chooseSpell(uno, "unohana:bakudos", 1);
+let linhasSajo = log.worldMessages.length;
+useItem(uno, "unohana:bakudos");
+advanceTicks(2, "sajo");
+check("o alvo fica preso", grimUno.getEffect("slowness")?.amplifier === 255);
+check("os cooldowns dele param por 10s", log.worldMessages.slice(linhasSajo).some((m) => m.to === "GrimUno" && m.message.includes("pararam por 10s")));
+advanceTicks(80, "sajo-solta");
+check("a prisão solta depois de 3s", grimUno.getEffect("slowness")?.amplifier !== 255);
+const fortao = await newPlayerAs("FortaoUno", { x: 50605, y: 64, z: 50003 }, "aizen");
+fortao.teleport({ x: 50608, y: 64, z: 50000 });
+grimUno.teleport({ x: 50700, y: 64, z: 50000 });
+resetSpell(uno, "unohana:bakudos.sajo_sabaku");
+linhasSajo = log.worldMessages.length;
+useItem(uno, "unohana:bakudos");
+check("tier 6 é forte demais: não prende", fortao.getEffect("slowness")?.amplifier !== 255);
+check("e não gasta o cooldown", uno.getDynamicProperty("mv:cd_unohana_bakudos.sajo_sabaku") === undefined);
+noNewErrors("Sajō Sabaku sem erro", mark);
+
+scenario("Bakudō #81 Dankū: segura tudo de tier 6 pra baixo por 10s");
+mark = errors.length;
+fullHp(uno);
+uno.teleport({ x: 50800, y: 64, z: 50000 });
+fortao.teleport({ x: 50802, y: 64, z: 50000 });
+grimUno.teleport({ x: 50798, y: 64, z: 50000 });
+const forte7 = await newPlayerAs("DangaiUno", { x: 50800, y: 64, z: 50002 }, "ichigo_dangai");
+forte7.teleport({ x: 50800, y: 64, z: 50002 });
+await chooseSpell(uno, "unohana:bakudos", 2);
+useItem(uno, "unohana:bakudos");
+advanceTicks(2, "danku");
+dmgBefore = log.damages.length;
+hitWith(fortao, uno, "aizen:m1_kyoka_suigetsu");
+hitWith(grimUno, uno, "grimmjow:m1_zanpakuto");
+check("tier 6 e tier 2: nada entra, de qualquer lado", uhHits(uno, dmgBefore).length === 0);
+hitWith(forte7, uno, "dangai:m1_zangetsu");
+check("tier 7 atravessa a Dankū", uhHits(uno, dmgBefore).length === 1);
+grimUno.teleport({ x: 50820, y: 64, z: 50000 });
+fortao.teleport({ x: 50800, y: 64, z: 50030 }); // fora da linha do cero
+forte7.teleport({ x: 50800, y: 64, z: 49970 });
+aim(grimUno, uno);
+fullHp(uno);
+dmgBefore = log.damages.length;
+let linhasDanku = log.worldMessages.length;
+useItem(grimUno, "grimmjow:gran_rey_cero");
+advanceTicks(30, "danku-cero");
+check("o Gran Rey Cero é desfeito na barreira", uhHits(uno, dmgBefore).length === 0);
+check("com aviso pro Grimmjow", log.worldMessages.slice(linhasDanku).some((m) => m.to === "GrimUno" && m.message.includes("Dankū")));
+advanceTicks(180, "danku-acaba");
+fortao.teleport({ x: 50802, y: 64, z: 50000 });
+dmgBefore = log.damages.length;
+hitWith(fortao, uno, "aizen:m1_kyoka_suigetsu");
+check("depois de 10s acaba", uhHits(uno, dmgBefore).length === 1);
+noNewErrors("Dankū sem erro", mark);
+
+scenario("Kaidōs: Básico, Avançado e Chiyu");
+mark = errors.length;
+uno.teleport({ x: 51000, y: 64, z: 51000 });
+setVirtualHp(uno, 500);
+await chooseSpell(uno, "unohana:kaidos", 0);
+useItem(uno, "unohana:kaidos");
+advanceTicks(110, "kaido-basico");
+check("Básico: 50/s por 5s (+250)", Math.round(virtualHp(uno)) === 750, `${virtualHp(uno)}`);
+setVirtualHp(uno, 500);
+await chooseSpell(uno, "unohana:kaidos", 1);
+useItem(uno, "unohana:kaidos");
+advanceTicks(210, "kaido-avancado");
+check("Avançado: 100/s por 10s (+1000)", Math.round(virtualHp(uno)) === 1500, `${virtualHp(uno)}`);
+setVirtualHp(uno, 500);
+await chooseSpell(uno, "unohana:kaidos", 2);
+useItem(uno, "unohana:kaidos");
+check("Chiyu: +200 na hora", Math.round(virtualHp(uno)) === 700, `${virtualHp(uno)}`);
+setVirtualHp(uno, 1950);
+resetSpell(uno, "unohana:kaidos.chiyu");
+useItem(uno, "unohana:kaidos");
+check("não passa da vida máxima", Math.round(virtualHp(uno)) === 2000, `${virtualHp(uno)}`);
+check("partícula de cura", log.particles.some((p) => p.particleId === "unohana:cura"));
+noNewErrors("Kaidōs sem erro", mark);
+
+scenario("Diagnóstico: tira queimadura, deterioração, veneno, fragilização e congelamento");
+mark = errors.length;
+fullHp(uno);
+game.applyBurn(uno, forte7, 10, true);
+game.applyDeterioration(uno, forte7, 30, 10);
+game.applyMayuriPoison(uno, forte7, 10, 20);
+game.addFragility(uno, 30);
+game.freezeCooldowns(uno, 400);
+uno.addEffect("slowness", 200, { amplifier: 1 });
+uno.addEffect("weakness", 200, { amplifier: 0 });
+advanceTicks(25, "efeitos");
+check("(os efeitos estão machucando)", log.damages.some((d) => d.target === "UnohanaPlayer"));
+await chooseSpell(uno, "unohana:kaidos", 3);
+useItem(uno, "unohana:kaidos");
+dmgBefore = log.damages.length;
+advanceTicks(60, "depois-do-diagnostico");
+check("nenhum dano depois do Diagnóstico", uhHits(uno, dmgBefore).length === 0, JSON.stringify(uhHits(uno, dmgBefore)));
+check("sem lentidão nem fraqueza", !uno.getEffect("slowness") && !uno.getEffect("weakness"));
+dmgBefore = log.damages.length;
+hitWith(forte7, uno, "dangai:m1_zangetsu");
+check("a fragilização saiu (o golpe chega normal)", uhHits(uno, dmgBefore, game.DAMAGE.dangaiM1).length === 1, JSON.stringify(uhHits(uno, dmgBefore).map((d) => virtualDamage(uno, d))));
+noNewErrors("Diagnóstico sem erro", mark);
+
+scenario("Tratamento em área: o Kaidō Básico em quem ela está olhando");
+mark = errors.length;
+const pacienteUno = createDummy("PacienteUno", { x: 51006, y: 64, z: 51000 }, 1000);
+pacienteUno.getComponent("minecraft:health").setCurrentValue(400);
+uno.teleport({ x: 51000, y: 64, z: 51000 });
+uno._view = { x: 1, y: 0, z: 0 };
+await chooseSpell(uno, "unohana:kaidos", 4);
+useItem(uno, "unohana:kaidos");
+advanceTicks(110, "tratamento");
+check("+250 em quem ela olhou", Math.round(pacienteUno.getComponent("minecraft:health").currentValue) === 650, String(pacienteUno.getComponent("minecraft:health").currentValue));
+pacienteUno.kill();
+uno._view = { x: 0, y: 0, z: -1 };
+resetSpell(uno, "unohana:kaidos.tratamento");
+useItem(uno, "unohana:kaidos");
+check("sem ninguém na mira: não gasta", uno.getDynamicProperty("mv:cd_unohana_kaidos.tratamento") === undefined);
+noNewErrors("Tratamento sem erro", mark);
+
+scenario("Kaidō Expert: cura total em 7x7, menos quem atacou a Unohana");
+mark = errors.length;
+uno.teleport({ x: 51200, y: 64, z: 51200 });
+const atacante = await newPlayerAs("AtacanteUno", { x: 51202, y: 64, z: 51200 }, "grimmjow");
+const amigo = await newPlayerAs("AmigoUno", { x: 51200, y: 64, z: 51202 }, "grimmjow");
+antes.teleport({ x: 51198, y: 64, z: 51200 });
+const bicho = createDummy("BichoUno", { x: 51201, y: 64, z: 51198 }, 1000);
+const longeUno = createDummy("LongeUno", { x: 51206, y: 64, z: 51200 }, 1000);
+hitWith(atacante, uno, "grimmjow:m1_zanpakuto");
+advanceTicks(2, "atacante-bate");
+for (const p of [atacante, amigo, antes]) setVirtualHp(p, 100);
+setVirtualHp(uno, 300);
+bicho.getComponent("minecraft:health").setCurrentValue(100);
+longeUno.getComponent("minecraft:health").setCurrentValue(100);
+uno.setDynamicProperty(DP.awakening, 100);
+let linhasExpert = log.worldMessages.length;
+uno.isSneaking = true;
+useItem(uno, "unohana:m1_zanpakuto");
+uno.isSneaking = false;
+advanceTicks(2, "kaido-expert");
+check("anuncia o Kaidō Expert", log.worldMessages.slice(linhasExpert).some((m) => m.message.includes("Kaidō Expert")));
+check("cura ela mesma inteira", Math.round(virtualHp(uno)) === virtualMax(uno), `${virtualHp(uno)}`);
+check("cura quem não atacou", Math.round(virtualHp(amigo)) === virtualMax(amigo), `${virtualHp(amigo)}`);
+check("cura até entidade", bicho.getComponent("minecraft:health").currentValue === 1000);
+check("quem atacou depois da escolha fica de fora", Math.round(virtualHp(atacante)) === 100, `${virtualHp(atacante)}`);
+check("quem atacou ANTES dela virar a Unohana é curado", Math.round(virtualHp(antes)) === virtualMax(antes), `${virtualHp(antes)}`);
+check("fora do 7x7 não", longeUno.getComponent("minecraft:health").currentValue === 100);
+check("gasta o medidor", (uno.getDynamicProperty(DP.awakening) ?? 0) === 0);
+for (const d of [bicho, longeUno]) d.kill();
+noNewErrors("Kaidō Expert sem erro", mark);
+
 /* ================= estabilidade longa ================= */
 
 scenario("Estabilidade: 2000 ticks livres");

@@ -4014,3 +4014,93 @@ TEXTURES.update({
         ],
     },
 })
+
+# ---------------------------------------------------------------------------
+# Retsu Unohana
+# ---------------------------------------------------------------------------
+_UNOHANA = {
+    "#": (206, 206, 214, 255),
+    "%": (120, 120, 134, 255),
+    "k": (30, 30, 36, 255),
+    "g": (206, 170, 70, 255),
+    "B": (40, 90, 220, 255),
+    "C": (110, 180, 255, 255),
+    "W": (230, 245, 255, 255),
+    "Y": (236, 196, 64, 255),
+    "y": (170, 130, 40, 255),
+    "G": (60, 200, 90, 255),
+    "L": (170, 245, 180, 255),
+}
+
+
+def _unohana_m1(x, y):
+    d = x + y
+    if y <= 10 and d == 15:
+        return "#"
+    if y <= 10 and d == 16:
+        return "%"
+    if (x, y) in ((4, 11), (3, 11), (5, 10), (3, 12), (4, 12)):
+        return "g"
+    if d == 15 and y > 11:
+        return "k"
+    return None
+
+
+def _unohana_hados(x, y):
+    dx, dy = x - 7.5, y - 8.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if r <= 2.2:
+        return "W"
+    if r <= 4.2:
+        return "C"
+    if r <= 6 and (x + y) % 2 == 0:
+        return "B"
+    if y < 4 and abs(dx) < 3 - y * 0.6 and (x + y) % 2:
+        return "C"  # a chama subindo
+    return None
+
+
+def _unohana_bakudos(x, y):
+    # tres elos de corrente na diagonal
+    for cx, cy in ((4, 11), (8, 7), (12, 3)):
+        dx, dy = x - cx, y - cy
+        ring = abs(dx) + abs(dy)
+        if ring in (2, 3):
+            return "Y" if (dx + dy) % 2 == 0 else "y"
+    return None
+
+
+def _unohana_kaidos(x, y):
+    if 6 <= x <= 9 and 2 <= y <= 13:
+        return "L" if x in (7, 8) and 3 <= y <= 12 else "G"
+    if 2 <= x <= 13 and 6 <= y <= 9:
+        return "L" if y in (7, 8) and 3 <= x <= 12 else "G"
+    return None
+
+
+TEXTURES.update({
+    "items/unohana_m1_zanpakuto": {"palette": _UNOHANA, "grid": _draw(_unohana_m1)},
+    "items/unohana_hados": {"palette": _UNOHANA, "grid": _draw(_unohana_hados)},
+    "items/unohana_bakudos": {"palette": _UNOHANA, "grid": _draw(_unohana_bakudos)},
+    "items/unohana_kaidos": {"palette": _UNOHANA, "grid": _draw(_unohana_kaidos)},
+    "particle/unohana_raio": {
+        "palette": {"C": (150, 210, 255, 200), "W": (245, 250, 255, 255)},
+        "grid": ["...C....", "...WC...", "..CW....", ".CWWC...", "...WWC..", "....WC..", "...CW...", "...C...."],
+    },
+    "particle/unohana_fogo_azul": {
+        "palette": {"b": (40, 90, 220, 150), "C": (90, 170, 255, 230), "W": (220, 240, 255, 255)},
+        "grid": ["...b....", "...bb...", "..bCb...", "..bCCb..", ".bCWCb..", ".bCWWCb.", ".bCWWCb.", "..bCCb.."],
+    },
+    "particle/unohana_escudo": {
+        "palette": {"y": (236, 214, 120, 120), "Y": (255, 240, 170, 230)},
+        "grid": ["..yyyy..", ".yYYYYy.", "yYY..YYy", "yY....Yy", "yY....Yy", "yYY..YYy", ".yYYYYy.", "..yyyy.."],
+    },
+    "particle/unohana_corrente": {
+        "palette": {"y": (170, 130, 40, 230), "Y": (240, 200, 70, 255)},
+        "grid": ["..yYYy..", ".yY..Yy.", ".Y....Y.", ".Y....Y.", ".Y....Y.", ".Y....Y.", ".yY..Yy.", "..yYYy.."],
+    },
+    "particle/unohana_cura": {
+        "palette": {"G": (60, 200, 90, 220), "L": (190, 255, 200, 255)},
+        "grid": ["...GG...", "...LG...", ".GGLLGG.", ".LLLLLL.", ".GGLLGG.", "...LG...", "...GG...", "........"],
+    },
+})
