@@ -19,7 +19,7 @@
         "cape": "geometry.cape"
       },
       "scripts": {
-        "scale": "query.is_item_name_any('slot.weapon.offhand', 0, 'yammy:ira_marker', 'ira_marker') ? 5.208 : 0.9375",
+        "scale": "query.is_item_name_any('slot.weapon.offhand', 0, 'komamura:myoo_marker') ? 6.25 : (query.is_item_name_any('slot.weapon.offhand', 0, 'yammy:ira_marker', 'ira_marker') ? 5.208 : 0.9375)",
         "initialize": [
           "variable.is_holding_right = 0.0;",
           "variable.is_blinking = 0.0;",

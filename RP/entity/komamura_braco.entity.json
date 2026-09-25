@@ -1,0 +1,30 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "komamura:braco",
+      "min_engine_version": "1.13.0",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/komamura_braco"
+      },
+      "geometry": {
+        "default": "geometry.komamura_braco"
+      },
+      "animations": {
+        "acao": "animation.komamura.braco.corte"
+      },
+      "scripts": {
+        "scale": "1.4",
+        "animate": [
+          "acao"
+        ]
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

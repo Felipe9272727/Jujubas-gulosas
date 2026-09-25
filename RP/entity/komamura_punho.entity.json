@@ -1,0 +1,30 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "komamura:punho",
+      "min_engine_version": "1.13.0",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/komamura_punho"
+      },
+      "geometry": {
+        "default": "geometry.komamura_punho"
+      },
+      "animations": {
+        "acao": "animation.komamura.punho.soco"
+      },
+      "scripts": {
+        "scale": "1.8",
+        "animate": [
+          "acao"
+        ]
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

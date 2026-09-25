@@ -2177,8 +2177,13 @@ check(
   !!marcadorNaOffhand && scaleExpr.includes(`'${marcadorNaOffhand}'`),
   `offhand=${marcadorNaOffhand} scale=${scaleExpr}`
 );
-// o modelo do player tem 1.8 blocos na escala vanilla 0.9375
-const escalaGigante = Number((scaleExpr.match(/\?\s*([\d.]+)/) ?? [])[1]);
+// o modelo do player tem 1.8 blocos na escala vanilla 0.9375. A expressao tem
+// um ternario por marcador: pega o numero que vem logo depois do da Ira
+function escalaDoMarcador(expr, marcador) {
+  const trecho = expr.slice(expr.indexOf(`'${marcador}'`));
+  return Number((trecho.match(/\?\s*([\d.]+)/) ?? [])[1]);
+}
+const escalaGigante = escalaDoMarcador(scaleExpr, "yammy:ira_marker");
 check(
   "a escala da forma gigante dá ~10 blocos de altura",
   Math.abs((escalaGigante * 1.8) / 0.9375 - 10) < 0.5,
@@ -6025,6 +6030,254 @@ check("fora do 7x7 não", longeUno.getComponent("minecraft:health").currentValue
 check("gasta o medidor", (uno.getDynamicProperty(DP.awakening) ?? 0) === 0);
 for (const d of [bicho, longeUno]) d.kill();
 noNewErrors("Kaidō Expert sem erro", mark);
+
+/* ================= Sajin Komamura ================= */
+
+const KM = game.KOMAMURA;
+function kmHits(target, since, amount) {
+  return log.damages.slice(since).filter((d) => d.target === target.name && (amount === undefined || Math.abs(virtualDamage(target, d) - amount) < 0.6));
+}
+function myooParts(type) {
+  return overworld.getEntities({ type });
+}
+function stone(x, y, z, type = "minecraft:stone") {
+  overworld.getBlock({ x, y, z }).setType(type);
+}
+function blockAt(x, y, z) {
+  return overworld.getBlock({ x, y, z }).typeId;
+}
+
+scenario("Sajin Komamura: ativação (Shinigami, Tier 4)");
+mark = errors.length;
+const koma = await newPlayerAs("KomamuraPlayer", { x: 60000, y: 64, z: 60000 }, null);
+check("registro: Shinigami, Tier 4", RACE_TIER.komamura?.race === "shinigami" && RACE_TIER.komamura?.tier === 4);
+await pickCharacter(koma, "komamura");
+advanceTicks(20, "ativar-koma");
+noNewErrors("ativar o Komamura sem erro", mark);
+check("vida maxima 2300", virtualMax(koma) === 2300, String(virtualMax(koma)));
+check(
+  "Tenken, Barrage, Destructive, Shield e Ora nos slots 0-4",
+  JSON.stringify(slotIds(koma, 5)) ===
+    JSON.stringify(["komamura:m1_tenken", "komamura:myoo_barrage", "komamura:destructive_slash", "komamura:giants_shield", "komamura:ora_ora_ora"]),
+  JSON.stringify(slotIds(koma, 5))
+);
+
+scenario("Tenken: m1 de 45, e a cada 3 golpes o braço do gigante corta a frente (125%)");
+mark = errors.length;
+koma._view = { x: 1, y: 0, z: 0 };
+const alvoK = createDummy("AlvoTenken", { x: 60002, y: 64, z: 60000 }, 500000);
+const frenteKKm = createDummy("FrenteTenken", { x: 60006, y: 64, z: 60001 }, 500000);
+const atrasKm = createDummy("AtrasTenken", { x: 59996, y: 64, z: 60000 }, 500000);
+dmgBefore = log.damages.length;
+hitWith(koma, alvoK, "komamura:m1_tenken");
+hitWith(koma, alvoK, "komamura:m1_tenken");
+check("dois golpes: 45 cada, sem braço ainda", kmHits(alvoK, dmgBefore, 45).length === 2 && myooParts("komamura:braco").length === 0);
+hitWith(koma, alvoK, "komamura:m1_tenken");
+check("no terceiro o braço aparece", myooParts("komamura:braco").length === 1);
+advanceTicks(6, "braco-desce");
+const golpeBraco = game.DAMAGE.tenkenM1 * KM.armMultiplier;
+check(`o braço corta a frente com ${golpeBraco}`, kmHits(alvoK, dmgBefore, golpeBraco).length === 1 && kmHits(frenteKKm, dmgBefore, golpeBraco).length === 1);
+check("não pega quem está atrás", kmHits(atrasKm, dmgBefore).length === 0);
+advanceTicks(15, "braco-some");
+check("o braço some depois do corte", myooParts("komamura:braco").length === 0);
+noNewErrors("Tenken sem erro", mark);
+
+scenario("Myō'ō's Barrage: 3 cortes do braço gigante, 50 cada");
+mark = errors.length;
+dmgBefore = log.damages.length;
+useItem(koma, "komamura:myoo_barrage");
+advanceTicks(40, "barrage");
+check("3 cortes de 50", kmHits(alvoK, dmgBefore, 50).length === 3, JSON.stringify(kmHits(alvoK, dmgBefore).map((d) => d.amount)));
+for (const d of [alvoK, frenteKKm, atrasKm]) d.kill();
+noNewErrors("Barrage sem erro", mark);
+
+scenario("Destructive Slash: corte do tamanho do Mugetsu que quebra blocos (e o terreno volta)");
+mark = errors.length;
+koma.teleport({ x: 60200, y: 64, z: 60000 });
+koma._view = { x: 1, y: 0, z: 0 };
+const alvoDKm = createDummy("AlvoDestructive", { x: 60220, y: 64, z: 60000 }, 500000);
+const alemD = createDummy("AlemDestructive", { x: 60232, y: 64, z: 60000 }, 500000);
+for (let y = 64; y <= 70; y++) stone(60210, y, 60000);
+stone(60212, 64, 60000, "minecraft:bedrock");
+stone(60214, 64, 60000, "minecraft:chest");
+for (let x = 60203; x <= 60224; x++) stone(x, 63, 60000);
+dmgBefore = log.damages.length;
+useItem(koma, "komamura:destructive_slash");
+check("o braço do gigante vem junto", myooParts("komamura:braco").length === 1);
+advanceTicks(20, "destructive");
+check("250 em quem está a 20 blocos", kmHits(alvoDKm, dmgBefore, 250).length === 1);
+check("alcance de 25 blocos", kmHits(alemD, dmgBefore).length === 0);
+check("quebra a parede no caminho", [64, 66, 70].every((y) => blockAt(60210, y, 60000) === "minecraft:air"));
+check("não quebra bedrock nem baú", blockAt(60212, 64, 60000) === "minecraft:bedrock" && blockAt(60214, 64, 60000) === "minecraft:chest");
+check("abre crateras no chão", [...Array(22).keys()].some((i) => blockAt(60203 + i, 63, 60000) === "minecraft:air"));
+check("corte claro, não preto", log.particles.some((p) => p.particleId === "komamura:corte"));
+check("tremor na câmera", log.commands.some((c) => c.command.startsWith("camerashake")));
+check("do tamanho do Mugetsu", Math.abs(KM.destructive.radius - game.DANGAI.mugetsu.radius) < 0.01);
+advanceTicks(KM.restoreTicks + 40, "terreno-volta");
+check("1 minuto depois o terreno volta", [64, 66, 70].every((y) => blockAt(60210, y, 60000) === "minecraft:stone") && blockAt(60210, 63, 60000) === "minecraft:stone");
+for (const d of [alvoDKm, alemD]) d.kill();
+noNewErrors("Destructive sem erro", mark);
+
+scenario("Giant's Shield: os braços cercam e tiram 30% do dano por 5s");
+mark = errors.length;
+const grimK = await newPlayerAs("GrimKoma", { x: 60402, y: 64, z: 60000 }, "grimmjow");
+koma.teleport({ x: 60400, y: 64, z: 60000 });
+fullHp(koma);
+dmgBefore = log.damages.length;
+hitWith(grimK, koma, "grimmjow:m1_zanpakuto");
+const semEscudo = kmHits(koma, dmgBefore).map((d) => virtualDamage(koma, d))[0];
+useItem(koma, "komamura:giants_shield");
+advanceTicks(2, "shield");
+check("os braços aparecem em volta", myooParts("komamura:guarda").length === 1);
+dmgBefore = log.damages.length;
+hitWith(grimK, koma, "grimmjow:m1_zanpakuto");
+const comEscudo = kmHits(koma, dmgBefore).map((d) => virtualDamage(koma, d))[0];
+check("30% a menos", Math.abs(comEscudo - semEscudo * 0.7) < 0.6, `${semEscudo} -> ${comEscudo}`);
+advanceTicks(100, "shield-acaba");
+check("depois de 5s os braços somem", myooParts("komamura:guarda").length === 0);
+dmgBefore = log.damages.length;
+hitWith(grimK, koma, "grimmjow:m1_zanpakuto");
+check("e o dano volta ao normal", Math.abs(kmHits(koma, dmgBefore).map((d) => virtualDamage(koma, d))[0] - semEscudo) < 0.6);
+grimK.teleport({ x: 60500, y: 64, z: 60500 });
+noNewErrors("Shield sem erro", mark);
+
+scenario("Ora Ora Ora!: 5 socos por segundo por 10s onde ele olha");
+mark = errors.length;
+koma.teleport({ x: 60600, y: 64, z: 60000 });
+koma._view = { x: 1, y: 0, z: 0 };
+const alvoO = createDummy("AlvoOra", { x: 60610, y: 64, z: 60000 }, 500000);
+for (let x = 60608; x <= 60612; x++) for (let z = 59998; z <= 60002; z++) stone(x, 63, z);
+dmgBefore = log.damages.length;
+const cmdsO = log.commands.length;
+useItem(koma, "komamura:ora_ora_ora");
+advanceTicks(5, "ora-comeca");
+check("o punho do gigante aparece", myooParts("komamura:punho").length === 1);
+advanceTicks(200, "ora");
+const socosKm = kmHits(alvoO, dmgBefore, 10).length;
+check("50 socos de 10 (5/s por 10s)", socosKm >= 49 && socosKm <= 51, String(socosKm));
+check("explodem o chão", [60608, 60610, 60612].some((x) => blockAt(x, 63, 60000) === "minecraft:air"));
+check("tremores", log.commands.slice(cmdsO).filter((c) => c.command.startsWith("camerashake")).length >= 10);
+check("o punho some no fim", myooParts("komamura:punho").length === 0);
+alvoO.kill();
+noNewErrors("Ora Ora sem erro", mark);
+
+scenario("Bankai: Kokujō Tengen Myō'ō — vira o gigante");
+mark = errors.length;
+koma.teleport({ x: 61000, y: 64, z: 61000 });
+koma.setDynamicProperty(DP.awakening, 100);
+let linhasK = log.worldMessages.length;
+koma.isSneaking = true;
+useItem(koma, "komamura:m1_tenken");
+koma.isSneaking = false;
+advanceTicks(20, "bankai-koma");
+check("desperta", koma.getDynamicProperty(DP.awakened) === true);
+check("vida 3000", virtualMax(koma) === 3000, String(virtualMax(koma)));
+const eqK = koma.getComponent("minecraft:equippable");
+check("o marcador do gigante na offhand (escala o modelo)", eqK.getEquipment("Offhand")?.typeId === "komamura:myoo_marker");
+check("a armadura de samurai no peito", eqK.getEquipment("Chest")?.typeId === "komamura:myoo_chest");
+const escalaMyoo = escalaDoMarcador(scaleExpr, "komamura:myoo_marker");
+check(
+  "o RP escala o Myō'ō pro tamanho do KOMAMURA.bankaiScale (~12 blocos)",
+  escalaMyoo === KM.bankaiScale && Math.abs((1.8 * escalaMyoo) / 0.9375 - 12) < 0.1,
+  `escala ${escalaMyoo}`
+);
+check("Titanic Slash, Stomp, Punch e Susano'o", JSON.stringify(slotIds(koma, 5)) === JSON.stringify(["komamura:m1_myoo", "komamura:titanic_slash", "komamura:stomp", "komamura:punch", "komamura:susanoo_cut"]));
+grimK.teleport({ x: 61002, y: 64, z: 61000 });
+fullHp(koma);
+dmgBefore = log.damages.length;
+hitWith(grimK, koma, "grimmjow:m1_zanpakuto");
+const noBankai = kmHits(koma, dmgBefore).map((d) => virtualDamage(koma, d))[0];
+check("toma 30% a menos de tudo", Math.abs(noBankai - semEscudo * 0.7) < 0.6, `${semEscudo} -> ${noBankai}`);
+grimK.teleport({ x: 61500, y: 64, z: 61500 });
+noNewErrors("Bankai sem erro", mark);
+
+scenario("Bankai: o m1 é do gigante (pega tudo na frente)");
+mark = errors.length;
+koma._view = { x: 1, y: 0, z: 0 };
+const alvoG = createDummy("AlvoGigante", { x: 61002, y: 64, z: 61000 }, 500000);
+const ladoG = createDummy("LadoGigante", { x: 61004, y: 64, z: 61003 }, 500000);
+const atrasG = createDummy("AtrasGigante", { x: 60996, y: 64, z: 61000 }, 500000);
+dmgBefore = log.damages.length;
+hitWith(koma, alvoG, "komamura:m1_myoo");
+check("45 no alvo", kmHits(alvoG, dmgBefore, 45).length === 1);
+check("e em quem está na frente dele", kmHits(ladoG, dmgBefore, 45).length === 1);
+check("mas não atrás", kmHits(atrasG, dmgBefore).length === 0);
+for (const d of [alvoG, ladoG, atrasG]) d.kill();
+noNewErrors("m1 do gigante sem erro", mark);
+
+scenario("Titanic Slash: o Destructive bem maior, saindo da katana; 500 + lentidão 2");
+mark = errors.length;
+koma.teleport({ x: 61200, y: 64, z: 61200 });
+koma._view = { x: 1, y: 0, z: 0 };
+const alvoT = createDummy("AlvoTitanic", { x: 61240, y: 64, z: 61200 }, 500000);
+for (let y = 64; y <= 90; y++) stone(61215, y, 61200);
+dmgBefore = log.damages.length;
+useItem(koma, "komamura:titanic_slash");
+advanceTicks(20, "titanic");
+check("500 a 40 blocos", kmHits(alvoT, dmgBefore, 500).length === 1);
+check("lentidão 2", alvoT.getEffect("slowness")?.amplifier === KM.titanic.slowAmplifier);
+check("algumas vezes o tamanho do Destructive", KM.titanic.radius >= KM.destructive.radius * 2 && KM.titanic.range > KM.destructive.range);
+check("quebra bem mais alto (até 24 acima do chão)", blockAt(61215, 64 + 20, 61200) === "minecraft:air" && blockAt(61215, 64 + 26, 61200) === "minecraft:stone");
+alvoT.kill();
+noNewErrors("Titanic sem erro", mark);
+
+scenario("Stomp e Punch: explodem onde ele mira");
+mark = errors.length;
+koma.teleport({ x: 61400, y: 64, z: 61400 });
+koma._view = { x: 1, y: 0, z: 0 };
+const pisado = createDummy("Pisado", { x: 61415, y: 64, z: 61400 }, 500000);
+const vizP = createDummy("VizinhoPisado", { x: 61415, y: 64, z: 61405 }, 500000);
+const longePKm = createDummy("LongePisado", { x: 61415, y: 64, z: 61409 }, 500000);
+for (let x = 61413; x <= 61417; x++) stone(x, 63, 61400);
+dmgBefore = log.damages.length;
+useItem(koma, "komamura:stomp");
+advanceTicks(8, "stomp-cai");
+check("o pé demora a descer", kmHits(pisado, dmgBefore).length === 0);
+advanceTicks(4, "stomp");
+check("Stomp: 200 no alvo", kmHits(pisado, dmgBefore, 200).length === 1);
+check("e na área (5 blocos)", kmHits(vizP, dmgBefore, 200).length === 1);
+check("não a 9", kmHits(longePKm, dmgBefore).length === 0);
+check("cratera", blockAt(61415, 63, 61400) === "minecraft:air");
+dmgBefore = log.damages.length;
+useItem(koma, "komamura:punch");
+advanceTicks(2, "punch-vem");
+check("Punch: o punho do gigante vem", myooParts("komamura:punho").length === 1);
+advanceTicks(8, "punch");
+check("Punch: 100, área menor (5 blocos fica de fora)", kmHits(pisado, dmgBefore, 100).length === 1 && kmHits(vizP, dmgBefore).length === 0);
+for (const d of [pisado, vizP, longePKm]) d.kill();
+noNewErrors("Stomp e Punch sem erro", mark);
+
+scenario("Susano'o's Cut: corte horizontal gigante, 750, derruba tudo na altura dele");
+mark = errors.length;
+koma.teleport({ x: 61600, y: 64, z: 61600 });
+koma._view = { x: 1, y: 0, z: 0 };
+const alvoSu = createDummy("AlvoSusanoo", { x: 61650, y: 64, z: 61600 }, 500000);
+const ladoSu = createDummy("LadoSusanoo", { x: 61630, y: 64, z: 61625 }, 500000);
+for (let y = 63; y <= 72; y++) stone(61620, y, 61600);
+dmgBefore = log.damages.length;
+useItem(koma, "komamura:susanoo_cut");
+advanceTicks(25, "susanoo");
+check("750 lá na frente", kmHits(alvoSu, dmgBefore, 750).length === 1);
+check("o corte é largo: pega 25 blocos pro lado", kmHits(ladoSu, dmgBefore, 750).length === 1);
+check("maior que o Titanic e o Mugetsu", KM.susanoo.radius > KM.titanic.radius && KM.susanoo.radius > game.DANGAI.mugetsu.radius);
+check("corta na horizontal: some a faixa na altura do corpo", [64, 66, 68].every((y) => blockAt(61620, y, 61600) === "minecraft:air"));
+check("acima e o chão ficam", blockAt(61620, 72, 61600) === "minecraft:stone" && blockAt(61620, 63, 61600) === "minecraft:stone");
+for (const d of [alvoSu, ladoSu]) d.kill();
+noNewErrors("Susano'o sem erro", mark);
+
+scenario("Komamura: desativar tira o gigante e as partes");
+mark = errors.length;
+useItem(koma, "komamura:punch");
+advanceTicks(1, "punch-no-ar");
+queueFormResponse(deactivateButtonIndex());
+useItem(koma, "multiversal:character_selector");
+await settleForms();
+advanceTicks(15, "desativar-koma");
+const eqK2 = koma.getComponent("minecraft:equippable");
+check("sem o marcador do gigante", eqK2.getEquipment("Offhand")?.typeId !== "komamura:myoo_marker");
+check("sem a armadura", eqK2.getEquipment("Chest")?.typeId !== "komamura:myoo_chest");
+check("nenhuma parte do Myō'ō sobrando", myooParts("komamura:punho").length + myooParts("komamura:braco").length + myooParts("komamura:guarda").length === 0);
+noNewErrors("desativar sem erro", mark);
 
 /* ================= estabilidade longa ================= */
 

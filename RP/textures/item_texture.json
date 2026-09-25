@@ -643,6 +643,42 @@
     },
     "unohana:kaidos": {
       "textures": "textures/items/unohana_kaidos"
+    },
+    "komamura:m1_tenken": {
+      "textures": "textures/items/komamura_m1_tenken"
+    },
+    "komamura:m1_myoo": {
+      "textures": "textures/items/komamura_m1_myoo"
+    },
+    "komamura:myoo_marker": {
+      "textures": "textures/items/komamura_myoo_marker"
+    },
+    "komamura:myoo_chest": {
+      "textures": "textures/items/komamura_myoo_chest"
+    },
+    "komamura:myoo_barrage": {
+      "textures": "textures/items/komamura_myoo_barrage"
+    },
+    "komamura:destructive_slash": {
+      "textures": "textures/items/komamura_destructive_slash"
+    },
+    "komamura:giants_shield": {
+      "textures": "textures/items/komamura_giants_shield"
+    },
+    "komamura:ora_ora_ora": {
+      "textures": "textures/items/komamura_ora_ora_ora"
+    },
+    "komamura:titanic_slash": {
+      "textures": "textures/items/komamura_titanic_slash"
+    },
+    "komamura:stomp": {
+      "textures": "textures/items/komamura_stomp"
+    },
+    "komamura:punch": {
+      "textures": "textures/items/komamura_punch"
+    },
+    "komamura:susanoo_cut": {
+      "textures": "textures/items/komamura_susanoo_cut"
     }
   }
 }

@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "komamura:titanic_slash",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "komamura:titanic_slash",
+      "minecraft:display_name": {
+        "value": "Titanic Slash"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "komamura_titanic_slash",
+        "duration": 25
+      }
+    }
+  }
+}

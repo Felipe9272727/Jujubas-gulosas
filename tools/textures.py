@@ -4104,3 +4104,175 @@ TEXTURES.update({
         "grid": ["...GG...", "...LG...", ".GGLLGG.", ".LLLLLL.", ".GGLLGG.", "...LG...", "...GG...", "........"],
     },
 })
+
+# Myō'ō do Komamura: braço, punho, guarda e a armadura do Bankai (tools/komamura_model.py)
+from komamura_model import TEXTURE_SPECS as _KOMAMURA_TEXTURES  # noqa: E402
+
+for _name, _spec in _KOMAMURA_TEXTURES.items():
+    TEXTURES[f"entity/{_name}"] = _spec
+
+# ---------------------------------------------------------------------------
+# Sajin Komamura
+# ---------------------------------------------------------------------------
+_MYOO = {
+    "k": (26, 28, 36, 255),
+    "d": (14, 14, 20, 255),
+    "g": (210, 168, 62, 255),
+    "G": (250, 222, 130, 255),
+    "#": (214, 218, 228, 255),
+    "%": (140, 146, 160, 255),
+    "r": (150, 30, 30, 255),
+    "b": (120, 90, 60, 255),
+    "B": (80, 60, 40, 255),
+    "o": (255, 190, 60, 255),
+}
+
+
+def _tenken(x, y):
+    d = x + y
+    if y <= 10 and d == 15:
+        return "#"
+    if y <= 10 and d == 16:
+        return "%"
+    if (x, y) in ((4, 11), (3, 11), (5, 10), (3, 12), (4, 12), (2, 11)):
+        return "g"
+    if d == 15 and y > 11:
+        return "d"
+    return None
+
+
+def _myoo_katana(x, y):
+    d = x + y
+    if y <= 10 and d in (14, 15):
+        return "k"
+    if y <= 10 and d == 16:
+        return "G"
+    if (x, y) in ((3, 11), (4, 11), (5, 11), (5, 10), (6, 10), (3, 12), (4, 12), (2, 12)):
+        return "g"
+    if d in (15, 16) and y > 11:
+        return "r"
+    return None
+
+
+def _barrage(x, y):
+    for off in (-5, 0, 5):
+        if x - y == off and 1 <= x <= 14:
+            return "G" if (x + y) % 3 else "g"
+        if x - y == off + 1 and 2 <= x <= 14:
+            return "g"
+    return None
+
+
+def _destructive(x, y):
+    dx, dy = x - 2, y - 7.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if 10 <= r <= 12 and x >= 4:
+        return "G" if r < 11 else "g"
+    if y >= 13 and (x * 7 + y) % 3 == 0:
+        return "b"
+    return None
+
+
+def _shield_icon(x, y):
+    if (2 <= x <= 4 or 11 <= x <= 13) and 2 <= y <= 11:
+        return "k" if y % 3 else "d"
+    if 2 <= x <= 13 and 11 <= y <= 13:
+        return "k" if x % 3 else "d"
+    if y == 10 and (x in (2, 3, 4, 11, 12, 13)):
+        return "g"
+    return None
+
+
+def _fist(x, y):
+    if 4 <= x <= 12 and 4 <= y <= 12:
+        if y == 5 and 5 <= x <= 11:
+            return "g"
+        return "k" if (x + y) % 4 else "d"
+    if 1 <= x <= 3 and y in (6, 8, 10):
+        return "G"
+    return None
+
+
+def _titanic(x, y):
+    dx, dy = x - 0, y - 7.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if 9 <= r <= 13.5 and x >= 2:
+        return "G" if r < 10.5 else "g" if r < 12.5 else "o"
+    return None
+
+
+def _stomp(x, y):
+    dx, dy = x - 7.5, y - 11
+    r = (dx * dx + dy * dy * 3) ** 0.5
+    if r <= 3.5:
+        return "d"
+    if 5.5 <= r <= 6.5:
+        return "b"
+    if 8 <= r <= 9 and y > 6:
+        return "B"
+    if 4 <= x <= 11 and 1 <= y <= 8 and abs(x - 7.5) <= 2 + y * 0.2:
+        return "k"
+    return None
+
+
+def _punch(x, y):
+    dx, dy = x - 8, y - 8
+    if abs(dx) <= 4 and abs(dy) <= 4:
+        return "g" if dx == -4 else "k" if (x + y) % 3 else "d"
+    if -9 <= dx <= -5 and abs(dy) <= 2:
+        return "d"
+    if dx >= 5 and (x + y) % 2 == 0 and abs(dy) <= 5:
+        return "o"
+    return None
+
+
+def _susanoo(x, y):
+    dx, dy = x - 7.5, y + 4
+    r = (dx * dx + dy * dy) ** 0.5
+    if 13 <= r <= 15 and y >= 5:
+        return "G" if r < 14 else "g"
+    return None
+
+
+def _kabuto(x, y):
+    if y in (0, 1, 2, 3) and x in (3, 12) :
+        return "g"
+    if 3 <= y <= 5 and 6 <= x <= 9 and (y > 3 or x in (7, 8)):
+        return "g"
+    if 5 <= y <= 13 and 3 <= x <= 12:
+        if y == 9 and x in (5, 6, 9, 10):
+            return "o"
+        if 11 <= y and 5 <= x <= 10:
+            return "d"
+        return "k"
+    if 8 <= y <= 13 and x in (2, 13):
+        return "d"
+    return None
+
+
+TEXTURES.update({
+    "items/komamura_m1_tenken": {"palette": _MYOO, "grid": _draw(_tenken)},
+    "items/komamura_m1_myoo": {"palette": _MYOO, "grid": _draw(_myoo_katana)},
+    "items/komamura_myoo_barrage": {"palette": _MYOO, "grid": _draw(_barrage)},
+    "items/komamura_destructive_slash": {"palette": _MYOO, "grid": _draw(_destructive)},
+    "items/komamura_giants_shield": {"palette": _MYOO, "grid": _draw(_shield_icon)},
+    "items/komamura_ora_ora_ora": {"palette": _MYOO, "grid": _draw(_fist)},
+    "items/komamura_titanic_slash": {"palette": _MYOO, "grid": _draw(_titanic)},
+    "items/komamura_stomp": {"palette": _MYOO, "grid": _draw(_stomp)},
+    "items/komamura_punch": {"palette": _MYOO, "grid": _draw(_punch)},
+    "items/komamura_susanoo_cut": {"palette": _MYOO, "grid": _draw(_susanoo)},
+    "items/komamura_myoo_marker": {"palette": {}, "grid": ["." * 16] * 16},
+    "items/komamura_myoo_chest": {"palette": _MYOO, "grid": _draw(_kabuto)},
+    "particle/komamura_corte": {
+        "palette": {"y": (240, 214, 140, 150), "Y": (255, 240, 190, 235), "W": (255, 252, 240, 255)},
+        "grid": ["..yyyy..", ".yYYYYy.", "yYWWWWYy", "yYWWWWYy", "yYWWWWYy", "yYWWWWYy", ".yYYYYy.", "..yyyy.."],
+    },
+    "particle/komamura_brilho": {
+        "palette": {"g": (220, 170, 60, 200), "G": (255, 236, 150, 255)},
+        "grid": ["...g....", "...G....", "..gGg...", "gGGGGGg.", "..gGg...", "...G....", "...g....", "........"],
+    },
+    "particle/komamura_poeira": {
+        "palette": {"b": (120, 96, 70, 150), "B": (90, 70, 50, 210)},
+        "grid": ["..bbb...", ".bBBBb..", "bBBBBBb.", "bBBBBBBb", "bBBBBBBb", ".bBBBBb.", "..bbbb..", "........"],
+    },
+})

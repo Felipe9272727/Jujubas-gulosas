@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "komamura:susanoo_cut",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "komamura:susanoo_cut",
+      "minecraft:display_name": {
+        "value": "Susano'o's Cut"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "komamura_susanoo_cut",
+        "duration": 60
+      }
+    }
+  }
+}

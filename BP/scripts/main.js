@@ -109,6 +109,10 @@ try {
     "minecraft:egg",
     "minecraft:ender_pearl",
     "minecraft:fishing_hook",
+    // partes do Myō'ō do Komamura: so visual, nunca alvo
+    "komamura:braco",
+    "komamura:punho",
+    "komamura:guarda",
   ];
   Dimension.prototype.getEntities = function (options) {
     if (!options) {
@@ -947,6 +951,46 @@ const CHARACTERS = {
       triggerItem: "unohana:m1_zanpakuto",
     },
   },
+  komamura: {
+    id: "komamura",
+    name: "Sajin Komamura",
+    health: 2300,
+    items: {
+      0: "komamura:m1_tenken",
+      1: "komamura:myoo_barrage",
+      2: "komamura:destructive_slash",
+      3: "komamura:giants_shield",
+      4: "komamura:ora_ora_ora",
+    },
+    // Bankai: o player vira o Myō'ō (marcador na offhand escala o modelo e a
+    // armadura de samurai vai no peito)
+    awakening: {
+      name: "Bankai: Kokujō Tengen Myō'ō",
+      triggerItem: "komamura:m1_tenken",
+      health: 3000,
+      awakeningDamageTakenMultiplier: 0.7, // 30% a menos de todo dano
+      onActivate: "battlecry",
+      chatLine: "Bankai: Kokujō Tengen Myō'ō!",
+      cryParticle: "komamura:poeira",
+      cryPitch: 0.4,
+      offhandMarker: "komamura:myoo_marker",
+      armorPiece: "komamura:myoo_chest",
+      armorMessage: "§6§lO Myō'ō se manifesta por inteiro.",
+      // agachar + usar a katana do gigante alterna a camera pro alto da cabeca
+      tallView: {
+        triggerItem: "komamura:m1_myoo",
+        height: 11,
+        back: 7,
+      },
+      items: {
+        0: "komamura:m1_myoo",
+        1: "komamura:titanic_slash",
+        2: "komamura:stomp",
+        3: "komamura:punch",
+        4: "komamura:susanoo_cut",
+      },
+    },
+  },
 };
 
 // armas m1 alternativas do byakuya (trocadas dinamicamente, nao ficam no registro "items" fixo)
@@ -1017,6 +1061,7 @@ const CHARACTER_RACE_TIER = {
   ichigo_dangai: { race: "hybrid", tier: 7 },
   yamamoto: { race: "shinigami", tier: 7 },
   unohana: { race: "shinigami", tier: 3 },
+  komamura: { race: "shinigami", tier: 4 },
 
   grimmjow: { race: "hollow", tier: 2 },
   szayelaporro: { race: "hollow", tier: 2 },
@@ -1477,6 +1522,14 @@ const SKILL_COOLDOWN_TICKS = {
   "unohana:kaidos.chiyu": 300, // 15s
   "unohana:kaidos.diagnostico": 200, // 10s
   "unohana:kaidos.tratamento": 600, // 30s (o mesmo do Kaidō Básico)
+  "komamura:myoo_barrage": 400, // 20s
+  "komamura:destructive_slash": 500, // 25s
+  "komamura:giants_shield": 400, // 20s
+  "komamura:ora_ora_ora": 600, // 30s
+  "komamura:titanic_slash": 500, // 25s
+  "komamura:stomp": 700, // 35s
+  "komamura:punch": 340, // 17s
+  "komamura:susanoo_cut": 1200, // 60s
 };
 
 const SKILL_NAMES = {
@@ -1648,6 +1701,14 @@ const SKILL_NAMES = {
   "unohana:kaidos.chiyu": "Chiyu",
   "unohana:kaidos.diagnostico": "Diagnóstico",
   "unohana:kaidos.tratamento": "Tratamento em área",
+  "komamura:myoo_barrage": "Myō'ō's Barrage",
+  "komamura:destructive_slash": "Destructive Slash",
+  "komamura:giants_shield": "Giant's Shield",
+  "komamura:ora_ora_ora": "Ora Ora Ora!",
+  "komamura:titanic_slash": "Titanic Slash",
+  "komamura:stomp": "Stomp",
+  "komamura:punch": "Punch",
+  "komamura:susanoo_cut": "Susano'o's Cut",
 };
 
 // dano aumentado
@@ -1857,6 +1918,16 @@ const DAMAGE = {
   byakurai: 40,
   sokatsui: 70,
   sorenSokatsui: 140,
+  // Sajin Komamura
+  tenkenM1: 45,
+  myooBarrageCut: 50,
+  destructiveSlash: 250,
+  oraPunch: 10,
+  myooM1: 45,
+  titanicSlash: 500,
+  myooStomp: 200,
+  myooPunch: 100,
+  susanooCut: 750,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -3017,6 +3088,7 @@ function deactivateCharacter(player) {
   if (character.id === "ichigo_dangai") dangaiCleanup(player, true);
   if (character.id === "yamamoto") yamamotoCleanup(player.id);
   if (character.id === "unohana") unohanaCleanup(player.id, true);
+  if (character.id === "komamura") komamuraCleanup(player.id);
 
   if (isMasked(player)) {
     try {
@@ -3483,6 +3555,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     yamamotoCleanup(player.id);
     burns.delete(player.id);
     unohanaCleanup(player.id, false); // quem atacou antes de morrer continua marcado
+    komamuraCleanup(player.id);
     unohanaHeals.delete(player.id);
     clearDots(player.id);
     ukitakeAbsorb.delete(player.id);
@@ -4241,6 +4314,30 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "unohana:kaidos":
       if (player.isSneaking) openSpellBook(player, itemStack.typeId);
       else castFromBook(player, itemStack.typeId);
+      break;
+    case "komamura:myoo_barrage":
+      castMyooBarrage(player);
+      break;
+    case "komamura:destructive_slash":
+      castDestructiveSlash(player);
+      break;
+    case "komamura:giants_shield":
+      castGiantsShield(player);
+      break;
+    case "komamura:ora_ora_ora":
+      castOraOraOra(player);
+      break;
+    case "komamura:titanic_slash":
+      castTitanicSlash(player);
+      break;
+    case "komamura:stomp":
+      castMyooStomp(player);
+      break;
+    case "komamura:punch":
+      castMyooPunch(player);
+      break;
+    case "komamura:susanoo_cut":
+      castSusanooCut(player);
       break;
   }
 });
@@ -9372,6 +9469,7 @@ function damageTakenMultiplierOf(entity) {
     }
     if (isHierro(entity)) multiplier *= HIERRO.damageTakenMultiplier;
     if (character?.id === "aizen_hogyoku") multiplier *= hogyokuResistMultiplier(entity);
+    if (character?.id === "komamura") multiplier *= komamuraShieldMultiplier(entity);
     return multiplier;
   } catch (e) {
     return 1;
@@ -16605,10 +16703,12 @@ function drawCrescent(dim, c, frame, cfg, look, lite, smear) {
 function fireCrescent(player, cfg, look, options = {}) {
   const dim = player.dimension;
   const origin = options.origin ?? player.location;
-  const frame = crescentFrame(options.direction ?? player.getViewDirection());
+  let frame = crescentFrame(options.direction ?? player.getViewDirection());
+  // corte deitado (Susano'o's Cut): o arco abre pros lados e a espessura vira altura
+  if (options.horizontal) frame = { dir: frame.dir, up: frame.side, side: frame.up };
   const hit = options.hitSet ?? new Set();
   const lite = options.lite === true;
-  const start = { x: origin.x, y: origin.y + 1.1, z: origin.z };
+  const start = { x: origin.x, y: origin.y + (options.startHeight ?? 1.1), z: origin.z };
   const centerAt = (d) => ({
     x: start.x + frame.dir.x * d,
     y: start.y + frame.dir.y * d,
@@ -16663,6 +16763,7 @@ function fireCrescent(player, cfg, look, options = {}) {
         const c = centerAt(from + ((travelled - from) * k) / cfg.subSteps);
         cancelAttacksNear(player, dim, c, cfg.radius, cfg.cancelsUpToTier);
         strikeAround(c);
+        options.onStep?.(c, frame);
       }
     } catch (e) {
       system.clearRun(interval);
@@ -18590,11 +18691,656 @@ function unohanaCleanup(playerId, full) {
 }
 
 /* ---------------------------------------------------------
+   Sajin Komamura - Tier 4 (Shinigami)
+   Tenken: partes do gigante Myō'ō aparecem pra atacar (entidades com modelo
+   e animação: braço com katana, punho e os braços da guarda). No Bankai o
+   player VIRA o gigante (marcador na offhand + armadura), e os ataques saem
+   do tamanho dele, não da hitbox do player.
+   Os ataques que "destroem blocos" quebram de verdade e o terreno volta
+   sozinho depois de 1 minuto (livro-caixa de blocos, restaurado aos poucos).
+   --------------------------------------------------------- */
+
+const KOMAMURA = {
+  visual: { braco: "komamura:braco", punho: "komamura:punho", guarda: "komamura:guarda" },
+  // o braco nasce atras e acima do ombro direito e desce cortando a frente
+  arm: { lifeTicks: 16, back: 1.0, side: 1.3, up: 1.4, reach: 8, halfWidth: 2.8, height: 5, strikeDelayTicks: 5 },
+  m1EveryHits: 3,
+  armMultiplier: 1.25,
+  barrage: { cuts: 3, gapTicks: 9 },
+  destructive: {
+    radius: DANGAI.mugetsu.radius, // "do tamanho do Mugetsu"
+    bulge: 4,
+    thickness: 3,
+    lateral: 2.5,
+    speed: 3,
+    range: 25,
+    subSteps: 3,
+    startAhead: 2,
+    startHeight: 2.5,
+    cancelsUpToTier: -1,
+    carveWidth: 1,
+    carveDepth: 3,
+    carveUp: 12,
+    blastEvery: 3,
+    blastRadius: 3,
+    craterRadius: 2,
+  },
+  shield: { durationTicks: 100, multiplier: 0.7 },
+  ora: { durationTicks: 200, everyTicks: 4, range: 30, blastRadius: 3, craterRadius: 2, shakeRadius: 24 },
+  bankaiScale: 6.25, // o mesmo numero do player.entity.json
+  titanic: {
+    radius: DANGAI.mugetsu.radius * 2, // "algumas vezes o tamanho"
+    bulge: 8,
+    thickness: 5,
+    lateral: 4,
+    speed: 4,
+    range: 50,
+    subSteps: 4,
+    startAhead: 3,
+    startHeight: 7, // sai da katana do gigante, nao do pe
+    cancelsUpToTier: -1,
+    carveWidth: 2,
+    carveDepth: 4,
+    carveUp: 24,
+    blastEvery: 4,
+    blastRadius: 4,
+    craterRadius: 3,
+    slowTicks: 100,
+    slowAmplifier: 1, // lentidao 2
+  },
+  stomp: { range: 40, delayTicks: 10, radius: 6, height: 6, craterRadius: 3 },
+  punch: { range: 40, delayTicks: 6, radius: 3.5, height: 5, craterRadius: 2 },
+  susanoo: {
+    radius: 40, // maior que o Mugetsu (16,2) e que o Titanic Slash (32,4)
+    bulge: 10,
+    thickness: 4,
+    lateral: 3,
+    speed: 4,
+    range: 60,
+    subSteps: 4,
+    startAhead: 3,
+    startHeight: 2,
+    cancelsUpToTier: -1,
+    carveUp: 4,
+  },
+  giantM1: { reach: 6, arcCos: 0.35, cooldownTicks: 8 },
+  restoreTicks: 1200,
+  restorePerTick: 300,
+};
+
+CRESCENT_LOOKS.myoo = {
+  coreParticle: "komamura:corte",
+  edgeParticle: "komamura:brilho",
+  boltParticle: "komamura:poeira",
+  points: 21,
+  litePoints: 9,
+  bolts: 3,
+  boltSegments: 4,
+  boltStep: 1.2,
+};
+
+function isKomamura(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === "komamura";
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ---------- terreno: quebra de verdade e volta em 1 minuto ---------- */
+
+function komamuraBreak(ledger, dim, x, y, z, seen) {
+  const key = `${x},${y},${z}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  try {
+    const block = dim.getBlock({ x, y, z });
+    if (!block || block.isAir || block.isLiquid) return;
+    // bedrock, bau, porta, cama... e os blocos de outras skills (caixa, gelo)
+    if (!iceCanReplace(block) || LEDGER_PROTECTED_BLOCKS.has(block.typeId) || block.typeId.includes("ice")) return;
+    ledger.push({ dim, x, y, z, was: block.permutation });
+    block.setType("minecraft:air");
+  } catch (e) {}
+}
+
+function komamuraCrater(ledger, dim, at, radius, seen) {
+  const cx = Math.floor(at.x);
+  const cy = Math.floor(at.y);
+  const cz = Math.floor(at.z);
+  const r = Math.ceil(radius);
+  for (let dx = -r; dx <= r; dx++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (dx * dx + dy * dy + dz * dz > radius * radius) continue;
+        komamuraBreak(ledger, dim, cx + dx, cy + dy, cz + dz, seen);
+      }
+    }
+  }
+}
+
+// devolve o terreno aos poucos (muitos blocos de uma vez travariam o tick)
+function scheduleRestore(ledger) {
+  system.runTimeout(() => {
+    let i = ledger.length - 1;
+    const run = system.runInterval(() => {
+      for (let n = 0; n < KOMAMURA.restorePerTick && i >= 0; n++, i--) iceRestoreEntry(ledger[i]);
+      if (i < 0) system.clearRun(run);
+    }, 1);
+  }, KOMAMURA.restoreTicks);
+}
+
+function shakeNear(dim, at, radius, intensity, seconds) {
+  for (const player of world.getPlayers()) {
+    try {
+      if (player.dimension.id !== dim.id) continue;
+      const l = player.location;
+      if (Math.hypot(l.x - at.x, l.y - at.y, l.z - at.z) > radius) continue;
+      player.runCommand(`camerashake add @s ${intensity} ${seconds} positional`);
+    } catch (e) {}
+  }
+}
+
+function blastVisual(dim, at, radius) {
+  try {
+    dim.playSound("random.explode", at, { volume: 1.6, pitch: 0.8 });
+    const n = 8 + Math.round(radius * 3);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const r = radius * (0.3 + Math.random() * 0.7);
+      const p = { x: at.x + Math.cos(a) * r, y: at.y + 0.3 + Math.random() * radius * 0.6, z: at.z + Math.sin(a) * r };
+      dim.spawnParticle(i % 4 === 0 ? "minecraft:large_explosion" : i % 2 ? "komamura:poeira" : "komamura:brilho", p);
+    }
+  } catch (e) {}
+}
+
+// dano em area a partir de um ponto (cilindro), cada um uma vez por `hit`
+function komamuraAreaHit(player, at, radius, height, damage, hit, after) {
+  for (const entity of player.dimension.getEntities({ location: at, maxDistance: radius + height })) {
+    if (entity.id === player.id || hit.has(entity.id)) continue;
+    try {
+      if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+      const l = entity.location;
+      if (Math.hypot(l.x - at.x, l.z - at.z) > radius + 0.4) continue;
+      if (l.y < at.y - 2 || l.y > at.y + height) continue;
+      hit.add(entity.id);
+      if (isRespiring(entity)) {
+        showRespiraGuard(entity);
+        continue;
+      }
+      dealDamage(entity, damage * dmgMultiplier(player), player);
+      after?.(entity);
+    } catch (e) {}
+  }
+}
+
+// onde o gigante vai bater: quem esta na mira, o bloco mirado, ou a frente
+function komamuraAimPoint(player, range) {
+  const target = targetInView(player, range);
+  if (target) return { ...target.location };
+  try {
+    const hit = player.getBlockFromViewDirection({ maxDistance: range });
+    if (hit?.block) {
+      const b = hit.block.location;
+      return { x: b.x + 0.5, y: b.y + 1, z: b.z + 0.5 };
+    }
+  } catch (e) {}
+  const v = unitVector(player.getViewDirection());
+  const l = player.location;
+  return { x: l.x + v.x * range * 0.5, y: l.y + 1 + v.y * range * 0.5, z: l.z + v.z * range * 0.5 };
+}
+
+/* ---------- partes do Myō'ō (entidades so de visual) ---------- */
+
+const komamuraVisuals = new Map(); // id da entidade -> { entity, ownerId, until }
+
+function spawnMyooPart(player, type, at, yaw, lifeTicks) {
+  try {
+    const part = player.dimension.spawnEntity(type, at);
+    part.teleport(at, { keepVelocity: false, rotation: { x: 0, y: yaw } });
+    komamuraVisuals.set(part.id, { entity: part, ownerId: player.id, until: system.currentTick + lifeTicks });
+    return part;
+  } catch (e) {
+    return undefined;
+  }
+}
+
+function removeMyooPart(part) {
+  if (!part) return;
+  komamuraVisuals.delete(part.id);
+  try {
+    part.remove();
+  } catch (e) {}
+}
+
+system.runInterval(() => {
+  const now = system.currentTick;
+  for (const [id, part] of komamuraVisuals) {
+    if (now >= part.until) removeMyooPart(part.entity);
+    else if (!part.entity.isValid) komamuraVisuals.delete(id);
+  }
+}, 1);
+
+// sobra de sessao anterior (o mundo fechou com um braço no ar)
+system.runInterval(() => {
+  for (const id of ["overworld", "nether", "the_end"]) {
+    let dim;
+    try {
+      dim = world.getDimension(id);
+    } catch (e) {
+      continue;
+    }
+    for (const type of Object.values(KOMAMURA.visual)) {
+      try {
+        for (const entity of dim.getEntities({ type })) {
+          if (!komamuraVisuals.has(entity.id)) entity.remove();
+        }
+      } catch (e) {}
+    }
+  }
+}, 40);
+
+function rightOf(f) {
+  return { x: -f.z, z: f.x };
+}
+
+// o braço direito do gigante com a katana: nasce atras do ombro e corta a frente
+function tenkenSlash(player, damage, onStrike) {
+  const cfg = KOMAMURA.arm;
+  const l = player.location;
+  const f = forwardDirection(player);
+  const r = rightOf(f);
+  const yaw = player.getRotation().y;
+  const at = { x: l.x - f.x * cfg.back + r.x * cfg.side, y: l.y + cfg.up, z: l.z - f.z * cfg.back + r.z * cfg.side };
+  spawnMyooPart(player, KOMAMURA.visual.braco, at, yaw, cfg.lifeTicks);
+  try {
+    player.dimension.playSound("item.trident.riptide_2", l, { volume: 1.2, pitch: 0.6 });
+  } catch (e) {}
+  system.runTimeout(() => {
+    if (isDownOrGone(player)) return;
+    const dim = player.dimension;
+    const o = player.location;
+    const hit = new Set();
+    // o arco do corte no chao, na frente dele
+    try {
+      for (let i = 0; i <= 10; i++) {
+        const t = i / 10;
+        const a = 1 + t * (cfg.reach - 1);
+        const b = (0.5 - t) * cfg.halfWidth * 1.4;
+        dim.spawnParticle(i % 2 ? "komamura:corte" : "komamura:brilho", {
+          x: o.x + f.x * a + r.x * b,
+          y: o.y + 0.6 + (1 - t) * 2.5,
+          z: o.z + f.z * a + r.z * b,
+        });
+      }
+      dim.playSound("random.explode", o, { volume: 0.6, pitch: 1.4 });
+    } catch (e) {}
+    for (const entity of dim.getEntities({ location: o, maxDistance: cfg.reach + 2 })) {
+      if (entity.id === player.id || hit.has(entity.id)) continue;
+      try {
+        if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+        const e = entity.location;
+        const dx = e.x - o.x;
+        const dz = e.z - o.z;
+        const along = dx * f.x + dz * f.z;
+        const across = dx * r.x + dz * r.z;
+        if (along < 0 || along > cfg.reach || Math.abs(across) > cfg.halfWidth) continue;
+        if (e.y < o.y - 1.5 || e.y > o.y + cfg.height) continue;
+        hit.add(entity.id);
+        dealDamage(entity, damage * dmgMultiplier(player), player);
+        onStrike?.(entity);
+      } catch (e) {}
+    }
+  }, cfg.strikeDelayTicks);
+}
+
+/* ---------- m1 Tenken: o braço vem a cada 3 golpes ---------- */
+
+const tenkenHits = new Map(); // id -> golpes desde o ultimo braço
+
+function komamuraTenkenHit(player) {
+  if (isAwakened(player)) return;
+  const n = (tenkenHits.get(player.id) ?? 0) + 1;
+  if (n < KOMAMURA.m1EveryHits) {
+    tenkenHits.set(player.id, n);
+    return;
+  }
+  tenkenHits.set(player.id, 0);
+  tenkenSlash(player, DAMAGE.tenkenM1 * KOMAMURA.armMultiplier);
+}
+
+/* ---------- Myō'ō's Barrage ---------- */
+
+function castMyooBarrage(player) {
+  if (!tryUseSkill(player, "komamura:myoo_barrage")) return;
+  const cfg = KOMAMURA.barrage;
+  world.sendMessage(`§6${player.name}: §e§lMyō'ō's Barrage`);
+  for (let i = 0; i < cfg.cuts; i++) {
+    system.runTimeout(() => {
+      if (isDownOrGone(player) || !isKomamura(player)) return;
+      tenkenSlash(player, DAMAGE.myooBarrageCut);
+    }, i * cfg.gapTicks);
+  }
+}
+
+/* ---------- os cortes gigantes (Destructive, Titanic e Susano'o) ---------- */
+
+// quebra o fio do corte por onde ele passa e abre explosoes no chao
+function carvingSlash(player, cfg, damage, extra = {}) {
+  const dim = player.dimension;
+  const ground = Math.floor(player.location.y);
+  const ledger = [];
+  const seen = new Set();
+  const hit = new Set();
+  let travelled = 0;
+  let lastBlast = -Infinity;
+  const f = forwardDirection(player);
+  fireCrescent(player, cfg, CRESCENT_LOOKS.myoo, {
+    damage,
+    direction: { x: f.x, y: 0, z: f.z },
+    horizontal: !!extra.horizontal,
+    startHeight: cfg.startHeight,
+    hitSet: hit,
+    afterHit: extra.afterHit,
+    onStep: (c, frame) => {
+      travelled += cfg.speed / cfg.subSteps;
+      if (extra.horizontal) {
+        // corte deitado: tira uma faixa do chao ate carveUp, no arco inteiro
+        for (let v = -cfg.radius; v <= cfg.radius; v += 1) {
+          const along = arcAlong(cfg, v);
+          const p = framePoint(c, frame, along, v, 0);
+          for (let y = ground; y <= ground + cfg.carveUp; y++) {
+            komamuraBreak(ledger, dim, Math.floor(p.x), y, Math.floor(p.z), seen);
+          }
+        }
+        return;
+      }
+      // corte em pe: o fio do arco, um pouco abaixo do chao ate carveUp
+      for (let v = -cfg.radius; v <= cfg.radius; v += 1) {
+        const along = arcAlong(cfg, v);
+        for (let l = -cfg.carveWidth; l <= cfg.carveWidth; l += 1) {
+          const p = framePoint(c, frame, along, v, l);
+          if (p.y < ground - cfg.carveDepth || p.y > ground + cfg.carveUp) continue;
+          komamuraBreak(ledger, dim, Math.floor(p.x), Math.floor(p.y), Math.floor(p.z), seen);
+        }
+      }
+      if (travelled - lastBlast >= cfg.blastEvery) {
+        lastBlast = travelled;
+        const v0 = ground - c.y;
+        const front = arcAlong(cfg, v0);
+        const at = { x: c.x + frame.dir.x * front, y: ground, z: c.z + frame.dir.z * front };
+        blastVisual(dim, at, cfg.blastRadius);
+        komamuraCrater(ledger, dim, at, cfg.craterRadius, seen);
+        komamuraAreaHit(player, at, cfg.blastRadius, cfg.blastRadius, damage, hit, extra.afterHit);
+        shakeNear(dim, at, 20, 0.3, 0.4);
+      }
+    },
+  });
+  scheduleRestore(ledger);
+}
+
+function castDestructiveSlash(player) {
+  if (!tryUseSkill(player, "komamura:destructive_slash")) return;
+  world.sendMessage(`§6${player.name}: §e§lDestructive Slash`);
+  // o braço do gigante desce, e o corte sai da katana dele
+  const l = player.location;
+  const f = forwardDirection(player);
+  const r = rightOf(f);
+  const cfg = KOMAMURA.arm;
+  spawnMyooPart(
+    player,
+    KOMAMURA.visual.braco,
+    { x: l.x - f.x * cfg.back + r.x * cfg.side, y: l.y + cfg.up, z: l.z - f.z * cfg.back + r.z * cfg.side },
+    player.getRotation().y,
+    cfg.lifeTicks + 6
+  );
+  try {
+    player.dimension.playSound("mob.wither.shoot", l, { volume: 1.6, pitch: 0.5 });
+  } catch (e) {}
+  system.runTimeout(() => {
+    if (isDownOrGone(player) || !isKomamura(player)) return;
+    carvingSlash(player, KOMAMURA.destructive, DAMAGE.destructiveSlash);
+  }, cfg.strikeDelayTicks);
+}
+
+/* ---------- Giant's Shield ---------- */
+
+const komamuraShield = new Map(); // id -> { until, part }
+
+function komamuraShieldMultiplier(entity) {
+  return (komamuraShield.get(entity?.id)?.until ?? 0) > system.currentTick ? KOMAMURA.shield.multiplier : 1;
+}
+
+function castGiantsShield(player) {
+  if (!tryUseSkill(player, "komamura:giants_shield")) return;
+  const cfg = KOMAMURA.shield;
+  world.sendMessage(`§6${player.name}: §e§lGiant's Shield`);
+  const part = spawnMyooPart(player, KOMAMURA.visual.guarda, player.location, player.getRotation().y, cfg.durationTicks);
+  komamuraShield.set(player.id, { until: system.currentTick + cfg.durationTicks, part });
+  try {
+    player.dimension.playSound("random.anvil_land", player.location, { volume: 1, pitch: 0.5 });
+  } catch (e) {}
+}
+
+/* ---------- Ora Ora Ora! ---------- */
+
+const komamuraOra = new Map(); // id -> { until, tick, part }
+
+function castOraOraOra(player) {
+  if (!tryUseSkill(player, "komamura:ora_ora_ora")) return;
+  const cfg = KOMAMURA.ora;
+  world.sendMessage(`§6${player.name}: §e§lORA ORA ORA!`);
+  const part = spawnMyooPart(player, KOMAMURA.visual.punho, player.location, player.getRotation().y, cfg.durationTicks);
+  komamuraOra.set(player.id, { until: system.currentTick + cfg.durationTicks, tick: 0, part, ledger: [], seen: new Set() });
+}
+
+function endOra(playerId) {
+  const state = komamuraOra.get(playerId);
+  if (!state) return;
+  komamuraOra.delete(playerId);
+  removeMyooPart(state.part);
+  scheduleRestore(state.ledger);
+}
+
+/* ---------- loop: guarda e punho seguindo o Komamura ---------- */
+
+system.runInterval(() => {
+  const now = system.currentTick;
+  for (const [id, state] of komamuraShield) {
+    const player = world.getPlayers().find((p) => p.id === id);
+    if (!player || now >= state.until || !isKomamura(player) || isDownOrGone(player)) {
+      komamuraShield.delete(id);
+      removeMyooPart(state.part);
+      continue;
+    }
+    try {
+      state.part?.teleport(player.location, { keepVelocity: false, rotation: { x: 0, y: player.getRotation().y } });
+    } catch (e) {}
+  }
+  const cfg = KOMAMURA.ora;
+  for (const [id, state] of komamuraOra) {
+    const player = world.getPlayers().find((p) => p.id === id);
+    if (!player || now >= state.until || !isKomamura(player) || isDownOrGone(player)) {
+      endOra(id);
+      continue;
+    }
+    state.tick++;
+    try {
+      const dim = player.dimension;
+      const at = komamuraAimPoint(player, cfg.range);
+      const l = player.location;
+      const d = unitVector({ x: at.x - l.x, y: 0, z: at.z - l.z });
+      // o punho gigante fica acima e atras do ponto, martelando ali
+      const fist = { x: at.x - d.x * 4, y: at.y + 2.5, z: at.z - d.z * 4 };
+      const yaw = (Math.atan2(-d.x, d.z) * 180) / Math.PI;
+      state.part?.teleport(fist, { keepVelocity: false, rotation: { x: 0, y: yaw } });
+      if (state.tick % cfg.everyTicks !== 0) continue;
+      blastVisual(dim, at, cfg.blastRadius);
+      komamuraCrater(state.ledger, dim, { x: at.x, y: at.y - 1, z: at.z }, cfg.craterRadius, state.seen);
+      komamuraAreaHit(player, at, cfg.blastRadius, cfg.blastRadius + 1, DAMAGE.oraPunch, new Set());
+      if (state.tick % (cfg.everyTicks * 2) === 0) shakeNear(dim, at, cfg.shakeRadius, 0.25, 0.3);
+    } catch (e) {}
+  }
+}, 1);
+
+/* ---------- Bankai: m1 do gigante ---------- */
+
+const giantSweepTick = new Map();
+
+// o golpe do gigante pega tudo na frente dele, nao so quem foi acertado
+function komamuraGiantSweep(player, alreadyHit) {
+  const cfg = KOMAMURA.giantM1;
+  const now = system.currentTick;
+  if (now - (giantSweepTick.get(player.id) ?? -1000) < cfg.cooldownTicks) return;
+  giantSweepTick.set(player.id, now);
+  const o = player.location;
+  const f = forwardDirection(player);
+  try {
+    for (let i = 0; i < 8; i++) {
+      const a = -0.8 + (1.6 * i) / 7;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      player.dimension.spawnParticle("komamura:corte", {
+        x: o.x + (f.x * c - f.z * s) * cfg.reach * 0.8,
+        y: o.y + 1.5,
+        z: o.z + (f.z * c + f.x * s) * cfg.reach * 0.8,
+      });
+    }
+  } catch (e) {}
+  for (const entity of player.dimension.getEntities({ location: o, maxDistance: cfg.reach })) {
+    if (entity.id === player.id || entity.id === alreadyHit?.id) continue;
+    try {
+      if (!entity.getComponent("minecraft:health") || isDownOrGone(entity)) continue;
+      const e = entity.location;
+      const dx = e.x - o.x;
+      const dz = e.z - o.z;
+      const len = Math.hypot(dx, dz) || 1;
+      if ((dx * f.x + dz * f.z) / len < cfg.arcCos || Math.abs(e.y - o.y) > 6) continue;
+      dealDamage(entity, DAMAGE.myooM1 * dmgMultiplier(player), player);
+    } catch (e) {}
+  }
+}
+
+world.afterEvents.entityHitBlock.subscribe((ev) => {
+  const player = ev.damagingEntity;
+  if (!isKomamura(player) || !isAwakened(player)) return;
+  try {
+    const held = player.getComponent("minecraft:equippable")?.getEquipment(EquipmentSlot.Mainhand);
+    if (held?.typeId !== "komamura:m1_myoo") return;
+  } catch (e) {
+    return;
+  }
+  komamuraGiantSweep(player);
+});
+
+/* ---------- Bankai: Titanic Slash, Stomp, Punch e Susano'o's Cut ---------- */
+
+function castTitanicSlash(player) {
+  if (!tryUseSkill(player, "komamura:titanic_slash")) return;
+  const cfg = KOMAMURA.titanic;
+  world.sendMessage(`§6§l${player.name}: §e§lTitanic Slash!`);
+  try {
+    player.dimension.playSound("mob.wither.shoot", player.location, { volume: 2, pitch: 0.3 });
+  } catch (e) {}
+  carvingSlash(player, cfg, DAMAGE.titanicSlash, {
+    afterHit: (entity) => {
+      try {
+        entity.addEffect("slowness", cfg.slowTicks, { amplifier: cfg.slowAmplifier, showParticles: true });
+      } catch (e) {}
+    },
+  });
+}
+
+function castSusanooCut(player) {
+  if (!tryUseSkill(player, "komamura:susanoo_cut")) return;
+  world.sendMessage(`§6§l${player.name}: §e§lSusano'o's Cut!`);
+  try {
+    player.dimension.playSound("mob.warden.sonic_boom", player.location, { volume: 2, pitch: 0.4 });
+  } catch (e) {}
+  shakeNear(player.dimension, player.location, 40, 0.5, 1);
+  carvingSlash(player, KOMAMURA.susanoo, DAMAGE.susanooCut, { horizontal: true });
+}
+
+// pisao e soco: marcam o ponto mirado e explodem ali depois de um instante
+function giantImpact(player, cfg, damage, key, label, withFist) {
+  if (!tryUseSkill(player, key)) return;
+  const dim = player.dimension;
+  const at = komamuraAimPoint(player, cfg.range);
+  world.sendMessage(`§6${player.name}: §e§l${label}`);
+  let fist;
+  if (withFist) {
+    const l = player.location;
+    const d = unitVector({ x: at.x - l.x, y: 0, z: at.z - l.z });
+    const yaw = (Math.atan2(-d.x, d.z) * 180) / Math.PI;
+    fist = spawnMyooPart(player, KOMAMURA.visual.punho, { x: at.x - d.x * 5, y: at.y + 3, z: at.z - d.z * 5 }, yaw, cfg.delayTicks + 8);
+  }
+  // a sombra do pe/punho chegando
+  let tick = 0;
+  const warn = system.runInterval(() => {
+    tick += 2;
+    try {
+      const n = 12;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        dim.spawnParticle("komamura:poeira", { x: at.x + Math.cos(a) * cfg.radius, y: at.y + 0.2, z: at.z + Math.sin(a) * cfg.radius });
+      }
+    } catch (e) {}
+    if (tick >= cfg.delayTicks) system.clearRun(warn);
+  }, 2);
+  system.runTimeout(() => {
+    const ledger = [];
+    const seen = new Set();
+    blastVisual(dim, at, cfg.radius);
+    komamuraCrater(ledger, dim, { x: at.x, y: at.y - 1, z: at.z }, cfg.craterRadius, seen);
+    komamuraAreaHit(player, at, cfg.radius, cfg.height, damage, new Set());
+    shakeNear(dim, at, 30, 0.45, 0.6);
+    scheduleRestore(ledger);
+  }, cfg.delayTicks);
+}
+
+function castMyooStomp(player) {
+  giantImpact(player, KOMAMURA.stomp, DAMAGE.myooStomp, "komamura:stomp", "Stomp", false);
+}
+
+function castMyooPunch(player) {
+  giantImpact(player, KOMAMURA.punch, DAMAGE.myooPunch, "komamura:punch", "Punch", true);
+}
+
+/* ---------- limpeza ---------- */
+
+function komamuraCleanup(playerId) {
+  tenkenHits.delete(playerId);
+  giantSweepTick.delete(playerId);
+  const shield = komamuraShield.get(playerId);
+  if (shield) {
+    komamuraShield.delete(playerId);
+    removeMyooPart(shield.part);
+  }
+  endOra(playerId);
+  for (const part of [...komamuraVisuals.values()]) {
+    if (part.ownerId === playerId) removeMyooPart(part.entity);
+  }
+}
+
+/* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
 // registro generico de armas m1 - facilita adicionar novos personagens
 const MELEE_WEAPONS = {
+  // Tenken: a cada 3 golpes o braço do Myō'ō corta a frente (125%)
+  "komamura:m1_tenken": {
+    baseDamage: DAMAGE.tenkenM1,
+    particle: "komamura:brilho",
+    dot: null,
+    tenken: true,
+  },
+  // no Bankai o golpe e do gigante: pega tudo na frente dele
+  "komamura:m1_myoo": {
+    baseDamage: DAMAGE.myooM1,
+    particle: "komamura:corte",
+    dot: null,
+    giant: true,
+  },
   "unohana:m1_zanpakuto": {
     baseDamage: DAMAGE.unohanaM1,
     particle: "minecraft:crit_particle",
@@ -18956,6 +19702,8 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
         applyDot(hitEntity, damagingEntity, weapon.dot.perSecond, weapon.dot.seconds);
       }
       if (weapon.burn) applyBurn(hitEntity, damagingEntity, weapon.burn.seconds, weapon.burn.infernal);
+      if (weapon.tenken) komamuraTenkenHit(damagingEntity);
+      if (weapon.giant) komamuraGiantSweep(damagingEntity, hitEntity);
       // m1 com estouro (o Zangetsu do Vasto Lorde)
       if (weapon.blast) {
         try {
@@ -19673,6 +20421,7 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   unohanaCleanup(playerId, true);
   unohanaHeals.delete(playerId);
   clearDots(playerId);
+  komamuraCleanup(playerId);
 });
 
 
@@ -19705,6 +20454,7 @@ export {
   YAMAMOTO,
   TIER_DAMAGE_REDUCTION,
   UNOHANA,
+  KOMAMURA,
   // efeitos negativos pro Diagnóstico da Unohana ter o que limpar na simulacao
   applyBurn,
   applyDeterioration,
