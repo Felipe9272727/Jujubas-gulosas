@@ -459,6 +459,9 @@ particle_refs = set(re.findall(r'spawnParticle\(\s*"([^"]+)"', main_js))
 particle_refs |= set(
     re.findall(r'(?:particle|burst|particleId|\w+Particle)\s*:\s*"([^"]+)"', main_js)
 )
+# e em lista: `particle: ["ichigo:getsuga", "ichigo:reiatsu"]` (m1 que alterna)
+for listed in re.findall(r'(?:particle|burst|particleId|\w+Particle)\s*:\s*\[([^\]]*)\]', main_js):
+    particle_refs |= set(re.findall(r'"([^"]+)"', listed))
 
 for particle in sorted(particle_refs):
     if particle.startswith("minecraft:"):

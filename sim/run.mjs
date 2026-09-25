@@ -624,12 +624,13 @@ check(
   `${game.DAMAGE.stomp} de dano em quem está na área`,
   log.damages.slice(dmgBefore).some((d) => d.target === "Presa" && d.amount === game.DAMAGE.stomp)
 );
-// o anti-lag do main.js so deixa passar 1 em cada 3 explosoes grandes
+// desde a 1.23.1 o impacto e das particulas do proprio Kenpachi
 const stompParticles = log.particles.slice(partBefore);
 check(
-  "solta partícula de explosão",
+  "solta as partículas de impacto do Kenpachi",
   stompParticles.length >= 3 &&
-    stompParticles.every((p) => p.particleId === "minecraft:large_explosion"),
+    stompParticles.some((p) => p.particleId === "kenpachi:spark") &&
+    stompParticles.some((p) => p.particleId === "kenpachi:slash"),
   `${stompParticles.length} partículas`
 );
 check("NÃO explode de verdade (nenhum createExplosion)", log.explosions.length === 0);
@@ -5005,9 +5006,11 @@ check("com mensagem global", log.worldMessages.slice(linhasResist).some((m) => m
 fullHp(hogy);
 dmgBefore = log.damages.length;
 hitWith(gin, hogy, "kenpachi:m1_zanpakuto");
+// o Kenpachi e tier 3: a reducao de tier do Aizen (7) entra por cima
+const tierHogy = 1 - game.TIER_DAMAGE_REDUCTION[7];
 check(
-  "o dano recebido cai 5%",
-  log.damages.slice(dmgBefore).some((d) => d.target === "HogyokuPlayer" && Math.abs(virtualDamage(hogy, d) - game.DAMAGE.kenpachiM1 * 0.95) < 0.6),
+  "o dano recebido cai 5% (fora a redução de tier)",
+  log.damages.slice(dmgBefore).some((d) => d.target === "HogyokuPlayer" && Math.abs(virtualDamage(hogy, d) - game.DAMAGE.kenpachiM1 * 0.95 * tierHogy) < 0.6),
   JSON.stringify(log.damages.slice(dmgBefore).map((d) => virtualDamage(hogy, d)))
 );
 hogy.setDynamicProperty("mv:monster_resist", 10);
@@ -5017,7 +5020,8 @@ dmgBefore = log.damages.length;
 hitWith(gin, hogy, "kenpachi:m1_zanpakuto");
 check(
   "com 50% o golpe chega pela metade",
-  log.damages.slice(dmgBefore).some((d) => d.target === "HogyokuPlayer" && Math.abs(virtualDamage(hogy, d) - game.DAMAGE.kenpachiM1 * 0.5) < 0.6)
+  log.damages.slice(dmgBefore).some((d) => d.target === "HogyokuPlayer" && Math.abs(virtualDamage(hogy, d) - game.DAMAGE.kenpachiM1 * 0.5 * tierHogy) < 0.6),
+  JSON.stringify(log.damages.slice(dmgBefore).map((d) => virtualDamage(hogy, d)))
 );
 noNewErrors("resistência sem erro", mark);
 
