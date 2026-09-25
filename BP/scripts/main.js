@@ -1024,6 +1024,29 @@ function tierOfPlayer(entity) {
   return CHARACTER_RACE_TIER[id]?.tier ?? 0;
 }
 
+// Jurisdição dos mais fortes: tiers altos (7/8/9) reduzem o dano recebido de
+// quem for de tier ESTRITAMENTE menor. Contra tier igual ou maior o dano vai
+// 100% (a redução "não segura" um golpe de quem é do mesmo nível ou acima).
+// Personagens que já têm redução de dano própria (ex.: a individualidade do
+// Nnoitra, via damageTakenMultiplier fixo no personagem) NÃO acumulam com
+// essa redução genérica de tier - a deles substitui a genérica.
+const TIER_DAMAGE_REDUCTION = { 7: 0.2, 8: 0.3, 9: 0.4 };
+function tierDamageReductionMultiplierOf(target, source) {
+  try {
+    if (target?.typeId !== "minecraft:player") return 1;
+    const character = getActiveCharacter(target);
+    if (!character || character.damageTakenMultiplier != null) return 1;
+    const defTier = tierOfPlayer(target);
+    const pct = TIER_DAMAGE_REDUCTION[defTier];
+    if (!pct) return 1;
+    const atkTier = source?.typeId === "minecraft:player" ? tierOfPlayer(source) : 0;
+    if (atkTier >= defTier) return 1;
+    return 1 - pct;
+  } catch (e) {
+    return 1;
+  }
+}
+
 const SPIRITUAL_PRESSURE = { durationTicks: 200, cooldownTicks: 600, intervalTicks: 60, effectDurationTicks: 70, radii: {1:10,2:15,3:20,4:30,5:40,6:60,7:80,8:100,9:200}, effects: {2:{amplifier:1,damage:10},3:{amplifier:2,damage:20},4:{amplifier:3,damage:50}} };
 function isSpiritualPressureEnabled(player){ return player.getDynamicProperty(DP.pressureEnabled)!==false; }
 function setSpiritualPressureEnabled(player,enabled){ player.setDynamicProperty(DP.pressureEnabled,!!enabled); }
@@ -1245,7 +1268,7 @@ function dealDamage(target, amount, source, options) {
   // individualidade e Hierro do Nnoitra: valem contra TUDO, ate contra o golpe
   // que quebra a guarda (a guarda e uma coisa, a pele dele e outra). So a
   // Queimadura Infernal do Yamamoto passa por cima de reducao.
-  let resisted = damageTakenMultiplierOf(target);
+  let resisted = damageTakenMultiplierOf(target) * tierDamageReductionMultiplierOf(target, source);
   if (options?.ignoresReduction) resisted = Math.max(1, resisted);
   const finalAmount = amount * marked * blocked * resisted;
   // Absorb do Ukitake: imune ao dano, que fica guardado pro Hansha
@@ -4209,7 +4232,28 @@ function castGetsugaSlam(player) {
   const dim = player.dimension;
   const loc = player.location;
 
-  dim.spawnParticle("minecraft:large_explosion", loc);
+  // explosao de reiatsu azul no centro + anel de cortes se espalhando pra fora
+  try {
+    dim.spawnParticle("ichigo:reiatsu", { x: loc.x, y: loc.y + 0.3, z: loc.z });
+  } catch (e) {}
+  for (let i = 0; i < 16; i++) {
+    const angle = (i / 16) * Math.PI * 2;
+    const r = SLAM_RADIUS * 0.55;
+    try {
+      dim.spawnParticle("ichigo:getsuga", {
+        x: loc.x + Math.cos(angle) * r,
+        y: loc.y + 0.3 + Math.random() * 0.6,
+        z: loc.z + Math.sin(angle) * r,
+      });
+      if (i % 2 === 0) {
+        dim.spawnParticle("ichigo:reiatsu", {
+          x: loc.x + Math.cos(angle) * r * 0.5,
+          y: loc.y + 0.3,
+          z: loc.z + Math.sin(angle) * r * 0.5,
+        });
+      }
+    } catch (e) {}
+  }
   dim.playSound("mob.wither.shoot", loc, { volume: 1.5, pitch: 0.6 });
   world.sendMessage(`§b${player.name} §7usou §6Getsuga Slam§7!`);
 
@@ -4228,14 +4272,17 @@ function castGetsugaSlash(player) {
     z: origin.z + dir.z * 1.5,
   };
 
-  for (let i = 0; i < 8; i++) {
-    const t = i / 7;
+  for (let i = 0; i < 10; i++) {
+    const t = i / 9;
     const p = {
       x: origin.x + dir.x * (0.5 + t * 3),
       y: origin.y + 1 + Math.sin(t * Math.PI) * 0.6,
       z: origin.z + dir.z * (0.5 + t * 3),
     };
-    dim.spawnParticle("minecraft:crit_particle", p);
+    try {
+      dim.spawnParticle("ichigo:getsuga", p);
+      if (i % 3 === 0) dim.spawnParticle("ichigo:reiatsu", p);
+    } catch (e) {}
   }
   dim.playSound("mob.wither.shoot", origin, { volume: 1.2, pitch: 1.1 });
   world.sendMessage(`§b${player.name} §7usou §6Getsuga Slash§7!`);
@@ -4329,6 +4376,8 @@ function castGetsugaRun(player) {
     distance: 20,
     steps: 20, // 1 bloco por tick = deslize suave
     damage: DAMAGE.run,
+    particle: "ichigo:getsuga",
+    burst: "ichigo:reiatsu",
   });
 }
 
@@ -4439,6 +4488,8 @@ function castGetsugaTenshou(player) {
     thickness: 0.9,
     range: 20,
     damage: DAMAGE.tenshou,
+    particle: "ichigo:getsuga",
+    burst: "ichigo:reiatsu",
   });
 }
 
@@ -4459,8 +4510,8 @@ function castGetsugaBarrage(player) {
       y: loc.y + 0.3 + Math.random() * 2.2,
       z: loc.z + Math.sin(angle) * dist,
     };
-    dim.spawnParticle("minecraft:crit_particle", p);
-    if (i % 3 === 0) dim.spawnParticle("minecraft:large_explosion", p);
+    dim.spawnParticle("ichigo:getsuga", p);
+    if (i % 3 === 0) dim.spawnParticle("ichigo:reiatsu", p);
   }
 
   damageNearbyEntities(player, loc, RADIUS, DAMAGE.barrage);
@@ -4481,6 +4532,8 @@ function castGetsugaTenshouBankai(player) {
     damage: DAMAGE.tenshouBankai,
     speed: 3,
     rows: 16,
+    particle: "ichigo:getsuga",
+    burst: "ichigo:reiatsu",
   });
 }
 
@@ -4498,6 +4551,8 @@ function castDoubleGetsuga(player) {
       thickness: 0.9,
       range: 20,
       damage: DAMAGE.doubleGetsuga,
+      particle: "ichigo:getsuga",
+      burst: "ichigo:reiatsu",
     });
 
   wave();
@@ -4701,6 +4756,7 @@ function castFlashSlash(player) {
       distance: FLASH_SLASH.distancePerAdvance,
       steps: FLASH_SLASH.stepsPerAdvance,
       damage: DAMAGE.flashSlash,
+      particle: "kenpachi:slash",
       burst: null,
       onFinish: () => {
         if (advance < FLASH_SLASH.advances) {
@@ -4721,22 +4777,30 @@ function castKenpachiStomp(player) {
   world.sendMessage(`§6${player.name} §7usou §eStomp§7!`);
   dim.playSound("random.explode", loc, { volume: 1.6, pitch: 0.7 });
 
-  // so as particulas da explosao - nenhum bloco e quebrado
+  // explosao de impacto no centro + anel de cortes se espalhando pra fora
   try {
-    dim.spawnParticle("minecraft:large_explosion", {
+    dim.spawnParticle("kenpachi:spark", {
       x: loc.x,
       y: loc.y + 0.2,
       z: loc.z,
     });
   } catch (e) {}
-  for (let i = 0; i < 10; i++) {
-    const angle = (i / 10) * Math.PI * 2;
+  for (let i = 0; i < 14; i++) {
+    const angle = (i / 14) * Math.PI * 2;
+    const r = STOMP_RADIUS * (0.4 + (i % 2) * 0.6);
     try {
-      dim.spawnParticle("minecraft:large_explosion", {
-        x: loc.x + Math.cos(angle) * STOMP_RADIUS,
-        y: loc.y + 0.2,
-        z: loc.z + Math.sin(angle) * STOMP_RADIUS,
+      dim.spawnParticle("kenpachi:slash", {
+        x: loc.x + Math.cos(angle) * r,
+        y: loc.y + 0.2 + Math.random() * 0.5,
+        z: loc.z + Math.sin(angle) * r,
       });
+      if (i % 3 === 0) {
+        dim.spawnParticle("kenpachi:spark", {
+          x: loc.x + Math.cos(angle) * r,
+          y: loc.y + 0.2,
+          z: loc.z + Math.sin(angle) * r,
+        });
+      }
     } catch (e) {}
   }
 
@@ -4821,6 +4885,15 @@ function castKenpachiHunt(player) {
     volume: 1.2,
     pitch: 0.6,
   });
+  try {
+    for (let i = 0; i < 6; i++) {
+      player.dimension.spawnParticle("kenpachi:spark", {
+        x: behind.x + (Math.random() - 0.5) * 0.6,
+        y: behind.y + 0.5 + Math.random() * 1.2,
+        z: behind.z + (Math.random() - 0.5) * 0.6,
+      });
+    }
+  } catch (e) {}
 
   try {
     target.addEffect("slowness", KENPACHI_HUNT.slownessTicks, {
@@ -4869,7 +4942,8 @@ function castHellsCut(player) {
     thickness: 0.9,
     range: HELLS_CUT_RANGE,
     damage,
-    particle: desperate ? "minecraft:blood_particle" : "minecraft:crit_particle",
+    particle: desperate ? "minecraft:blood_particle" : "kenpachi:slash",
+    burst: desperate ? "minecraft:large_explosion" : "kenpachi:spark",
     bypassesIntocable: true,
   });
 }
@@ -4974,12 +5048,14 @@ function castPoisonSlash(player) {
     const t = step / 8;
     const along = 0.5 + t * (POISON_SLASH.forward - 0.5);
     const lateral = Math.cos(t * Math.PI) * half;
+    const p = {
+      x: origin.x + dir.x * along + perp.x * lateral,
+      y: origin.y + 1 + Math.sin(t * Math.PI) * 0.5,
+      z: origin.z + dir.z * along + perp.z * lateral,
+    };
     try {
-      dim.spawnParticle("mayuri:poison_fog", {
-        x: origin.x + dir.x * along + perp.x * lateral,
-        y: origin.y + 1 + Math.sin(t * Math.PI) * 0.5,
-        z: origin.z + dir.z * along + perp.z * lateral,
-      });
+      dim.spawnParticle("mayuri:blade", p);
+      if (step % 2 === 0) dim.spawnParticle("mayuri:poison_fog", p);
     } catch (e) {}
   }
 
@@ -17783,35 +17859,35 @@ const MELEE_WEAPONS = {
   },
   "ichigo:m1_zangetsu": {
     baseDamage: DAMAGE.m1,
-    particle: "minecraft:crit_particle",
+    particle: ["ichigo:getsuga", "ichigo:reiatsu"],
     dot: null,
   },
   "ichigo:tensa_m1": {
     baseDamage: DAMAGE.tensaM1,
-    particle: "minecraft:crit_particle",
+    particle: ["ichigo:getsuga", "ichigo:reiatsu"],
     dot: null,
   },
   "byakuya:m1_senbonzakura": {
     baseDamage: DAMAGE.byakuyaM1,
-    particle: "sakura:leaf",
+    particle: ["sakura:leaf", "byakuya:blade"],
     dot: { perSecond: 3, seconds: 2 },
   },
   "byakuya:m1_senbonzakura_senkei": {
     baseDamage: DAMAGE.byakuyaSenkeiM1,
-    particle: "sakura:leaf",
+    particle: ["sakura:leaf", "byakuya:blade"],
     dot: null,
     awardsAwakening: false,
   },
   "byakuya:m1_senbonzakura_finisher": {
     baseDamage: DAMAGE.byakuyaFinisher,
-    particle: "sakura:leaf",
+    particle: ["sakura:leaf", "byakuya:blade"],
     dot: null,
     awardsAwakening: false,
     onHit: "finisher",
   },
   "kenpachi:m1_zanpakuto": {
     baseDamage: DAMAGE.kenpachiM1,
-    particle: "minecraft:crit_particle",
+    particle: ["kenpachi:slash", "kenpachi:spark"],
     dot: null,
   },
   "grimmjow:m1_zanpakuto": {
@@ -17846,7 +17922,7 @@ const MELEE_WEAPONS = {
   },
   "mayuri:m1_ashisogi_jizo": {
     baseDamage: DAMAGE.mayuriM1,
-    particle: "mayuri:poison_fog",
+    particle: ["mayuri:poison_fog", "mayuri:blade"],
     dot: null,
     // a cada 5 acertos a lamina "corta os tendoes"
     combo: {
@@ -18054,8 +18130,13 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
         y: loc.y + 1 + Math.cos(i) * 0.15,
         z: loc.z + dir.z * 1.2 + dir.x * (i * 0.2),
       };
+      // weapon.particle pode ser uma unica particula ou uma lista, alternando
+      // uma por posicao do leque (corte + brilho, por exemplo)
+      const particleName = Array.isArray(weapon.particle)
+        ? weapon.particle[(i + 2) % weapon.particle.length]
+        : weapon.particle;
       try {
-        dim.spawnParticle(weapon.particle, p);
+        dim.spawnParticle(particleName, p);
       } catch (e) {
         // particula invalida nao deve travar o hit
       }
