@@ -5,11 +5,14 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 1072 checks na simulação, zero exceções. Packs na versão 1.23.0.
+- **Estado**: 1201 checks na simulação, zero exceções. Packs na versão 1.24.0.
 - **Base**: a partir da 1.20.0 o repo parte da **1.19.25 (TosenVisored)** que o
   usuário mandou em `.mcaddon` — ela descende da 1.14.0 daqui (mesmos UUIDs) e foi
   desenvolvida fora deste branch. Foi importada byte a byte no commit
   `b9719db`; tudo depois disso está no histórico normal.
+- **1.23.1 (ParticlesFix)**: o usuário mexeu por fora e mandou o `.mcaddon`;
+  importada byte a byte no commit `724380b` (redução de dano por tier e
+  partículas próprias do Ichigo, Kenpachi, Mayuri e Byakuya).
 
 ## Como trabalhar aqui
 
@@ -17,7 +20,7 @@ commitado e enviado.
 python3 tools/build.py          # valida + simula + empacota (falha se algo quebrar)
 python3 tools/validate.py       # JSON, itens, texturas, manifests, sons, entidades
 python3 tools/gen_textures.py   # renderiza os grids de tools/textures.py em PNG
-python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen, Mugetsu)
+python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen, Mugetsu, Myō'ō)
 python3 tools/bump_version.py minor   # OBRIGATÓRIO a cada release de conteúdo
 node --import ./sim/register.mjs sim/run.mjs   # só a simulação
 ```
@@ -29,9 +32,9 @@ O `build.py` roda tudo e **se recusa a empacotar** se qualquer etapa falhar.
 ```
 BP/                     behavior pack
   manifest.json         versão dos packs (ver "cache de pack" abaixo)
-  items/*.json          211 itens, um arquivo cada (format_version 1.26.40)
-  entities/*.json       boneco de teste, clone do Aizen, mortos do Yamamoto
-  scripts/main.js       ~19 mil linhas: TODO o gameplay (menos o Shinji)
+  items/*.json          227 itens, um arquivo cada (format_version 1.26.40)
+  entities/*.json       boneco de teste, clone do Aizen, mortos do Yamamoto, partes do Myō'ō
+  scripts/main.js       ~20 mil linhas: TODO o gameplay (menos o Shinji)
   scripts/shinji.js     o Shinji Hirako, importado pelo main.js
 RP/                     resource pack
   particles/*.json      partículas customizadas (uma por arquivo)
@@ -43,6 +46,7 @@ tools/
   hollow_model.py       modelo dos attachables do Ichigo Vizard
   aizen_clone_model.py  modelo do clone dos dois Aizen
   mugetsu_model.py      cabelo, faixas e hakama do Mugetsu (Ichigo Dangai)
+  komamura_model.py     braço, punho, guarda e armadura do Myō'ō (Komamura)
   gen_textures.py       grids -> PNG (e --check)
   gen_model.py          modelos -> .geo.json (e --check)
   vanilla_sounds.txt    IDs de som do Bedrock (Mojang/bedrock-samples)
@@ -51,7 +55,7 @@ tools/
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~5900 linhas, 1072 checks
+  run.mjs               ~6400 linhas, 1201 checks
 ```
 
 ### A simulação
@@ -90,8 +94,10 @@ menu**. Tabela gerada do registro do `main.js`:
 | 2 | Mayuri Kurotsuchi (Shikai) | 600 | super: Konjiki Ashisogi Jizō |
 | 2 | Rukia Kuchiki (Sode no Shirayuki) | 600 | super |
 | 3 | Zaraki Kenpachi | 1700 | Pressão (tapa-olho removido) |
+| 3 | **Retsu Unohana** | 2000 | super: Kaidō Expert |
 | 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000), asas/cauda de partícula |
 | 4 | Soi Fon (Suzumebachi) | 2000 | super: Jakuhō Raikōben |
+| 4 | **Sajin Komamura** | 2300 | Bankai: Kokujō Tengen Myō'ō (3000, vira o gigante) |
 | 5 | Gin Ichimaru | 4000 | super: Kamishini no Yari |
 | 5 | Shunsui Kyoraku (Katen Kyokotsu) | 4500 | super: Karamatsu Shinjū |
 | 5 | Jūshiro Ukitake (Sōgyo no Kotowari) | 4400 | super |
@@ -163,7 +169,7 @@ com a pressão ligada; o Aizen Hōgyoku (7) apaga até o tier 2. O Ichigo (Danga
 | `spawnPoisonCloud` | Neblina parada; aceita partícula, cegueira e deterioração próprias |
 | `reapplyFormEffects` | Devolve os efeitos permanentes da forma |
 | `awakening.onActivate` | Efeito de entrada: `"pressure"`, `"battlecry"` |
-| `superAttack.onTrigger` | Agachar + m1 com medidor cheio: `"byakuya"`, `"konjiki"` |
+| `superAttack.onTrigger` | Agachar + m1 com medidor cheio: `"byakuya"`, `"konjiki"`, `"mugetsu"`, `"kaido_expert"`... |
 
 Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
 
@@ -221,7 +227,9 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    `scripts.scale` no client entity do player (`RP/entity/player.entity.json`),
    que aceita Molang e escala **só o modelo**. O gatilho é um item invisível
    travado na offhand, lido por `query.is_item_name_any`. A **hitbox não muda** —
-   isso é inerente ao método.
+   isso é inerente ao método. Cada marcador tem o seu ternário na expressão
+   (Myō'ō do Komamura 6,25; Ira do Yammy 5,208) — o teste da simulação lê o
+   número do próprio marcador.
 
 13. **Som com ID errado toca silêncio.** Nenhum erro, nenhum aviso. A Soi Fon
    usava `mob.enderman.teleport` (o certo é `mob.endermen.portal`) e a Harribel
@@ -252,6 +260,10 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    sinal. Toda paralisia agora trava o pulo por `holdJump(entity, ticks)`, que
    desliga `InputPermissionCategory.Jump` e religa sozinho quando ninguém
    renova (e no rejoin). O stub da simulação recusa `jump_boost` acima de 10.
+20. **Redução de dano por tier (1.23.1).** Tier 7/8/9 tomam 20/30/40% a menos
+   de quem é de tier **estritamente menor** (`TIER_DAMAGE_REDUCTION`, dentro do
+   `dealDamage`). Não soma com quem já tem `damageTakenMultiplier` no
+   personagem. Teste de dano em personagem tier 7+ tem que contar com isso.
 
 ## Disputa da tecla agachar + m1
 
@@ -620,6 +632,72 @@ que falta. As armas m1 ganharam o campo `burn` em `MELEE_WEAPONS`.
 - **Kita**: corte parado que varre meio círculo na frente com o raio do
   Getsuga Final (16,2 blocos): 6000 + 20s de Infernal. O Bankai acaba na hora.
 
+## Retsu Unohana
+
+Tier 3, Shinigami, 2000 de vida. Zanpakuto (m1, 30) e três **livros de kidō**
+(`unohana:hados`, `unohana:bakudos`, `unohana:kaidos`): agachar + usar abre o
+menu (`openSpellBook`), usar lança o escolhido (`castFromBook`). Cada kidō tem o
+seu cooldown em `SKILL_COOLDOWN_TICKS` com chave de ponto
+(`unohana:hados.byakurai`) e o item não tem cooldown visual. Config em `UNOHANA`.
+
+- **Hadōs**: Byakurai (raio fino que para no primeiro, 40), Sōkatsui (bola
+  azul que explode em raio 3, 70) e Sōren Sōkatsui (raio 5, 140). Os três
+  viajam e se registram em `travellingAttacks` (o Dangai pode desfazer).
+- **Bakudōs**: Seki (5s, segura o que vem **pela frente** — de qualquer tier —
+  e empurra quem bateu); Sajō Sabaku (alvo tier ≤ 5: preso 3s e cooldowns
+  parados 10s via `freezeCooldowns`; tier maior recusa sem gastar); Dankū (10s,
+  segura todo golpe de tier ≤ 6 de qualquer lado e desfaz o que viaja). Os dois
+  escudos ficam no `dealDamage` (`unohanaBarrierBlocks`).
+- **Kaidōs**: Básico (50/s × 5), Avançado (100/s × 10), Chiyu (+200),
+  Diagnóstico (`cleanseNegativeEffects`: efeitos vanilla ruins, Queimadura,
+  DoTs — Deterioração inclusa —, veneno do Mayuri, Fragilização, cooldowns
+  congelados, sem-dash do Ice Age, Jokenpo e Pesquisa) e Tratamento em área (o
+  Básico em quem ela olha). A cura é virtual (`healVirtual`), uma por segundo.
+- **Kaidō Expert** (super): cura total num quadrado 7×7 (ela, players e
+  entidades), menos quem a atacou **desde que ela escolheu a Unohana**
+  (`unohanaAttackers`, zerado no `activateCharacter`; o `dealDamage` registra a
+  tentativa mesmo que o escudo segure).
+
+Os DoTs genéricos (`applyDot`) e a marca da Deterioração agora ficam em
+`activeDots` por alvo (`clearDots`), pra poderem ser limpos.
+
+## Sajin Komamura
+
+Tier 4, Shinigami, 2300 de vida. Config em `KOMAMURA`. O Myō'ō aparece **em
+partes**, entidades só de visual (`komamura:braco`, `komamura:punho`,
+`komamura:guarda`, sem vida e fora das buscas de alvo via
+`SKIPPED_ENTITY_TYPES`). Cada uma tem modelo gerado por
+`tools/komamura_model.py` e uma animação em
+`RP/animations/komamura.animation.json` que toca sozinha quando ela nasce
+(`scripts.animate` na client entity) — por isso cada golpe é uma parte nova.
+O script só nasce, posiciona (`spawnMyooPart`) e remove; sobra de sessão
+anterior é apagada por um loop.
+
+- **Tenken (m1, 45)**: a cada 3 golpes o braço com a katana nasce atrás do
+  ombro direito, desce, e 0,25s depois corta uma faixa de 8 blocos na frente
+  com 125% (`tenkenSlash`).
+- **Myō'ō's Barrage**: 3 braços seguidos, 50 cada. **Giant's Shield**: os dois
+  braços em volta dele por 5s, −30% de dano (`damageTakenMultiplierOf`).
+- **Ora Ora Ora!**: o punho fica martelando o ponto mirado
+  (`komamuraAimPoint`: alvo, bloco ou a frente) 5 vezes por segundo por 10s:
+  10 em raio 3, cratera e tremor (`camerashake` por comando).
+- **Destructive Slash**: o motor do corte (`fireCrescent`, o mesmo do Dangai)
+  com o raio do Mugetsu, 25 blocos, 250. O gancho `onStep` quebra o fio do
+  arco e abre crateras no chão a cada 3 blocos (`carvingSlash`).
+- **Bankai: Kokujō Tengen Myō'ō**: `offhandMarker` `komamura:myoo_marker`
+  (escala 6,25 no `player.entity.json` ≈ 12 blocos) + `armorPiece`
+  `komamura:myoo_chest` (armadura de samurai). 3000 de vida,
+  `awakeningDamageTakenMultiplier` 0,7, `tallView` na katana do gigante.
+  O m1 do gigante pega tudo num arco de 6 blocos na frente (também batendo em
+  bloco). Titanic Slash (raio 2× o Destructive, sai a 7 blocos de altura, 500
+  + lentidão 2), Stomp (200, raio 6), Punch (100, raio 3,5, com o punho) e
+  Susano'o's Cut (`horizontal: true` no `fireCrescent`: arco deitado de raio
+  40, 750, derruba a faixa do chão até 4 blocos de altura).
+- **Terreno**: quebra de verdade (`komamuraBreak`), sem drop, e volta sozinho
+  1 minuto depois, 300 blocos por tick (`scheduleRestore`). Não quebra o que o
+  `iceCanReplace` protege (bedrock, baús, portas, camas...), nem gelo nem os
+  blocos das caixas do Aizen.
+
 ## Animações
 
 `RP/animations/vizard.animation.json` define cinco animações e cada ataque tem
@@ -758,6 +836,16 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Hell's Pierce | alcance 5; explosão 0,4s depois, raio 4,5; sem alvo não gasta |
 | Kita | respeita Respira/Intocable/guarda (não é "pierce" como o Getsuga Final); cooldown de 5s só pra não repetir no mesmo Bankai |
 | Bankai do Yamamoto | vida continua 8500 (não foi especificada) |
+| Seki (Unohana) | só o que vem pela frente (cone de ~70°), de qualquer tier; empurra quem bateu a até 5 blocos |
+| Sajō Sabaku | prende 3s (os 10s são dos cooldowns parados); alvo acima do tier 5 recusa sem gastar |
+| Dankū | protege de qualquer lado; o que viaja é desfeito a 3 blocos |
+| Tratamento em área | cooldown de 30s (o do Kaidō Básico); sem ninguém na mira não gasta |
+| Kaidō Expert | cura ela mesma também; o 7×7 vai 3 blocos pra cima e pra baixo |
+| Tenken (Komamura) | o braço corta uma faixa de 8 blocos por 2,8 de meia largura; nasce atrás do ombro direito |
+| Destructive Slash | quebra o fio do corte até 12 acima e 3 abaixo do chão; cratera de raio 2 a cada 3 blocos |
+| Titanic Slash | "lentidão 2" lida como lentidão II em quem é acertado, por 5s |
+| Terreno do Komamura | volta em 1 minuto (pedido era "destrói": dá pra deixar permanente tirando o `scheduleRestore`) |
+| Bankai do Komamura | escala 6,25 (~12 blocos); m1 do gigante 45 num arco de 6 blocos |
 
 ## Próximos passos sugeridos
 
@@ -772,6 +860,9 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
    o arrastão do "Let's fight" em terreno irregular e a roupa do Mugetsu.
    No Yamamoto: se os mortos do Minami andam e atacam direito (a IA é vanilla)
    e o tamanho visual do Kita e do Ittō Kasō.
+   No Komamura: a animação e a posição do braço/punho/guarda (o giro e a
+   escala são chute), o gigante do Bankai e o tempo de restaurar o terreno.
+   Na Unohana: se o Seki "de frente" fica natural.
 2. **Invulnerabilidade pós-dano**: várias skills do addon batem a cada tick
    (Grito del Diablo, Rugido del Diablo) ou a cada 4–6 ticks (Palacio de las
    Espadas, Los Nueve Aspectos). Se o `applyDamage` respeitar a janela de
