@@ -1,0 +1,20 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "isshin:ichigo",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/isshin_ichigo"
+      },
+      "geometry": {
+        "default": "geometry.isshin_ichigo"
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

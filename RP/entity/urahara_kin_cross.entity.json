@@ -1,0 +1,21 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "urahara:kin_cross",
+      "min_engine_version": "1.13.0",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/urahara_kin_cross"
+      },
+      "geometry": {
+        "default": "geometry.urahara_kin_cross"
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

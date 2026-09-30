@@ -1,0 +1,20 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "yoruichi:afterimage",
+      "materials": {
+        "default": "entity_alphablend"
+      },
+      "textures": {
+        "default": "textures/entity/yoruichi_afterimage"
+      },
+      "geometry": {
+        "default": "geometry.yoruichi_afterimage"
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

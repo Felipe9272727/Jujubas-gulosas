@@ -679,6 +679,183 @@
     },
     "komamura:susanoo_cut": {
       "textures": "textures/items/komamura_susanoo_cut"
+    },
+    "urahara:m1_benihime": {
+      "textures": "textures/items/urahara_m1_benihime"
+    },
+    "urahara:m1_benihime_awakened": {
+      "textures": "textures/items/urahara_m1_benihime_awakened"
+    },
+    "urahara:nake": {
+      "textures": "textures/items/urahara_nake"
+    },
+    "urahara:kirisaki": {
+      "textures": "textures/items/urahara_kirisaki"
+    },
+    "urahara:chikasumi": {
+      "textures": "textures/items/urahara_chikasumi"
+    },
+    "urahara:hiasobi": {
+      "textures": "textures/items/urahara_hiasobi"
+    },
+    "urahara:juzutsunagi": {
+      "textures": "textures/items/urahara_juzutsunagi"
+    },
+    "urahara:shibari": {
+      "textures": "textures/items/urahara_shibari"
+    },
+    "urahara:hado_91": {
+      "textures": "textures/items/urahara_hado_91"
+    },
+    "urahara:hyappo_rankan": {
+      "textures": "textures/items/urahara_hyappo_rankan"
+    },
+    "urahara:kin": {
+      "textures": "textures/items/urahara_kin"
+    },
+    "yoruichi:m1_hakuda": {
+      "textures": "textures/items/yoruichi_m1_hakuda"
+    },
+    "yoruichi:m1_hakuda_shunko": {
+      "textures": "textures/items/yoruichi_m1_hakuda_shunko"
+    },
+    "yoruichi:shunpo": {
+      "textures": "textures/items/yoruichi_shunpo"
+    },
+    "yoruichi:punches_barrage": {
+      "textures": "textures/items/yoruichi_punches_barrage"
+    },
+    "yoruichi:showdown": {
+      "textures": "textures/items/yoruichi_showdown"
+    },
+    "yoruichi:utsusemi": {
+      "textures": "textures/items/yoruichi_utsusemi"
+    },
+    "yoruichi:thundersaw": {
+      "textures": "textures/items/yoruichi_thundersaw"
+    },
+    "yoruichi:thunderous_smash": {
+      "textures": "textures/items/yoruichi_thunderous_smash"
+    },
+    "yoruichi:lightning_speed": {
+      "textures": "textures/items/yoruichi_lightning_speed"
+    },
+    "yoruichi:lightning_bolt": {
+      "textures": "textures/items/yoruichi_lightning_bolt"
+    },
+    "isshin:m1_engetsu": {
+      "textures": "textures/items/isshin_m1_engetsu"
+    },
+    "isshin:getsuga_tensho": {
+      "textures": "textures/items/isshin_getsuga_tensho"
+    },
+    "isshin:getsuga_x": {
+      "textures": "textures/items/isshin_getsuga_x"
+    },
+    "isshin:engetsu": {
+      "textures": "textures/items/isshin_engetsu"
+    },
+    "isshin:pai_e_filho": {
+      "textures": "textures/items/isshin_pai_e_filho"
+    },
+    "tsukishima:m1_sword_of_the_end": {
+      "textures": "textures/items/tsukishima_m1_sword_of_the_end"
+    },
+    "tsukishima:book_registros": {
+      "textures": "textures/items/tsukishima_book_registros"
+    },
+    "tsukishima:book_alvo": {
+      "textures": "textures/items/tsukishima_book_alvo"
+    },
+    "tsukishima:book_eu": {
+      "textures": "textures/items/tsukishima_book_eu"
+    },
+    "chad:m1_direito": {
+      "textures": "textures/items/chad_m1_direito"
+    },
+    "chad:blindaje": {
+      "textures": "textures/items/chad_blindaje"
+    },
+    "chad:el_directo": {
+      "textures": "textures/items/chad_el_directo"
+    },
+    "chad:carga_reiatsu": {
+      "textures": "textures/items/chad_carga_reiatsu"
+    },
+    "chad:change_arm": {
+      "textures": "textures/items/chad_change_arm"
+    },
+    "chad:m1_esquerdo": {
+      "textures": "textures/items/chad_m1_esquerdo"
+    },
+    "chad:trituradora_de_tierra": {
+      "textures": "textures/items/chad_trituradora_de_tierra"
+    },
+    "chad:bater_de_palmas": {
+      "textures": "textures/items/chad_bater_de_palmas"
+    },
+    "chad:la_muerte": {
+      "textures": "textures/items/chad_la_muerte"
+    },
+    "chad:m1_gigante": {
+      "textures": "textures/items/chad_m1_gigante"
+    },
+    "chad:blindaje_palmas": {
+      "textures": "textures/items/chad_blindaje_palmas"
+    },
+    "chad:carga_directo": {
+      "textures": "textures/items/chad_carga_directo"
+    },
+    "chad:golpe_do_gigante": {
+      "textures": "textures/items/chad_golpe_do_gigante"
+    },
+    "orihime:m1_rikka": {
+      "textures": "textures/items/orihime_m1_rikka"
+    },
+    "orihime:santen_kesshun": {
+      "textures": "textures/items/orihime_santen_kesshun"
+    },
+    "orihime:soten_kisshun": {
+      "textures": "textures/items/orihime_soten_kisshun"
+    },
+    "orihime:koten_zanshun": {
+      "textures": "textures/items/orihime_koten_zanshun"
+    },
+    "orihime:shiten_koshun": {
+      "textures": "textures/items/orihime_shiten_koshun"
+    },
+    "fbichigo:dark_flame_sword": {
+      "textures": "textures/items/fbichigo_dark_flame_sword"
+    },
+    "fbichigo:several_cuts": {
+      "textures": "textures/items/fbichigo_several_cuts"
+    },
+    "fbichigo:shadows_movement": {
+      "textures": "textures/items/fbichigo_shadows_movement"
+    },
+    "fbichigo:boomerang_substitute": {
+      "textures": "textures/items/fbichigo_boomerang_substitute"
+    },
+    "fbichigo:false_getsuga": {
+      "textures": "textures/items/fbichigo_false_getsuga"
+    },
+    "fbichigo:fullbringers_blade": {
+      "textures": "textures/items/fbichigo_fullbringers_blade"
+    },
+    "fbichigo:triple_action": {
+      "textures": "textures/items/fbichigo_triple_action"
+    },
+    "fbichigo:fullbringer_getsuga": {
+      "textures": "textures/items/fbichigo_fullbringer_getsuga"
+    },
+    "fbichigo:bringer_light": {
+      "textures": "textures/items/fbichigo_bringer_light"
+    },
+    "fbichigo:pierce": {
+      "textures": "textures/items/fbichigo_pierce"
+    },
+    "fbichigo:bone_chest": {
+      "textures": "textures/items/fbichigo_bone_chest"
     }
   }
 }

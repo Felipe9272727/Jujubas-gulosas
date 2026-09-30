@@ -64,15 +64,14 @@
             "filters": {
               "all_of": [
                 {
-                  "test": "is_family",
+                  "test": "has_component",
                   "subject": "other",
-                  "value": "player"
+                  "value": "minecraft:health"
                 },
                 {
-                  "test": "has_tag",
+                  "test": "is_owner",
                   "subject": "other",
-                  "operator": "!=",
-                  "value": "mv_yamamoto"
+                  "value": false
                 }
               ]
             },
@@ -86,6 +85,10 @@
       },
       "minecraft:behavior.look_at_player": {
         "priority": 7
+      },
+      "minecraft:tameable": {
+        "probability": 1,
+        "tame_items": []
       }
     }
   }

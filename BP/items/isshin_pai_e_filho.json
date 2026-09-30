@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "isshin:pai_e_filho",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "isshin:pai_e_filho",
+      "minecraft:display_name": {
+        "value": "Getsuga Pai e Filho"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "isshin_pai_e_filho",
+        "duration": 80
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "urahara:hado_91",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "urahara:hado_91",
+      "minecraft:display_name": {
+        "value": "Hadō #91 — Senjū Kōten Taihō"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "urahara_hado_91",
+        "duration": 60
+      }
+    }
+  }
+}

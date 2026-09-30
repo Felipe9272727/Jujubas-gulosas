@@ -1,0 +1,20 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "fbichigo:fullbringers_blade",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "fbichigo:fullbringers_blade",
+      "minecraft:display_name": {
+        "value": "Fullbringer's Blade"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false
+    }
+  }
+}

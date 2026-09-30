@@ -9,7 +9,14 @@ import {
   InputPermissionCategory,
 } from "@minecraft/server";
 import { ActionFormData, MessageFormData } from "@minecraft/server-ui";
-import { createShinji } from "./shinji.js";
+import { createShinji, SHINJI } from "./shinji.js";
+import { createUrahara, URAHARA } from "./urahara.js";
+import { createYoruichi, YORUICHI } from "./yoruichi.js";
+import { createIsshin, ISSHIN } from "./isshin.js";
+import { createTsukishima, TSUKISHIMA } from "./tsukishima.js";
+import { createChad, CHAD } from "./chad.js";
+import { createIchigoFullbringer, ICHIGO_FB } from "./ichigo_fullbringer.js";
+import { createOrihime, ORIHIME } from "./orihime.js";
 
 /* =========================================================
    OTIMIZAÇÃO ANTI-LAG
@@ -113,6 +120,10 @@ try {
     "komamura:braco",
     "komamura:punho",
     "komamura:guarda",
+    "urahara:blood_shield",
+    "urahara:kin_cross",
+    "yoruichi:afterimage",
+    "isshin:ichigo",
   ];
   Dimension.prototype.getEntities = function (options) {
     if (!options) {
@@ -437,7 +448,7 @@ const CHARACTERS = {
   starkk: {
     id: "starkk",
     name: "Coyote Starkk",
-    health: 4000,
+    health: 5000,
     items: {
       0: "starkk:m1_zanpakuto",
       1: "starkk:slash_barrage",
@@ -451,7 +462,7 @@ const CHARACTERS = {
     awakening: {
       name: "Resurrección: Los Lobos",
       triggerItem: "starkk:m1_zanpakuto",
-      health: 4000,
+      health: 5000,
       onActivate: "battlecry",
       chatLine: "Kick About, Los Lobos",
       cryParticle: "starkk:reiatsu",
@@ -905,6 +916,42 @@ const CHARACTERS = {
       triggerItem: "dangai:m1_zangetsu",
     },
   },
+  isshin: {
+    id: "isshin", name: "Isshin Kurosaki", health: 3400,
+    fireResistant: true, burnDamageMultiplier: 0.6,
+    items: { 0: "isshin:m1_engetsu", 1: "isshin:getsuga_tensho", 2: "isshin:getsuga_x",
+      3: "isshin:engetsu", 4: "isshin:pai_e_filho" },
+    superAttack: { onTrigger: "isshin", triggerItem: "isshin:m1_engetsu", name: "Meu Sol: Masaka" },
+  },
+  yoruichi: {
+    id: "yoruichi", name: "Yoruichi Shihōin", health: 4000, speedAmplifier: 3,
+    items: { 0: "yoruichi:m1_hakuda", 1: "yoruichi:shunpo", 2: "yoruichi:punches_barrage",
+      3: "yoruichi:showdown", 4: "yoruichi:utsusemi" },
+    awakening: {
+      name: "Shunkō: Raijin Senkei", triggerItem: "yoruichi:m1_hakuda", speedAmplifier: 6,
+      onActivate: "battlecry", chatLine: "Shunkō... Raijin Senkei!", cryParticle: "yoruichi:raio", cryPitch: 1.3,
+      aura: { particle: "yoruichi:raio", radius: 0.65, height: 2, perTick: 2 },
+      items: { 0: "yoruichi:m1_hakuda_shunko", 1: "yoruichi:thundersaw", 2: "yoruichi:thunderous_smash",
+        3: "yoruichi:lightning_speed", 4: "yoruichi:lightning_bolt" },
+    },
+  },
+  urahara: {
+    id: "urahara", name: "Kisuke Urahara", health: 4000,
+    items: {
+      0: "urahara:m1_benihime", 1: "urahara:nake", 2: "urahara:kirisaki",
+      3: "urahara:chikasumi", 4: "urahara:hiasobi", 5: "urahara:juzutsunagi",
+    },
+    awakening: {
+      name: "Just an ordinary shopkeeper.", health: 4500,
+      triggerItem: "urahara:m1_benihime", onActivate: "battlecry",
+      chatLine: "Just an ordinary shopkeeper.", cryParticle: "urahara:faisca", cryPitch: 0.75,
+      aura: { particle: "urahara:faisca", radius: 0.7, height: 2, perTick: 1 },
+      items: {
+        0: "urahara:m1_benihime_awakened", 1: "urahara:shibari",
+        2: "urahara:hado_91", 3: "urahara:hyappo_rankan", 4: "urahara:kin",
+      },
+    },
+  },
   yamamoto: {
     id: "yamamoto",
     name: "Yamamoto Genryūsai",
@@ -949,6 +996,94 @@ const CHARACTERS = {
     superAttack: {
       onTrigger: "kaido_expert",
       triggerItem: "unohana:m1_zanpakuto",
+    },
+  },
+  tsukishima: {
+    id: "tsukishima",
+    name: "Shukuro Tsukishima (Book of the End)",
+    health: 1600,
+    // sem awakening: no lugar dele ele tem as Escritas (ver tsukishima.js)
+    items: {
+      0: "tsukishima:m1_sword_of_the_end",
+      1: "tsukishima:book_registros",
+      2: "tsukishima:book_alvo",
+      3: "tsukishima:book_eu",
+    },
+  },
+  orihime: {
+    id: "orihime",
+    name: "Orihime Inoue",
+    health: ORIHIME.health,
+    items: {
+      0: ORIHIME.m1Item,
+      1: ORIHIME.santen,
+      2: ORIHIME.soten,
+      3: ORIHIME.koten,
+      4: ORIHIME.shiten,
+    },
+    // Awk: Sōten Kisshun - Rejeição Total: agachar + m1 com o medidor em 100%
+    superAttack: {
+      onTrigger: "orihime",
+      triggerItem: ORIHIME.m1Item,
+    },
+  },
+  ichigo_fullbringer: {
+    id: "ichigo_fullbringer",
+    name: "Ichigo Kurosaki (Fullbringer)",
+    health: ICHIGO_FB.health,
+    // individualidade: manto de chamas negras (passiva no ichigo_fullbringer.js)
+    items: {
+      0: ICHIGO_FB.base.m1,
+      1: ICHIGO_FB.base.cuts,
+      2: ICHIGO_FB.base.shadow,
+      3: ICHIGO_FB.base.boomerang,
+      4: ICHIGO_FB.base.getsuga,
+    },
+    awakening: {
+      name: "Fullbringer Completo",
+      triggerItem: ICHIGO_FB.base.m1,
+      health: ICHIGO_FB.awakeningHealth,
+      armorPiece: ICHIGO_FB.armor, // armadura de osso (troca a skin)
+      armorMessage: "§f§lA armadura de osso do Fullbring tomou seu corpo.",
+      onActivate: "battlecry",
+      chatLine: "Fullbring!",
+      cryParticle: "fbichigo:chama",
+      cryPitch: 0.8,
+      items: {
+        0: ICHIGO_FB.awk.m1,
+        1: ICHIGO_FB.awk.triple,
+        2: ICHIGO_FB.awk.getsuga,
+        3: ICHIGO_FB.awk.light,
+        4: ICHIGO_FB.awk.pierce,
+      },
+    },
+  },
+  chad: {
+    id: "chad",
+    name: "Yasutora Sado (Chad)",
+    health: CHAD.health,
+    // braço direito; o esquerdo entra pelo Change Arm (ver chad.js)
+    items: {
+      0: CHAD.right.m1,
+      1: CHAD.right.blindaje,
+      2: CHAD.right.directo,
+      3: CHAD.right.carga,
+      4: CHAD.changeArm,
+    },
+    awakening: {
+      name: "Brazos del Gigante",
+      triggerItem: CHAD.right.m1,
+      extraTriggerItems: [CHAD.left.m1], // funciona com qualquer um dos dois braços
+      onActivate: "battlecry",
+      chatLine: "Brazos del Gigante!",
+      cryParticle: "minecraft:large_explosion",
+      cryPitch: 0.6,
+      items: {
+        0: CHAD.giant.m1,
+        1: CHAD.giant.blindajePalmas,
+        2: CHAD.giant.cargaDirecto,
+        3: CHAD.giant.golpe,
+      },
     },
   },
   komamura: {
@@ -1004,11 +1139,17 @@ const BYAKUYA_ALT_WEAPONS = [
 // itens que nao ficam em slot de hotbar mas precisam de dono (pra nao serem dropados)
 const EXTRA_OWNED_ITEMS = {
   "shinji:mask_visual": "shinji",
+  // itens do braço esquerdo do Chad (entram pelo Change Arm)
+  "chad:m1_esquerdo": "chad",
+  "chad:trituradora_de_tierra": "chad",
+  "chad:bater_de_palmas": "chad",
+  "chad:la_muerte": "chad",
   "yammy:ira_marker": "yammy",
   "vizard:hollow_chest": "ichigo_vizard",
   "vizard:vasto_chest": "ichigo_vizard",
   "ulquiorra:segunda_chest": "ulquiorra",
   "dangai:mugetsu_chest": "ichigo_dangai",
+  "fbichigo:bone_chest": "ichigo_fullbringer",
   // a Kyōka "oculta" (textura vazia) fica no slot 0 enquanto o Aizen esta invisivel
   "aizen:m1_kyoka_oculta": "aizen",
 };
@@ -1045,6 +1186,9 @@ const TIERS = [
 
 // Classificação atual dos personagens disponíveis no seletor.
 const CHARACTER_RACE_TIER = {
+  isshin: { race: "shinigami", tier: 4 },
+  yoruichi: { race: "shinigami", tier: 4 },
+  urahara: { race: "shinigami", tier: 5 },
   byakuya: { race: "shinigami", tier: 2 },
   kenpachi: { race: "shinigami", tier: 3 },
   mayuri: { race: "shinigami", tier: 2 },
@@ -1062,6 +1206,10 @@ const CHARACTER_RACE_TIER = {
   yamamoto: { race: "shinigami", tier: 7 },
   unohana: { race: "shinigami", tier: 3 },
   komamura: { race: "shinigami", tier: 4 },
+  tsukishima: { race: "fullbringer", tier: 3 },
+  chad: { race: "fullbringer", tier: 3 },
+  orihime: { race: "fullbringer", tier: 2 },
+  ichigo_fullbringer: { race: "fullbringer", tier: 3 },
 
   grimmjow: { race: "hollow", tier: 2 },
   szayelaporro: { race: "hollow", tier: 2 },
@@ -1070,15 +1218,15 @@ const CHARACTER_RACE_TIER = {
   ulquiorra: { race: "hollow", tier: 3 },
   harribel: { race: "hollow", tier: 3 },
   barragan: { race: "hollow", tier: 4 },
-  starkk: { race: "hollow", tier: 4 },
+  starkk: { race: "hollow", tier: 6 },
   yammy: { race: "hollow", tier: 5 },
 
   ichigo: { race: "hybrid", tier: 2 },
   ichigo_vizard: { race: "hybrid", tier: 4 },
 };
 
-// Tier do personagem ATIVO (0 sem personagem). A Pressao Espiritual, o Air Step,
-// a troca de skill generica e as skills do Gin e do Shunsui comparam tiers por
+// Tier do personagem ATIVO (0 sem personagem). A Pressao Espiritual
+// e as skills do Gin e do Shunsui comparam tiers por
 // aqui. A funcao era chamada em dez lugares e nao existia: cada chamada lancava
 // ReferenceError, que o anti-lag dos loops engolia em silencio.
 function tierOfPlayer(entity) {
@@ -1113,15 +1261,18 @@ const SPIRITUAL_PRESSURE = { durationTicks: 200, cooldownTicks: 600, intervalTic
 function isSpiritualPressureEnabled(player){ return player.getDynamicProperty(DP.pressureEnabled)!==false; }
 function setSpiritualPressureEnabled(player,enabled){ player.setDynamicProperty(DP.pressureEnabled,!!enabled); }
 function isInfiniteAwakening(player){ return player.getDynamicProperty(DP.infiniteAwakening)===true; }
-function genericSkillIndex(player){const n=Number(player.getDynamicProperty(DP.genericSkill));return n===1||n===2?n:0;}
-function genericSkillName(player){return ["Pressão Espiritual","Air Step","Reiatsu Jump"][genericSkillIndex(player)];}
-function cycleGenericSkill(player){const tier=tierOfPlayer(player),cur=genericSkillIndex(player),next=tier>=5?(cur+1)%3:(cur===0?2:0);player.setDynamicProperty(DP.genericSkill,next);player.sendMessage(`§bSkill: §f${genericSkillName(player)}`);}
 function activateGenericSpiritualPressure(player){if(onCooldown(player,DP.pressureCooldown,SPIRITUAL_PRESSURE.cooldownTicks,system.currentTick)){player.sendMessage("§cPressão Espiritual em cooldown.");return;}player.setDynamicProperty(DP.pressureActiveUntil,system.currentTick+SPIRITUAL_PRESSURE.durationTicks);setCooldown(player,DP.pressureCooldown,system.currentTick);player.sendMessage("§4§lPressão Espiritual ativada! §r§7(10s)");}
 function removeAirStepBlock(player){const raw=player.getDynamicProperty(DP.airStepBlock);if(raw){try{const p=JSON.parse(raw),b=player.dimension.getBlock(p);if(b?.typeId==="minecraft:barrier")b.setType("minecraft:air");}catch(e){}}player.setDynamicProperty(DP.airStepBlock,undefined);}
-function setAirStepBlock(player){const l=player.location,pos={x:Math.floor(l.x),y:Math.floor(l.y-1),z:Math.floor(l.z)},raw=player.getDynamicProperty(DP.airStepBlock);if(raw){try{const o=JSON.parse(raw);if(o.x===pos.x&&o.y===pos.y&&o.z===pos.z)return;const b=player.dimension.getBlock(o);if(b?.typeId==="minecraft:barrier")b.setType("minecraft:air");}catch(e){}}try{const b=player.dimension.getBlock(pos);if(!b?.isAir)return;b.setType("minecraft:barrier");player.setDynamicProperty(DP.airStepBlock,JSON.stringify(pos));}catch(e){}}
-function toggleGenericAirStep(player){if(tierOfPlayer(player)<5){player.sendMessage("§cAir Step exige Tier 5 ou superior.");return;}const on=player.getDynamicProperty(DP.airStepActive)===true;player.setDynamicProperty(DP.airStepActive,!on);if(on){removeAirStepBlock(player);player.sendMessage("§7Air Step desativado.");}else{setAirStepBlock(player);player.sendMessage("§bAir Step ativado.");}}
-function activateReiatsuJump(player){const now=system.currentTick,last=tickOf(player,"mv:reiatsu_jump_cd");if(typeof last==="number"&&now-last<200){player.sendMessage("§cReiatsu Jump em cooldown.");return;}const c=Number(player.getDynamicProperty("mv:reiatsu_jump_charge"))||0;const amp=c>=120?2:c>=80?1:0;player.addEffect("jump_boost",2,{amplifier:amp,showParticles:false});player.setDynamicProperty("mv:reiatsu_jump_cd",now);player.setDynamicProperty("mv:reiatsu_jump_charge",0);}
-function handleGenericSkillUse(player){const i=genericSkillIndex(player);if(i===0)activateGenericSpiritualPressure(player);else if(i===1)toggleGenericAirStep(player);else activateReiatsuJump(player);}
+function clearLegacyMovement(player) {
+  removeAirStepBlock(player);
+  player.setDynamicProperty(DP.airStepActive, false);
+  player.setDynamicProperty(DP.genericSkill, 0);
+  player.setDynamicProperty("mv:reiatsu_jump_cd", undefined);
+  player.setDynamicProperty("mv:reiatsu_jump_charge", undefined);
+}
+function handleGenericSkillUse(player) {
+  if (getActiveCharacter(player)) activateGenericSpiritualPressure(player);
+}
 
 // Todo peitoral de forma que existe, pra poder varrer os que estao sobrando.
 // Sem isso da pra tirar a peca, ficar com uma copia na mochila e vestir ela
@@ -1293,12 +1444,30 @@ function isIntocable(entity) {
   }
 }
 
+// Starkk: todos os ataques dele dao 60% a mais do dano original
+const STARKK_DAMAGE_MULTIPLIER = 1.6;
+
 function dealDamage(target, amount, source, options) {
+  try {
+    if (
+      source?.typeId === "minecraft:player" &&
+      getActiveCharacter(source)?.id === "starkk"
+    ) {
+      amount = amount * STARKK_DAMAGE_MULTIPLIER;
+    }
+  } catch (e) {}
   // clone da Illusion's Mastery: area e skill passam direto por ele; so o golpe
   // corpo a corpo (entityHitEntity) conta como "acertar o clone"
-  if (target?.typeId === AIZEN.cloneType) return;
+  if (target?.typeId === AIZEN.cloneType || target?.typeId === "yoruichi:afterimage") return;
   // o Aizen enfraquecido pelo Getsuga Tenshou Final nao causa dano nenhum
-  if (source && isMugetsuWeakened(source)) return;
+  if (source && (isMugetsuWeakened(source) || urahara.isSealed(source))) return;
+  if (source && urahara.blocksDamage(target, source)) return;
+  // Eu sou seu amigo do Tsukishima: nao causa nem recebe dano
+  if (tsukishima.blocksDamage(target, source)) return;
+  // Shadow's Movement do Ichigo Fullbringer: nao entra dano nem knockback de ataque
+  if (ichigoFB.blocksDamage(target)) return;
+  // Santen Kesshun da Orihime: repele tudo de tier <= 4 que atinge quem esta na cupula
+  if (source && orihime.blocksDamage(target, source, amount)) return;
   // Kaidō Expert: a Unohana lembra de quem tentou machucar ela (mesmo barrado)
   recordUnohanaAttacker(target, source);
   // Arrogant's Counter do Ichigo (Dangai): o golpe nao entra e vira o contra-ataque
@@ -1336,9 +1505,14 @@ function dealDamage(target, amount, source, options) {
   // Queimadura Infernal do Yamamoto passa por cima de reducao.
   let resisted = damageTakenMultiplierOf(target) * tierDamageReductionMultiplierOf(target, source);
   if (options?.ignoresReduction) resisted = Math.max(1, resisted);
-  const finalAmount = amount * marked * blocked * resisted;
+  const burnResistance = options?.burn ? (getActiveCharacter(target)?.burnDamageMultiplier ?? 1) : 1;
+  const finalAmount = amount * marked * blocked * resisted * burnResistance;
   // Absorb do Ukitake: imune ao dano, que fica guardado pro Hansha
   if (absorbUkitakeDamage(target, finalAmount)) return;
+  // Hits nao tomados do Tsukishima lembra do ultimo golpe que entrou
+  tsukishima.onDamaged(target, source, finalAmount);
+  // Sōten Kisshun: guarda o dano tomado nos ultimos 10s
+  orihime.onDamaged(target, source, finalAmount);
   target.applyDamage(finalAmount / healthScaleOf(target), {
     cause: EntityDamageCause.entityAttack,
     damagingEntity: source,
@@ -1346,6 +1520,13 @@ function dealDamage(target, amount, source, options) {
 }
 
 const SKILL_COOLDOWN_TICKS = {
+  ...ISSHIN.cooldowns,
+  ...YORUICHI.cooldowns,
+  ...URAHARA.cooldowns,
+  ...TSUKISHIMA.cooldowns,
+  ...CHAD.cooldowns,
+  ...ORIHIME.cooldowns,
+  ...ICHIGO_FB.cooldowns,
   "shinji:triple_slash": 400,
   "shinji:sakanas_cut": 500,
   "shinji:hollow_mask": 1300,
@@ -1533,6 +1714,13 @@ const SKILL_COOLDOWN_TICKS = {
 };
 
 const SKILL_NAMES = {
+  ...ISSHIN.names,
+  ...YORUICHI.names,
+  ...URAHARA.names,
+  ...TSUKISHIMA.names,
+  ...CHAD.names,
+  ...ORIHIME.names,
+  ...ICHIGO_FB.names,
   "ichigo:getsuga_slam": "Getsuga Slam",
   "ichigo:getsuga_slash": "Getsuga Slash",
   "ichigo:getsuga_run": "Getsuga Run",
@@ -2133,6 +2321,18 @@ const VIZARD_BARRAGE = {
 const DESCENT_TENSHO = { travel: 12, steps: 8, blastRadius: 12 };
 // "dobro da velocidade" do Nuke Tenshou original (speed 3)
 const SUPER_NUKE = { radius: 5.4, thickness: 2.7, range: 34, speed: 6, rows: 18 };
+// Nuke Tenshou: gigante, bem mais alto que o Getsuga normal (radius = meia altura)
+const NUKE_CFG = {
+  radius: 9, // 18 blocos de ponta a ponta
+  bulge: 3.6,
+  thickness: 4,
+  lateral: 4.2,
+  speed: 4,
+  range: 40,
+  subSteps: 5,
+  startAhead: 2,
+  cancelsUpToTier: 0,
+};
 // TRUE AWAKENING: Vasto Lorde
 const WHITES_SHOWDOWN = {
   searchRadius: 40,
@@ -2450,6 +2650,7 @@ function applyCharacterEffects(
 
   setMaxHealth(player, maxHealth);
   setPermanentEffect(player, "speed", speedAmplifier);
+  if (getActiveCharacter(player)?.fireResistant) setPermanentEffect(player, "fire_resistance", 0);
   // Individualidade do Tosen: cegueira permanente (so some durante a Enma Korogi)
   if (getActiveCharacter(player)?.id === "tosen" && !tosenEnma.has(player.id)) {
     setPermanentEffect(player, "blindness", 0);
@@ -2500,7 +2701,7 @@ function reapplyFormEffects(player) {
   applyCharacterEffects(
     player,
     form?.health ?? character.health,
-    form?.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+    form?.speedAmplifier ?? character.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
     form && "regenAmplifier" in form ? form.regenAmplifier : REGEN_AMPLIFIER,
     form?.extraEffects
   );
@@ -2729,6 +2930,8 @@ function dmgMultiplier(player) {
   }
   // Evolution do Aizen Hōgyoku: +5% a cada 20%
   if (character?.id === "aizen_hogyoku") multiplier *= hogyokuDamageBonus(player);
+  // Carga Reiatsu do Chad: +30%
+  if (character?.id === "chad") multiplier *= chad.damageMultiplier(player);
 
   return multiplier;
 }
@@ -3040,12 +3243,21 @@ function getActiveItemsForPlayer(player, character) {
       return { ...character.items, 0: character.superAttack.senkei?.finisherWeapon };
     }
   }
+  if (character.id === "chad") return chad.activeItems(player, character.items);
   return character.items;
 }
 
 function activateCharacter(player, characterId) {
   const character = CHARACTERS[characterId];
   if (!character) return;
+  urahara.reset(player);
+  yoruichi.reset(player);
+  isshin.reset(player);
+  tsukishima.reset(player);
+  chad.reset(player);
+  orihime.reset(player);
+  ichigoFB.reset(player);
+  clearLegacyMovement(player);
 
   player.setDynamicProperty(DP.character, characterId);
   player.setDynamicProperty(DP.awakened, false);
@@ -3055,9 +3267,10 @@ function activateCharacter(player, characterId) {
   if (characterId === "aizen_hogyoku") resetHogyoku(player);
   // o Kaidō Expert conta ataques so a partir de agora
   if (characterId === "unohana") unohanaAttackers.set(player.id, new Set());
+  if (characterId === "tsukishima") tsukishima.onActivate(player);
   clearComboCounters(player);
 
-  applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
+  applyCharacterEffects(player, character.health, character.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
 
   const inv = getInv(player);
   for (const slot in character.items) {
@@ -3080,9 +3293,22 @@ function activateCharacter(player, characterId) {
 }
 
 function deactivateCharacter(player) {
+  // os itens travados precisam ser lidos ANTES dos resets: o chad.reset volta o braco
+  // pro direito e, sem isso, os itens do Izquierda ficavam no inventario
+  const prevCharacter = getActiveCharacter(player);
+  const itemsBeforeReset = prevCharacter ? { ...getActiveItemsForPlayer(player, prevCharacter) } : null;
+  isshin.reset(player);
+  yoruichi.reset(player);
+  urahara.reset(player);
+  clearLegacyMovement(player);
   soiClearNigeki(player.id);
+  tsukishima.reset(player);
+  chad.reset(player);
+  orihime.reset(player);
+  ichigoFB.reset(player);
   const character = getActiveCharacter(player);
   if (!character) return;
+  if (character.id === "isshin") player.removeEffect("fire_resistance");
   if (character.id === "aizen" || character.id === "aizen_hogyoku") aizenCleanup(player.id);
   if (character.id === "aizen_hogyoku") resetHogyoku(player);
   if (character.id === "ichigo_dangai") dangaiCleanup(player, true);
@@ -3100,10 +3326,18 @@ function deactivateCharacter(player) {
   }
   player.setDynamicProperty(DP.maskEnd, 0);
 
-  const activeItems = getActiveItemsForPlayer(player, character);
+  const activeItems = itemsBeforeReset ?? getActiveItemsForPlayer(player, character);
 
   const inv = getInv(player);
   if(inv.getItem(GENERIC_SKILL_SLOT)?.typeId===GENERIC_SKILL_ITEM) inv.setItem(GENERIC_SKILL_SLOT,undefined);
+  // Chad: varre os itens dos dois bracos, caso o braco tenha mudado no meio do caminho
+  if (character.id === "chad") {
+    const chadIds = new Set([CHAD.changeArm, ...Object.values(CHAD.right), ...Object.values(CHAD.left), ...Object.values(CHAD.giant)]);
+    for (let i = 0; i < inv.size; i++) {
+      const it = inv.getItem(i);
+      if (it && chadIds.has(it.typeId)) inv.setItem(i, undefined);
+    }
+  }
   player.setDynamicProperty(DP.airStepActive,false);removeAirStepBlock(player);player.setDynamicProperty(DP.pressureActiveUntil,0);
   for (const slot in activeItems) {
     const item = inv.getItem(Number(slot));
@@ -3178,6 +3412,8 @@ function activateAwakening(player, character) {
   // os tres e entrega um burst de pressao espiritual + buff de dano
   const health = form.health ?? character.health;
   const items = form.items ?? character.items;
+  if (character.id === "urahara") getInv(player).setItem(5, undefined);
+  if (character.id === "chad") chad.setArm(player, "right");
 
   player.setDynamicProperty(DP.awakened, true);
   // Toda ativacao entra pela PRIMEIRA fase. O medidor continua em 100% e
@@ -3192,7 +3428,7 @@ function activateAwakening(player, character) {
   applyCharacterEffects(
     player,
     health,
-    form.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+    form.speedAmplifier ?? character.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
     "regenAmplifier" in form ? form.regenAmplifier : REGEN_AMPLIFIER,
     form.extraEffects
   );
@@ -3240,6 +3476,8 @@ function revertAwakening(player, reason) {
   if (!isAwakened(player)) return;
 
   if (character.id === "shinji") shinji.endAwakening(player);
+  if (character.id === "yoruichi") yoruichi.endAwakening(player);
+  if (character.id === "chad") chad.setArm(player, "right");
 
   if (isMasked(player)) {
     deactivateHollowMask(player);
@@ -3253,7 +3491,7 @@ function revertAwakening(player, reason) {
   player.setDynamicProperty(DP.trueForm, false);
   player.setDynamicProperty(DP.starkkForm, "starkk");
   clearFormExtras(player, character.awakening);
-  applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
+  applyCharacterEffects(player, character.health, character.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
 
   const inv = getInv(player);
   for (const slot in character.items) {
@@ -3294,7 +3532,7 @@ function activateTrueAwakening(player, character) {
   applyCharacterEffects(
     player,
     health,
-    form.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+    form.speedAmplifier ?? character.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
     "regenAmplifier" in form ? form.regenAmplifier : REGEN_AMPLIFIER,
     form.extraEffects
   );
@@ -3530,6 +3768,7 @@ function openCharacterTierMenu(player, raceId, tierId) {
 world.afterEvents.playerSpawn.subscribe((ev) => {
   const { player, initialSpawn } = ev;
   shinji.reset(player);
+  clearLegacyMovement(player);
 
   if (initialSpawn) {
     player.runCommand("hud @s hide health");
@@ -3580,10 +3819,14 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     if (character) {
       forceGiveLockedItem(getInv(player),GENERIC_SKILL_SLOT,GENERIC_SKILL_ITEM);
       player.setDynamicProperty(DP.genericSkill,0);
-      applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
+      applyCharacterEffects(player, character.health, character.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
       system.runTimeout(() => healToMax(player, character.health), 2);
     }
   }
+  urahara.onSpawn(player, initialSpawn);
+  yoruichi.onSpawn(player);
+  isshin.onSpawn(player, initialSpawn);
+  tsukishima.onSpawn(player, initialSpawn);
 });
 
 function openCheatOptionsMenu(player) {
@@ -3636,10 +3879,8 @@ function openCheatOptionsMenu(player) {
 
 system.runInterval(()=>{
   const players=world.getPlayers();
-  for(const source of players){const until=source.getDynamicProperty(DP.pressureActiveUntil);if(!getActiveCharacter(source)||typeof until!=="number"||until<=system.currentTick)continue;const tier=tierOfPlayer(source),radius=SPIRITUAL_PRESSURE.radii[tier];if(!radius)continue;for(const target of players){if(target.id===source.id||target.dimension.id!==source.dimension.id||!getActiveCharacter(target)||isPressureImmune(target))continue;const diff=tier-tierOfPlayer(target);if(diff<2)continue;const dx=source.location.x-target.location.x,dy=source.location.y-target.location.y,dz=source.location.z-target.location.z;if(dx*dx+dy*dy+dz*dz>radius*radius)continue;if(diff>=5){try{target.kill();}catch(e){}continue;}const cfg=SPIRITUAL_PRESSURE.effects[diff];if(!cfg)continue;try{target.addEffect("slowness",SPIRITUAL_PRESSURE.intervalTicks+10,{amplifier:cfg.amplifier,showParticles:false});dealDamage(target,cfg.damage,source);}catch(e){}}}
+  for(const source of players){const until=source.getDynamicProperty(DP.pressureActiveUntil);if(urahara.isSealed(source)||!getActiveCharacter(source)||typeof until!=="number"||until<=system.currentTick)continue;const tier=tierOfPlayer(source),radius=SPIRITUAL_PRESSURE.radii[tier];if(!radius)continue;for(const target of players){if(target.id===source.id||target.dimension.id!==source.dimension.id||!getActiveCharacter(target)||isPressureImmune(target))continue;const diff=tier-tierOfPlayer(target);if(diff<2)continue;const dx=source.location.x-target.location.x,dy=source.location.y-target.location.y,dz=source.location.z-target.location.z;if(dx*dx+dy*dy+dz*dz>radius*radius)continue;if(diff>=5){try{target.kill();}catch(e){}continue;}const cfg=SPIRITUAL_PRESSURE.effects[diff];if(!cfg)continue;try{target.addEffect("slowness",SPIRITUAL_PRESSURE.intervalTicks+10,{amplifier:cfg.amplifier,showParticles:false});dealDamage(target,cfg.damage,source);}catch(e){}}}
 },SPIRITUAL_PRESSURE.intervalTicks);
-const genericSneakState=new Map();
-system.runInterval(()=>{for(const player of world.getPlayers()){const held=getInv(player).getItem(GENERIC_SKILL_SLOT),holding=held?.typeId===GENERIC_SKILL_ITEM,sneak=player.isSneaking,prev=genericSneakState.get(player.id)===true;if(holding&&sneak&&!prev&&getActiveCharacter(player))cycleGenericSkill(player);genericSneakState.set(player.id,sneak);if(player.getDynamicProperty(DP.airStepActive)===true){if(tierOfPlayer(player)<5||!getActiveCharacter(player)){player.setDynamicProperty(DP.airStepActive,false);removeAirStepBlock(player);continue;}try{const v=player.getVelocity();if(sneak)player.teleport({x:player.location.x,y:player.location.y-0.12,z:player.location.z},{keepVelocity:false});else if(v.y>0.08)player.teleport({x:player.location.x,y:player.location.y+0.12,z:player.location.z},{keepVelocity:false});}catch(e){}setAirStepBlock(player);}if(holding&&genericSkillIndex(player)===2&&sneak&&getActiveCharacter(player))player.setDynamicProperty("mv:reiatsu_jump_charge",Math.min(120,(Number(player.getDynamicProperty("mv:reiatsu_jump_charge"))||0)+2));}},2);
 
 /* ---------------------------------------------------------
    Uso de itens
@@ -3660,6 +3901,13 @@ world.afterEvents.itemUse.subscribe((ev) => {
 
   if (itemStack.typeId === CHEAT_OPTIONS_ITEM) {
     openCheatOptionsMenu(player);
+    return;
+  }
+
+  if (isshin.isBusy(player) || yoruichi.isBusy(player) || yoruichi.isStunned(player)) return;
+
+  if (urahara.isBound(player)) {
+    player.sendMessage("§7Você está preso por um Kidō. O seletor de personagem continua disponível.");
     return;
   }
 
@@ -3709,7 +3957,8 @@ world.afterEvents.itemUse.subscribe((ev) => {
   // agachado + usar a m1 com awakening 100% = desperta o Awakening
   if (
     character.awakening &&
-    itemStack.typeId === character.awakening.triggerItem &&
+    (itemStack.typeId === character.awakening.triggerItem ||
+      character.awakening.extraTriggerItems?.includes(itemStack.typeId)) &&
     player.isSneaking &&
     !isAwakened(player)
   ) {
@@ -3834,6 +4083,18 @@ world.afterEvents.itemUse.subscribe((ev) => {
   }
 
   switch (itemStack.typeId) {
+    case "isshin:getsuga_tensho": case "isshin:getsuga_x": case "isshin:engetsu": case "isshin:pai_e_filho":
+      isshin.cast(player, itemStack.typeId);
+      break;
+    case "yoruichi:shunpo": case "yoruichi:punches_barrage": case "yoruichi:showdown": case "yoruichi:utsusemi":
+    case "yoruichi:thundersaw": case "yoruichi:thunderous_smash": case "yoruichi:lightning_speed": case "yoruichi:lightning_bolt":
+      yoruichi.cast(player, itemStack.typeId);
+      break;
+    case "urahara:nake": case "urahara:kirisaki": case "urahara:chikasumi":
+    case "urahara:hiasobi": case "urahara:juzutsunagi": case "urahara:shibari":
+    case "urahara:hado_91": case "urahara:hyappo_rankan": case "urahara:kin":
+      urahara.cast(player, itemStack.typeId);
+      break;
     case "shinji:triple_slash":
     case "shinji:sakanas_cut":
     case "shinji:hollow_mask":
@@ -4315,6 +4576,39 @@ world.afterEvents.itemUse.subscribe((ev) => {
       if (player.isSneaking) openSpellBook(player, itemStack.typeId);
       else castFromBook(player, itemStack.typeId);
       break;
+    case "orihime:santen_kesshun":
+    case "orihime:soten_kisshun":
+    case "orihime:koten_zanshun":
+    case "orihime:shiten_koshun":
+      orihime.cast(player, itemStack.typeId);
+      break;
+    case "fbichigo:several_cuts":
+    case "fbichigo:shadows_movement":
+    case "fbichigo:boomerang_substitute":
+    case "fbichigo:false_getsuga":
+    case "fbichigo:triple_action":
+    case "fbichigo:fullbringer_getsuga":
+    case "fbichigo:bringer_light":
+    case "fbichigo:pierce":
+      ichigoFB.cast(player, itemStack.typeId);
+      break;
+    case "chad:change_arm":
+    case "chad:blindaje":
+    case "chad:el_directo":
+    case "chad:carga_reiatsu":
+    case "chad:trituradora_de_tierra":
+    case "chad:bater_de_palmas":
+    case "chad:la_muerte":
+    case "chad:blindaje_palmas":
+    case "chad:carga_directo":
+    case "chad:golpe_do_gigante":
+      chad.cast(player, itemStack.typeId);
+      break;
+    case "tsukishima:book_registros":
+    case "tsukishima:book_alvo":
+    case "tsukishima:book_eu":
+      tsukishima.cast(player, itemStack.typeId);
+      break;
     case "komamura:myoo_barrage":
       castMyooBarrage(player);
       break;
@@ -4372,6 +4666,7 @@ function tryUseSkill(player, itemId, overrideDuration) {
     return false;
   }
   setCooldown(player, key, now);
+  noteLastAttack(player, itemId, false);
   // cooldown menor que o da tabela (Hadō #73 sem encantamento): adianta o carimbo
   if (overrideDuration !== undefined && overrideDuration < duration) {
     setCooldown(player, key, now - (duration - overrideDuration));
@@ -4759,16 +5054,11 @@ function castNukeTenshou(player) {
     volume: 2,
     pitch: 0.3,
   });
-  fireCrescentWave(player, {
-    radius: 5.4,
-    thickness: 2.7,
-    range: 30,
-    damage: DAMAGE.nuke,
-    speed: 3,
-    particle: "minecraft:blood_particle",
-    burst: "minecraft:large_explosion",
-    rows: 18,
+  player.dimension.playSound("item.trident.thunder", player.location, {
+    volume: 1,
+    pitch: 0.5,
   });
+  fireCrescent(player, NUKE_CFG, CRESCENT_LOOKS.nuke, { damage: DAMAGE.nuke });
 }
 
 /* ---------------------------------------------------------
@@ -5370,6 +5660,8 @@ function tryTriggerKonjiki(player, character) {
 // com o medidor cheio.
 function tryTriggerSuperAttack(player, character) {
   switch (character.superAttack.onTrigger) {
+    case "isshin":
+      return isshin.triggerSun(player);
     case "byakuya":
       return tryTriggerByakuyaSuper(player, character);
     case "konjiki":
@@ -5392,6 +5684,8 @@ function tryTriggerSuperAttack(player, character) {
       return tryTriggerMugetsu(player);
     case "kaido_expert":
       return tryTriggerKaidoExpert(player);
+    case "orihime":
+      return orihime.rejeicaoTotal(player);
   }
   return false;
 }
@@ -6017,7 +6311,7 @@ function castAaronieroBanquete(player) {
   if(hp){ const scale=healthScaleOf(player); hp.setCurrentValue(Math.min(hp.effectiveMax, hp.currentValue + 100/scale)); }
   clearAaronieroDevoured(player);
   const c=getActiveCharacter(player);
-  if(c){ const f=activeFormOf(player,c); applyCharacterEffects(player, f?.health ?? c.health, f?.speedAmplifier ?? BASE_SPEED_AMPLIFIER, "regenAmplifier" in (f??{}) ? f.regenAmplifier : REGEN_AMPLIFIER, f?.extraEffects); }
+  if(c){ const f=activeFormOf(player,c); applyCharacterEffects(player, f?.health ?? c.health, f?.speedAmplifier ?? c?.speedAmplifier ?? BASE_SPEED_AMPLIFIER, "regenAmplifier" in (f??{}) ? f.regenAmplifier : REGEN_AMPLIFIER, f?.extraEffects); }
 }
 
 function castAaronieroGlotoneria(player) {
@@ -8218,8 +8512,10 @@ function isDownOrGone(entity) {
 
 // Preso no Teatro de Títeres: nem o alvo nem o Szayelaporro atacam ou usam
 // skill. Vale pros dois lados, e por isso e um estado e nao um efeito.
-function isFrozen(entity) {
+function isFrozen(entity, ignoreYoruichi = false) {
   try {
+    if (!ignoreYoruichi && (yoruichi.isBusy(entity) || yoruichi.isStunned(entity))) return true;
+    if (urahara.isBound(entity)) return true;
     // paralisado pelo Piercing Shinso do Gin
     if ((ginParalyzed.get(entity.id) ?? 0) > system.currentTick) return true;
     for (const duel of soiNigekiDuels.values()) { if (duel.target?.id === entity.id) return true; }
@@ -8581,11 +8877,11 @@ function flashCastingHand(player) {
   } catch (e) {}
 }
 
-function playVizardAnimation(player, key) {
+function playVizardAnimation(player, key, handFlash = true) {
   const anim = VIZARD_ANIMATIONS[key];
   if (!anim) return;
 
-  flashCastingHand(player);
+  if (handFlash) flashCastingHand(player);
   try {
     player.playAnimation(anim.id, {
       controller: anim.controller,
@@ -9470,6 +9766,7 @@ function damageTakenMultiplierOf(entity) {
     if (isHierro(entity)) multiplier *= HIERRO.damageTakenMultiplier;
     if (character?.id === "aizen_hogyoku") multiplier *= hogyokuResistMultiplier(entity);
     if (character?.id === "komamura") multiplier *= komamuraShieldMultiplier(entity);
+    if (character?.id === "chad") multiplier *= chad.takenMultiplier(entity);
     return multiplier;
   } catch (e) {
     return 1;
@@ -12614,7 +12911,7 @@ function soiRestoreBaseSpeed(player) {
     const c = getActiveCharacter(player);
     if (!c) return;
     const f = activeFormOf(player, c);
-    setPermanentEffect(player, "speed", f?.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
+    setPermanentEffect(player, "speed", f?.speedAmplifier ?? c?.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
   } catch (e) {}
 }
 
@@ -14129,7 +14426,7 @@ function deactivateTosenVisored(player, reason) {
   const hpBefore = player.getComponent("minecraft:health");
   const previousHealth = hpBefore ? hpBefore.currentValue : character.health;
 
-  applyCharacterEffects(player, character.health, BASE_SPEED_AMPLIFIER);
+  applyCharacterEffects(player, character.health, character.speedAmplifier ?? BASE_SPEED_AMPLIFIER);
 
   const inv = getInv(player);
   for (const slot in character.items) {
@@ -16649,6 +16946,17 @@ const CRESCENT_LOOKS = {
     boltSegments: 6,
     boltStep: 1.4,
   },
+  // Nuke Tenshou: vermelhão com aura preta (raios pretos saindo do corte)
+  nuke: {
+    coreParticle: "ichigo:nuke",
+    edgeParticle: "ichigo:nuke_aura",
+    boltParticle: "dangai:raio",
+    points: 20,
+    litePoints: 20,
+    bolts: 5,
+    boltSegments: 7,
+    boltStep: 0.9,
+  },
 };
 
 function drawCrescent(dim, c, frame, cfg, look, lite, smear) {
@@ -17280,7 +17588,7 @@ function dangaiCleanupId(playerId) {
    --------------------------------------------------------- */
 
 const YAMAMOTO = {
-  tag: "mv_yamamoto", // os mortos do Minami nao atacam quem tem essa tag
+  tag: "mv_yamamoto", // tag legada; a IA do Minami agora identifica o invocador
   infernalParticle: "yamamoto:infernal", // fogo vermelho-escuro da Queimadura Infernal
   burn: { perSecond: 70 },
   infernal: { perSecond: 100 },
@@ -17376,7 +17684,7 @@ system.runInterval(() => {
         multiplier = dmgMultiplier(burn.source);
       } catch (e) {}
       // a Infernal ignora redução de dano (guarda, Hierro, resistências)
-      const options = { ignoresReduction: key === "infernal" };
+      const options = { ignoresReduction: key === "infernal", burn: true };
       try {
         dealDamage(entity, cfg.perSecond * multiplier, burn.source, options);
       } catch (e) {
@@ -17424,6 +17732,21 @@ system.runInterval(() => {
 /* ---------- mortos do Minami ---------- */
 
 const yamamotoSummons = new Map(); // id do morto -> { entity, ownerId, until, lastHit }
+// Entidades de uma sessao anterior nao mantem o vinculo em memoria.
+// Remove restos antigos antes que a nova IA passe a persegui-los sem um dono.
+system.run(() => {
+  for (const name of ["overworld", "nether", "the_end"]) try {
+    for (const entity of world.getDimension(name).getEntities({ type: YAMAMOTO.minami.entity })) {
+      if (!yamamotoSummons.has(entity.id)) entity.remove();
+    }
+  } catch {}
+});
+
+
+// Todo ser com vida pode ser alvo; a unica imunidade e a do proprio invocador.
+function minamiCanTarget(summon, entity) {
+  return !!entity && entity.id !== summon.entity.id && entity.id !== summon.ownerId && !isDownOrGone(entity);
+}
 
 // os proprios mortos nao levam dano das skills de quem os invocou
 function isOwnSummon(player, entity) {
@@ -17611,7 +17934,10 @@ function eruptIttoKaso(player, dim, center, side, cfg) {
 
 function castShunshin(player) {
   if (!tryUseSkill(player, "yamamoto:shunshin")) return;
+  clearLegacyMovement(player);
   const cfg = YAMAMOTO.shunshin;
+  const startY = player.location.y;
+  let elapsedTicks = 0;
   const dim = player.dimension;
   const f = forwardDirection(player);
   const perTick = cfg.distance / cfg.ticks;
@@ -17624,7 +17950,8 @@ function castShunshin(player) {
   } catch (e) {}
   const interval = system.runInterval(() => {
     try {
-      if (isDownOrGone(player)) {
+      if (isDownOrGone(player) || player.dimension.id !== dim.id ||
+          getActiveCharacter(player)?.id !== "yamamoto" || isFrozen(player)) {
         system.clearRun(interval);
         return;
       }
@@ -17633,7 +17960,7 @@ function castShunshin(player) {
       // anda em passos de 1 bloco: para no primeiro bloco solido
       for (let s = 1; s <= Math.ceil(perTick); s++) {
         const step = Math.min(s, perTick);
-        const next = { x: start.x + f.x * step, y: start.y, z: start.z + f.z * step };
+        const next = { x: start.x + f.x * step, y: startY, z: start.z + f.z * step };
         if (dangaiBodyBlocked(dim, cache, next)) {
           done = cfg.distance;
           break;
@@ -17645,13 +17972,17 @@ function castShunshin(player) {
           if (yamamotoStrike(player, entity, DAMAGE.shunshin, cfg.burnSeconds)) hit.add(entity.id);
         }
       }
+      player.clearVelocity();
       player.teleport(reached, { keepVelocity: false });
     } catch (e) {
       system.clearRun(interval);
       return;
     }
     done += perTick;
-    if (done >= cfg.distance) system.clearRun(interval);
+    if (done >= cfg.distance || ++elapsedTicks >= cfg.ticks) {
+      system.clearRun(interval);
+      try { player.clearVelocity(); } catch {}
+    }
   }, 1);
 }
 
@@ -17796,6 +18127,9 @@ function castMinami(player) {
     const spot = { x: o.x + Math.cos(a) * cfg.ringRadius, y: o.y, z: o.z + Math.sin(a) * cfg.ringRadius };
     try {
       const dead = dim.spawnEntity(cfg.entity, spot);
+      // Liga a IA ao invocador individual, nao a todos os jogadores de Yamamoto.
+      const tameable = dead.getComponent("minecraft:tameable");
+      if (!tameable || !tameable.tame(player)) { dead.remove(); continue; }
       dead.nameTag = "§6Morto Incinerado";
       yamamotoSummons.set(dead.id, {
         entity: dead,
@@ -17851,12 +18185,12 @@ system.runInterval(() => {
       if (now - summon.lastHit < cfg.hitCooldownTicks) continue;
       let victim;
       let best = cfg.reach;
-      for (const player of dead.dimension.getPlayers({ location: l, maxDistance: cfg.reach + 1 })) {
-        if (isYamamoto(player) || isDownOrGone(player)) continue;
-        const d = Math.hypot(player.location.x - l.x, player.location.z - l.z);
-        if (d <= best && Math.abs(player.location.y - l.y) < 2) {
+      for (const entity of dead.dimension.getEntities({ location: l, maxDistance: cfg.reach + 1 })) {
+        if (!minamiCanTarget(summon, entity)) continue;
+        const d = Math.hypot(entity.location.x - l.x, entity.location.z - l.z);
+        if (d <= best && Math.abs(entity.location.y - l.y) < 2) {
           best = d;
-          victim = player;
+          victim = entity;
         }
       }
       if (!victim) continue;
@@ -18587,6 +18921,7 @@ function cleanseNegativeEffects(entity) {
   }
   const id = entity.id;
   burns.delete(id); // Queimadura / Queimadura Infernal (Yamamoto)
+  isshin.cleanse(entity); // fogo comum; Meu Sol permanece ate a morte do invocador
   clearDots(id); // Deterioração (Barragan) e os outros DoTs
   activeMayuriPoisons.delete(id); // veneno do Mayuri
   fragility.delete(id); // Fragilização (Rukia)
@@ -19327,6 +19662,18 @@ function komamuraCleanup(playerId) {
 
 // registro generico de armas m1 - facilita adicionar novos personagens
 const MELEE_WEAPONS = {
+  "isshin:m1_engetsu": { baseDamage: ISSHIN.damage.m1, particle: "isshin:lamina", dot: null, animation: "slash", handFlash: false },
+  "yoruichi:m1_hakuda": { baseDamage: YORUICHI.damage.m1, particle: "yoruichi:soco", dot: null, animation: "slash", handFlash: false },
+  "yoruichi:m1_hakuda_shunko": { baseDamage: YORUICHI.damage.shunkoM1, particle: "yoruichi:raio", dot: null, animation: "slash", handFlash: false },
+  "fbichigo:dark_flame_sword": { baseDamage: ICHIGO_FB.damage.m1, particle: "minecraft:crit_particle", dot: null, animation: "slash", handFlash: false },
+  "fbichigo:fullbringers_blade": { baseDamage: ICHIGO_FB.damage.m1Awk, particle: "minecraft:crit_particle", dot: null, animation: "slash", handFlash: false },
+  "orihime:m1_rikka": { baseDamage: ORIHIME.damage.m1, particle: "minecraft:villager_happy", dot: null, animation: "slash", handFlash: false },
+  "chad:m1_direito": { baseDamage: CHAD.damage.m1Right, particle: "minecraft:crit_particle", dot: null, animation: "slash", handFlash: false },
+  "chad:m1_esquerdo": { baseDamage: CHAD.damage.m1Left, particle: "minecraft:crit_particle", dot: null, animation: "slash", handFlash: false },
+  "chad:m1_gigante": { baseDamage: CHAD.damage.m1Giant, particle: "minecraft:crit_particle", dot: null, animation: "slash", handFlash: false },
+  "tsukishima:m1_sword_of_the_end": { baseDamage: TSUKISHIMA.damage.m1, particle: "minecraft:crit_particle", dot: null, animation: "slash", handFlash: false },
+  "urahara:m1_benihime": { baseDamage: URAHARA.damage.m1, particle: "urahara:lamina", dot: null },
+  "urahara:m1_benihime_awakened": { baseDamage: URAHARA.damage.awakenedM1, particle: "urahara:lamina", dot: null },
   // Tenken: a cada 3 golpes o braço do Myō'ō corta a frente (125%)
   "komamura:m1_tenken": {
     baseDamage: DAMAGE.tenkenM1,
@@ -19380,7 +19727,7 @@ const MELEE_WEAPONS = {
     baseDamage: 75,
     particle: "shinji:gold",
     dot: null,
-    animation: "slash",
+    // A animacao propria ja e chamada por shinji.melee; sem segundo corte Vizard.
   },
   "ichigo:m1_zangetsu": {
     baseDamage: DAMAGE.m1,
@@ -19617,6 +19964,8 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
   // preso no Teatro de Títeres: o golpe nao sai (vale pros dois lados)
   if (isFrozen(damagingEntity) || isMayuriParalyzed(damagingEntity)) return;
 
+  if (yoruichi.imageHit(hitEntity)) return;
+
   // bater num clone do Aizen (ate de mao vazia) e errar o golpe
   if (hitEntity?.typeId === AIZEN.cloneType) {
     aizenCloneStruck(hitEntity, damagingEntity);
@@ -19640,11 +19989,12 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
   }
 
   if (weapon) {
+    noteLastAttack(damagingEntity, held.typeId, true);
     if (!awakened && weapon.awardsAwakening !== false) {
       addAwakening(damagingEntity, 1);
     }
 
-    if (weapon.animation) playVizardAnimation(damagingEntity, weapon.animation);
+    if (weapon.animation) playVizardAnimation(damagingEntity, weapon.animation, weapon.handFlash !== false);
 
     const dim = damagingEntity.dimension;
     const dir = forwardDirection(damagingEntity);
@@ -19689,9 +20039,18 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       // Kyōka Suigetsu: marca o alvo, e o golpe muda na ilusao e no Betrayal
       const kyokaStrike = isKyoka(held.typeId) ? aizenKyokaStrike(damagingEntity, hitEntity) : null;
       if (kyokaStrike) baseDamage = kyokaStrike.damage;
+      // Sword of the End: marca o alvo no Book e, com as Falsas Memorias, copia o m1 dele
+      if (held.typeId === TSUKISHIMA.m1Item) {
+        tsukishima.mark(damagingEntity, hitEntity);
+        baseDamage = tsukishima.m1Damage(damagingEntity, hitEntity, baseDamage);
+      }
       const totalDamage = baseDamage * dmgMultiplier(damagingEntity);
       try {
+        const before = hitEntity.getComponent("minecraft:health")?.currentValue ?? 0;
         dealDamage(hitEntity, totalDamage, damagingEntity);
+        if (held.typeId === "isshin:m1_engetsu" && (hitEntity.getComponent("minecraft:health")?.currentValue ?? 0) < before) isshin.melee(damagingEntity, hitEntity);
+        if (held.typeId === "yoruichi:m1_hakuda_shunko" &&
+            (hitEntity.getComponent("minecraft:health")?.currentValue ?? 0) < before) yoruichi.melee(damagingEntity, hitEntity);
       } catch (e) {
         // ignora
       }
@@ -19962,7 +20321,7 @@ system.runInterval(() => {
 system.runInterval(() => {
   // segura quem esta preso no Teatro
   for (const player of world.getPlayers()) {
-    if (!isFrozen(player)) continue;
+    if (!isFrozen(player) || urahara.isBound(player) || yoruichi.isBusy(player) || yoruichi.isStunned(player)) continue;
     try {
       player.addEffect("slowness", 40, { amplifier: 255, showParticles: false });
     } catch (e) {}
@@ -20105,7 +20464,7 @@ system.runInterval(() => {
         applyCharacterEffects(
           player,
           f?.health ?? c.health,
-          f?.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
+          f?.speedAmplifier ?? c?.speedAmplifier ?? BASE_SPEED_AMPLIFIER,
           "regenAmplifier" in (f ?? {}) ? f.regenAmplifier : REGEN_AMPLIFIER,
           f?.extraEffects
         );
@@ -20157,6 +20516,10 @@ system.runInterval(() => {
         ? `   §5✦ Metamorfose${resist ? ` §d-${Math.round(resist * HOGYOKU.monsterResist.step * 100)}% dano` : ""}`
         : `   §5🧬 Evolution: ${evolutionOf(player)}%${hogyokuCocoons.has(player.id) ? " §d✦casulo" : ""}`;
     }
+
+    if (character?.id === "tsukishima") awakeningPart = tsukishima.hud(player);
+    if (character?.id === "chad") awakeningPart += chad.hud(player);
+    if (character?.id === "orihime") awakeningPart += orihime.hud(player);
 
     // so manda pro cliente quando o texto muda (ou a cada 1,5s pra nao sumir)
     const barText =
@@ -20396,6 +20759,14 @@ world.beforeEvents.playerBreakBlock.subscribe((ev) => {
 
 world.afterEvents.playerLeave.subscribe((ev) => {
   const playerId = ev.playerId;
+  isshin.leave(playerId);
+  urahara.leave(playerId);
+  yoruichi.leave(playerId);
+  tsukishima.leave(playerId);
+  chad.leave(playerId);
+  orihime.leave(playerId);
+  ichigoFB.leave(playerId);
+  lastAttackMap.delete(playerId);
   removeZonesOwnedBy(playerId);
   removeCursesBy(playerId);
   warnedOffhand.delete(playerId);
@@ -20424,6 +20795,215 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   komamuraCleanup(playerId);
 });
 
+
+const isshin = createIsshin({
+  getActiveCharacter, isDownOrGone, isOwnSummon, tryUseSkill, dealDamage, dmgMultiplier,
+  playVizardAnimation, shakeNear, setPermanentEffect, getAwakening,
+  setAwakening: (p,n) => p.setDynamicProperty(DP.awakening,n),
+  isBlocked: p => isFrozen(p) || isMayuriParalyzed(p) || !!skillBlockingZoneFor(p) || isMugetsuWeakened(p),
+  trackAttack, touchAttack, drawCrescent, crescentFrame, arcAlong, isRespiring, showRespiraGuard,
+});
+
+const yoruichi = createYoruichi({
+  getActiveCharacter, isAwakened, isDownOrGone, targetInView, isOwnSummon,
+  tryUseSkill, dealDamage, dmgMultiplier, playVizardAnimation, shakeNear, setPermanentEffect,
+  isMovementBlocked: e => isFrozen(e, true) || isMayuriParalyzed(e) || !!trappingZoneFor(e),
+  blocksControl: (target, source) => isIntocable(target) || urahara.blocksDamage(target, source),
+  cameraClaimed: p => shinji.isInverted(p) || !!p.getDynamicProperty(DP.tallView),
+});
+
+const urahara = createUrahara({
+  getActiveCharacter, isAwakened, isDownOrGone, targetInView, tierOfPlayer,
+  tryUseSkill, dealDamage, dmgMultiplier, playVizardAnimation, shakeNear,
+  fireEnergySphere, fireCrescent, trackAttack, touchAttack, cancelAttacksNear, isIntocable,
+  otherJumpLock: e => (jumpLockUntil.get(e.id) ?? 0) > system.currentTick ||
+    (ginParalyzed.get(e.id) ?? 0) > system.currentTick || isMayuriParalyzed(e),
+});
+/* ---------------------------------------------------------
+   Tsukishima Shukuro - ponte entre o tsukishima.js e o resto do addon
+   --------------------------------------------------------- */
+
+// ultimo ataque (skill ou m1) de cada player: alimenta o registro do Book of the
+// End ("Ultimo ataque") e o "Hits nao tomados"
+const lastAttackMap = new Map(); // id -> { name, tick }
+
+function noteLastAttack(player, itemId, melee) {
+  try {
+    lastAttackMap.set(player.id, {
+      name: SKILL_NAMES[itemId] ?? (melee ? "M1" : itemId),
+      tick: system.currentTick,
+    });
+  } catch (e) {}
+}
+
+const TSUKISHIMA_DEBUFF_NAMES = {
+  slowness: "Lentidão",
+  weakness: "Fraqueza",
+  poison: "Veneno",
+  fatal_poison: "Veneno fatal",
+  wither: "Wither",
+  blindness: "Cegueira",
+  nausea: "Náusea",
+  hunger: "Fome",
+  mining_fatigue: "Fadiga",
+  darkness: "Escuridão",
+  levitation: "Levitação",
+};
+
+function tsukishimaDebuffsOf(entity) {
+  const out = [];
+  try {
+    for (const effect of entity.getEffects()) {
+      const name = TSUKISHIMA_DEBUFF_NAMES[String(effect.typeId).replace("minecraft:", "")];
+      if (name) out.push(name);
+    }
+  } catch (e) {}
+  try {
+    if (isMarked(entity)) out.push("Marcado");
+    if (fragilityMultiplierOf(entity) > 1) out.push("Fragilização");
+    if (vulnerabilityMultiplierOf(entity) > 1) out.push("Vulnerável");
+    if (isFrozen(entity) || isMayuriParalyzed(entity)) out.push("Paralisado");
+    if (burns.has(entity.id)) out.push("Queimadura");
+  } catch (e) {}
+  return out;
+}
+
+function skillCooldownLeftTicks(player, key) {
+  const duration = SKILL_COOLDOWN_TICKS[key];
+  if (!duration) return 0;
+  const now = system.currentTick;
+  const cdKey = cdKeyForSkill(key);
+  if (!onCooldown(player, cdKey, duration, now)) return 0;
+  return duration - (now - (tickOf(player, cdKey) ?? now));
+}
+
+// liga o recarrego de uma skill sem ela ter sido usada (Errar o ataque)
+function forceSkillCooldown(player, key) {
+  const duration = SKILL_COOLDOWN_TICKS[key];
+  if (!duration) return;
+  const cdKey = cdKeyForSkill(key);
+  setCooldown(player, cdKey, system.currentTick);
+  const name = SKILL_NAMES[key] ?? key;
+  system.runTimeout(() => {
+    try {
+      if (!onCooldown(player, cdKey, duration, system.currentTick)) {
+        player.sendMessage(`§a${name} §frecarregou e já pode ser usada de novo!`);
+      }
+    } catch (e) {}
+  }, duration);
+}
+
+// skills (com recarga) que o personagem atual do player tem; os menus (Hadōs,
+// Bakudōs...) entram como as entradas internas de cada um
+function skillKeysOfPlayer(entity) {
+  const keys = new Set();
+  try {
+    const character = getActiveCharacter(entity);
+    if (!character) return [];
+    const items = getActiveItemsForPlayer(entity, character);
+    for (const slot in items) {
+      const id = items[slot];
+      if (!id) continue;
+      if (id in SKILL_COOLDOWN_TICKS) keys.add(id);
+      else for (const k in SKILL_COOLDOWN_TICKS) if (k.startsWith(id + ".")) keys.add(k);
+    }
+  } catch (e) {}
+  return [...keys];
+}
+
+// dano do m1 do personagem atual (Falsas Memorias)
+function m1DamageOfPlayer(entity) {
+  try {
+    const character = getActiveCharacter(entity);
+    if (!character) return undefined;
+    const weapon = MELEE_WEAPONS[getActiveItemsForPlayer(entity, character)?.[0]];
+    return typeof weapon?.baseDamage === "number" ? weapon.baseDamage : undefined;
+  } catch (e) {
+    return undefined;
+  }
+}
+
+function maxVirtualHealth(entity) {
+  const hp = entity.getComponent("minecraft:health");
+  return hp ? hp.effectiveMax * healthScaleOf(entity) : 0;
+}
+
+// "Voce foi atacado por...": o Tsukishima sorteia um outro personagem e uma skill
+// DELE (m1 + pelo menos uma skill unica). Os danos saem do DAMAGE do addon, entao
+// acompanham o balanceamento; as super/awakening ficam de fora
+const TSUKISHIMA_ATTACK_POOL = [
+  { id: "ichigo", name: "Ichigo", skills: [["M1 Zangetsu", DAMAGE.m1], ["Getsuga Tenshou", DAMAGE.tenshou]] },
+  { id: "byakuya", name: "Byakuya", skills: [["Senbonzakura", DAMAGE.byakuyaM1], ["Senbonzakura Bloodshed", DAMAGE.bloodshed]] },
+  { id: "kenpachi", name: "Kenpachi", skills: [["M1 Zanpakuto", DAMAGE.kenpachiM1], ["Hell's Cut", DAMAGE.hellsCut]] },
+  { id: "mayuri", name: "Mayuri", skills: [["M1 Ashisogi Jizō", DAMAGE.mayuriM1], ["Poison Slash", DAMAGE.poisonSlash]] },
+  { id: "grimmjow", name: "Grimmjow", skills: [["M1 Pantera", DAMAGE.grimmjowM1], ["Gran Rey Cero", DAMAGE.granReyCero]] },
+  { id: "ulquiorra", name: "Ulquiorra", skills: [["M1 Zanpakuto", DAMAGE.ulquiorraM1], ["Cero Oscuras", DAMAGE.ceroOscuras]] },
+  { id: "starkk", name: "Starkk", skills: [["M1 Zanpakuto", DAMAGE.starkkM1 * STARKK_DAMAGE_MULTIPLIER], ["Slash Barrage", DAMAGE.slashBarrage * STARKK_DAMAGE_MULTIPLIER]] },
+  { id: "yammy", name: "Yammy", skills: [["M1 Puño", DAMAGE.yammyM1], ["Wrath's Punch", DAMAGE.wrathsPunch]] },
+  { id: "harribel", name: "Harribel", skills: [["M1 Zanpakuto", DAMAGE.harribelM1], ["Tiburón Slash", DAMAGE.tiburonSlash]] },
+  { id: "barragan", name: "Barragan", skills: [["M1 Hacha", DAMAGE.barraganM1], ["Royal Cleave", DAMAGE.royalCleave]] },
+  { id: "szayelaporro", name: "Szayelaporro", skills: [["M1 Zanpakuto", DAMAGE.szayelM1], ["Rush and Pierce", DAMAGE.rushAndPierce]] },
+  { id: "aaroniero", name: "Aaroniero", skills: [["M1 Zanpakuto", DAMAGE.aaronieroM1], ["Cero Metálico", DAMAGE.ceroMetalico]] },
+  { id: "nnoitra", name: "Nnoitra", skills: [["M1 Zanpakuto", DAMAGE.nnoitraM1], ["Duro Slash", DAMAGE.duroSlash]] },
+  { id: "ichigo_vizard", name: "Ichigo (Vizard)", skills: [["M1 Zangetsu", DAMAGE.vizardM1], ["Descent Tenshō", DAMAGE.descentTensho]] },
+  { id: "gin", name: "Gin", skills: [["M1 Shinso", DAMAGE.ginM1], ["Extended Blade", DAMAGE.ginExtendedBlade], ["Pursuing Blade", DAMAGE.ginPursuingBlade]] },
+  { id: "hitsugaya", name: "Hitsugaya", skills: [["M1 Hyōrinmaru", DAMAGE.hitsugayaM1], ["Ryūsenka", DAMAGE.ryusenka]] },
+  { id: "shunsui", name: "Shunsui", skills: [["M1 Katen Kyokotsu", DAMAGE.shunsuiM1], ["Takaoni", DAMAGE.takaoni]] },
+  { id: "soifon", name: "Soi Fon", skills: [["M1 Suzumebachi", DAMAGE.soifonM1], ["Nigeki Kessatsu", 800]] },
+  { id: "rukia", name: "Rukia", skills: [["M1 Sode no Shirayuki", DAMAGE.rukiaM1], ["White Sword", DAMAGE.whiteSword]] },
+  { id: "shinji", name: "Shinji", skills: [["Triple Slash", SHINJI.tripleDamage], ["Cero", SHINJI.ceroDamage]] },
+  { id: "ukitake", name: "Ukitake", skills: [["M1 Sōgyo no Kotowari", DAMAGE.ukitakeM1], ["Double Slam", DAMAGE.doubleSlam]] },
+  { id: "tosen", name: "Tōsen", skills: [["M1 Suzumushi", DAMAGE.tosenM1], ["Hadō #88 Hiryū Gekizoku Shinten Raihō", DAMAGE.hado88]] },
+  { id: "aizen", name: "Aizen", skills: [["M1 Kyōka Suigetsu", DAMAGE.aizenM1], ["Fool's Trick", DAMAGE.aizenFoolsTrick]] },
+  { id: "aizen_hogyoku", name: "Aizen (Hōgyoku)", skills: [["M1 Kyōka Suigetsu", DAMAGE.aizenHogyokuM1], ["Fragor", DAMAGE.fragor]] },
+  { id: "ichigo_dangai", name: "Ichigo (Dangai)", skills: [["M1 Zangetsu", DAMAGE.dangaiM1], ["Getsuga Tenshou (Dangai)", DAMAGE.dangaiGetsuga]] },
+  { id: "isshin", name: "Isshin", skills: [["M1 Engetsu", ISSHIN.damage.m1], ["Getsuga Tenshō", ISSHIN.damage.tensho]] },
+  { id: "yoruichi", name: "Yoruichi", skills: [["M1 Hakuda", YORUICHI.damage.m1], ["Thundersaw", YORUICHI.damage.saw]] },
+  { id: "urahara", name: "Urahara", skills: [["M1 Benihime", URAHARA.damage.m1], ["Nake", URAHARA.damage.nake]] },
+  { id: "yamamoto", name: "Yamamoto", skills: [["M1 Ryūjin Jakka", DAMAGE.yamamotoM1], ["Ittō Kasō", DAMAGE.ittoKaso]] },
+  { id: "unohana", name: "Unohana", skills: [["M1 Zanpakuto", DAMAGE.unohanaM1], ["Hadō #33 Sōkatsui", DAMAGE.sokatsui]] },
+  { id: "komamura", name: "Komamura", skills: [["M1 Tenken", DAMAGE.tenkenM1], ["Destructive Slash", DAMAGE.destructiveSlash]] },
+];
+
+const tsukishima = createTsukishima({
+  getActiveCharacter, isDownOrGone, isAwakened, getAwakening,
+  setAwakening: (p, n) => p.setDynamicProperty(DP.awakening, n),
+  tryUseSkill, dealDamage, healVirtual, virtualHealth,
+  maxHealth: maxVirtualHealth,
+  debuffsOf: tsukishimaDebuffsOf,
+  lastAttackOf: (e) => lastAttackMap.get(e.id),
+  cooldownLeftTicks: skillCooldownLeftTicks,
+  forceCooldown: forceSkillCooldown,
+  skillKeysOf: skillKeysOfPlayer,
+  m1DamageOf: m1DamageOfPlayer,
+  attackPool: TSUKISHIMA_ATTACK_POOL,
+  isBlocked: (p) => isFrozen(p) || isMayuriParalyzed(p) || !!skillBlockingZoneFor(p) || isMugetsuWeakened(p),
+});
+
+
+// Chad (Yasutora Sado): braços alternados, Blindaje/Carga e o awakening Brazos del Gigante
+const ichigoFB = createIchigoFullbringer({
+  getActiveCharacter, isDownOrGone, tryUseSkill, dealDamage, dmgMultiplier,
+  entitiesInFrontBox, forwardDirection,
+  dashStrength: DASH_HORIZONTAL_STRENGTH,
+});
+const chad = createChad({
+  getActiveCharacter, isDownOrGone, isAwakened, getInv,
+  tryUseSkill, dealDamage, dmgMultiplier, entitiesInFrontBox, forwardDirection,
+  paralyzeFor, isIntocable,
+});
+
+// Orihime Inoue: escudo Santen Kesshun, rejeição de dano e Rejeição Total
+const orihime = createOrihime({
+  getActiveCharacter, isDownOrGone, tryUseSkill, dealDamage, dmgMultiplier,
+  entitiesInFrontBox, forwardDirection, targetInView, nameOf, tierOfPlayer,
+  healVirtual, fullHeal, cleanseNegativeEffects, cancelAttacksNear,
+  getAwakening, setAwakening: (p, n) => p.setDynamicProperty(DP.awakening, n),
+  skillBlockingZoneFor,
+});
+
+// Migra jogadores presentes tambem em /reload, sem reativar movimentos removidos.
+system.run(() => { for (const player of world.getPlayers()) { clearLegacyMovement(player); urahara.onSpawn(player, true); yoruichi.onSpawn(player); isshin.onSpawn(player, true); } });
 
 const shinji = createShinji({
   getActiveCharacter, getAwakening, isAwakened, addAwakening,

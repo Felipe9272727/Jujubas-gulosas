@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "yoruichi:thunderous_smash",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "yoruichi:thunderous_smash",
+      "minecraft:display_name": {
+        "value": "Thunderous Smash"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "yoruichi_thunderous_smash",
+        "duration": 30
+      }
+    }
+  }
+}

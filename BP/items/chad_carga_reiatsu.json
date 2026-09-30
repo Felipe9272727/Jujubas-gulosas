@@ -1,0 +1,20 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "chad:carga_reiatsu",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "chad:carga_reiatsu",
+      "minecraft:display_name": {
+        "value": "Carga Reiatsu"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false
+    }
+  }
+}

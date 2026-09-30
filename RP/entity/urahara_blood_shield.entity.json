@@ -1,0 +1,29 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "urahara:blood_shield",
+      "min_engine_version": "1.13.0",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/urahara_blood_shield"
+      },
+      "geometry": {
+        "default": "geometry.urahara_blood_shield"
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ],
+      "animations": {
+        "pulse": "animation.urahara.shield.pulse"
+      },
+      "scripts": {
+        "animate": [
+          "pulse"
+        ]
+      }
+    }
+  }
+}

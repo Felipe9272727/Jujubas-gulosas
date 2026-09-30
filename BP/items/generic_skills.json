@@ -10,7 +10,7 @@
     "components": {
       "minecraft:icon": "multiversal:generic_skills",
       "minecraft:display_name": {
-        "value": "Skills"
+        "value": "Pressão Espiritual"
       },
       "minecraft:max_stack_size": 1,
       "minecraft:hand_equipped": true,

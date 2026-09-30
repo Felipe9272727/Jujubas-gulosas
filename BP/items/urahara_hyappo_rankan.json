@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "urahara:hyappo_rankan",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "urahara:hyappo_rankan",
+      "minecraft:display_name": {
+        "value": "Bakudō #62 — Hyappo Rankan"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "urahara_hyappo_rankan",
+        "duration": 30
+      }
+    }
+  }
+}

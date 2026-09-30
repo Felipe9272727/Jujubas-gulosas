@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "yoruichi:utsusemi",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "yoruichi:utsusemi",
+      "minecraft:display_name": {
+        "value": "Utsusemi"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "yoruichi_utsusemi",
+        "duration": 15
+      }
+    }
+  }
+}
