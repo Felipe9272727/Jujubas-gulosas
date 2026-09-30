@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "ichigosf:momentums_slash",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "ichigosf:momentums_slash",
+      "minecraft:display_name": {
+        "value": "Momentum's Slash"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "ichigosf_momentums_slash",
+        "duration": 15
+      }
+    }
+  }
+}

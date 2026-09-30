@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 1201 checks na simulação, zero exceções. Packs na versão 1.24.0.
+- **Estado**: 1259 checks na simulação, zero exceções. Packs na versão 1.28.0.
 - **Base**: a partir da 1.20.0 o repo parte da **1.19.25 (TosenVisored)** que o
   usuário mandou em `.mcaddon` — ela descende da 1.14.0 daqui (mesmos UUIDs) e foi
   desenvolvida fora deste branch. Foi importada byte a byte no commit
@@ -13,6 +13,13 @@ commitado e enviado.
 - **1.23.1 (ParticlesFix)**: o usuário mexeu por fora e mandou o `.mcaddon`;
   importada byte a byte no commit `724380b` (redução de dano por tier e
   partículas próprias do Ichigo, Kenpachi, Mayuri e Byakuya).
+- **1.27.6 (IchigoFullbringer)**: importada byte a byte no commit `7e406af`.
+  Trouxe a raça Fullbringer e módulos próprios em `BP/scripts/` (`isshin.js`,
+  `yoruichi.js`, `urahara.js`, `tsukishima.js`, `chad.js`, `orihime.js`,
+  `ichigo_fullbringer.js`), cada um criado com a api injetada pelo `main.js`.
+  Na passagem pro pipeline: o `deactivateCharacter` passou a tirar também os
+  itens restaurados pelo reset (a Kyōka ficava), um som inválido no módulo do
+  Fullbringer e testes do Starkk/Minami atualizados pras mudanças dele.
 
 ## Como trabalhar aqui
 
@@ -44,7 +51,7 @@ tools/
   textures.py           grids de caracteres + paletas = FONTE das texturas do addon
   boxmodel.py           base comum dos modelos de caixa (rig do player, UV, textura)
   hollow_model.py       modelo dos attachables do Ichigo Vizard
-  aizen_clone_model.py  modelo do clone dos dois Aizen
+  tensa_sf_model.py     casaco da Tensa Zangetsu (Ichigo SF)
   mugetsu_model.py      cabelo, faixas e hakama do Mugetsu (Ichigo Dangai)
   komamura_model.py     braço, punho, guarda e armadura do Myō'ō (Komamura)
   gen_textures.py       grids -> PNG (e --check)
@@ -94,15 +101,18 @@ menu**. Tabela gerada do registro do `main.js`:
 | 2 | Mayuri Kurotsuchi (Shikai) | 600 | super: Konjiki Ashisogi Jizō |
 | 2 | Rukia Kuchiki (Sode no Shirayuki) | 600 | super |
 | 3 | Zaraki Kenpachi | 1700 | Pressão (tapa-olho removido) |
-| 3 | **Retsu Unohana** | 2000 | super: Kaidō Expert |
+| 3 | Retsu Unohana | 2000 | super: Kaidō Expert |
+| 4 | Yoruichi Shihōin | 4000 | Shunkō: Raijin Senkei (em `yoruichi.js`) |
 | 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000), asas/cauda de partícula |
 | 4 | Soi Fon (Suzumebachi) | 2000 | super: Jakuhō Raikōben |
-| 4 | **Sajin Komamura** | 2300 | Bankai: Kokujō Tengen Myō'ō (3000, vira o gigante) |
+| 4 | Sajin Komamura | 2300 | Bankai: Kokujō Tengen Myō'ō (3000, vira o gigante) |
+| 5 | Isshin Kurosaki | 3400 | super: Meu Sol: Masaka (em `isshin.js`) |
+| 5 | Kisuke Urahara | 4000 | Just an ordinary shopkeeper. (4500) (em `urahara.js`) |
 | 5 | Gin Ichimaru | 4000 | super: Kamishini no Yari |
 | 5 | Shunsui Kyoraku (Katen Kyokotsu) | 4500 | super: Karamatsu Shinjū |
 | 5 | Jūshiro Ukitake (Sōgyo no Kotowari) | 4400 | super |
-| 6 | **Sousuke Aizen (Captain's Fight)** | 5500 | super: Hadō #90 Kurohitsugi |
-| 7 | **Yamamoto Genryūsai** | 8500 | Bankai: Zanka no Tachi |
+| 6 | Sousuke Aizen (Captain's Fight) | 5500 | super: Hadō #90 Kurohitsugi |
+| 7 | Yamamoto Genryūsai | 8500 | Bankai: Zanka no Tachi |
 
 ### Hollow
 | Tier | Personagem | Vida | Awakening / super |
@@ -114,18 +124,27 @@ menu**. Tabela gerada do registro do `main.js`:
 | 3 | Ulquiorra Cifer | 1600 | Murciélago (2000) → Segunda Etapa |
 | 3 | Tier Harribel | 2600 | Tiburón (3000) |
 | 4 | Barragan Louisenbairn | 3000 | Arrogante |
-| 4 | Coyote Starkk | 4000 | Los Lobos (4000) |
 | 5 | Yammy Llargo | 1000 | Ira (6000) |
+| 6 | Coyote Starkk | 5000 | Los Lobos (5000); todo dano dele ×1,6 |
+
+### Fullbringer
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 2 | Orihime Inoue | 800 | super: Sōten Kisshun (em `orihime.js`) |
+| 3 | Shukuro Tsukishima (Book of the End) | 1600 | Escritas no lugar do awakening (em `tsukishima.js`) |
+| 3 | Yasutora Sado (Chad) | 1000 | Brazos del Gigante (em `chad.js`) |
 
 ### Híbrido
 | Tier | Personagem | Vida | Awakening / super |
 |---|---|---|---|
 | 2 | Ichigo Kurosaki (Shikai) | 700 | Tensa Zangetsu (1100) + Máscara |
 | 3 | Kaname Tōsen (Suzumushi) | 1500 | super: Enma Kōrogi; Visored como forma alternativa |
+| 3 | Ichigo Kurosaki (Fullbringer) | 1200 | Fullbringer Completo (1800) (em `ichigo_fullbringer.js`) |
+| 3 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
 | 4 | Shinji Hirako | 2600 | Sakanade (em `shinji.js`) |
-| 4 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
-| 7 | **Sousuke Aizen (Hōgyoku)** | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
-| 7 | **Ichigo Kurosaki (Dangai)** | 7500 | super: Mugetsu (Getsuga Tenshou Final) |
+| 4 | **Ichigo Kurosaki (SF)** | 3000 | Bankai: Tensa Zangetsu (3500, speed 7 correndo) |
+| 7 | Sousuke Aizen (Hōgyoku) | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
+| 7 | Ichigo Kurosaki (Dangai) | 7500 | super: Mugetsu (Getsuga Tenshou Final) |
 
 O **tier** não é só etiqueta: a Pressão Espiritual (skill genérica do slot 7)
 machuca quem está 2+ tiers abaixo e **mata na hora** quem está 5+ abaixo, e o
@@ -408,9 +427,8 @@ vez de marcar.
 ### Illusion's Mastery e os clones
 
 O clone **não é armor stand** (ver armadilha 14): é a entidade `aizen:clone`,
-com modelo de armor stand vestindo couro branco completo gerado por
-`tools/aizen_clone_model.py` (medidas do `geometry.armor_stand` da Mojang),
-imune a dano, sem loot e com o nome do Aizen sempre visível. Três clones giram
+com modelo humanoide feito à mão pelo usuário na 1.27.6 (textura 128; saiu
+dos geradores, então não é regerado por nenhum script), imune a dano, sem loot e com o nome do Aizen sempre visível. Três clones giram
 em triângulo em volta do alvo (reposicionados todo tick). O Aizen fica
 invisível, o nome some da cabeça e a Kyōka do slot 0 vira a **Kyōka oculta**
 (mesma arma, textura vazia), senão a espada flutuando entregaria onde ele está.
@@ -698,6 +716,46 @@ anterior é apagada por um loop.
   `iceCanReplace` protege (bedrock, baús, portas, camas...), nem gelo nem os
   blocos das caixas do Aizen.
 
+## Ichigo Kurosaki (SF)
+
+Tier 4, Híbrido, 3000 de vida. Config em `ICHIGO_SF`, tudo prefixado
+`ichigosf:`. As duas espadas são ícones de grade 32 (`_sf_zangetsu` e
+`_sf_tensa` no `textures.py`, que o `gen_textures` escala 2x pra dar os 64 de
+sempre): cutelo com cabo cinza, corrente no pomo e a **guarda do Fullbring
+correndo na frente do punho**, do pomo até a base da lâmina.
+
+- **M1 Zangetsu**: 75.
+- **Momentum's Slash**: 2s parado (lentidão 255 + `holdJump`) e **imune a
+  qualquer dano** (`sfImmune`, consultado no `dealDamage` por
+  `ichigoSfBlocks`); 5 cortes em raio 5, 50 cada = 250.
+- **Getsuga Counter**: 5s armado (`sfCounters`); o primeiro golpe que chegar
+  não entra (`ichigoSfCounterIntercept`, logo depois do Arrogant's Counter),
+  ele aparece atrás de quem bateu (`aizenSpotBehind`) e 2 ticks depois solta
+  o Getsuga azul colado (`fireCrescent` com `startAhead: 0`), 330.
+- **AutoAcceptance**: 10s de esquiva: todo golpe com autor é anulado e ele se
+  teleporta 5 blocos pro lado (lado, outro lado, trás — o primeiro livre).
+- **Duality Tenshou**: dois `fireCrescent` com a opção nova **`roll`** (±45°)
+  formando o X, um com `CRESCENT_LOOKS.sfAzul` e outro `sfNegro` (False
+  Getsuga), dividindo o mesmo `hitSet`: quem está no cruzamento toma 800 uma vez.
+- **Bankai: Tensa Zangetsu** (3500): casaco `ichigosf:tensa_coat`
+  (`tools/tensa_sf_model.py`: casaco até o tornozelo, peito aberto com a camisa
+  listrada de preto, antebraços com listras brancas, forro vermelho). O loop de
+  corrida agora lê `sprintSpeedAmplifier` da **forma** antes do personagem:
+  `6` = speed 7 correndo.
+  - M1 Tensa Zangetsu 85. **Rush and Cut**: 10s de cortes em raio 4, 5 por
+    tick, e um `applyKnockback` a cada 2 ticks pra onde ele anda (parado: pra
+    onde olha). **Duality Barrage**: 3 Duality de 300.
+  - **Getsuga Inside-Out**: mira o mais próximo em 32 blocos (sem ninguém não
+    gasta), avança 1,6 bloco/tick perseguindo, ao chegar a 2,2 paralisa 2s,
+    segura 1s com a lâmina atravessada e explode por dentro: 1500.
+  - **Sky Divide**: golpe de cima pra baixo (0,3s) e o getsuga preto com aura
+    azul-céu sai **45° acima de onde ele olha** (`skyDivideDirection`). A opção
+    nova **`grow`** do `fireCrescent` escala raio/arco/espessura com a
+    distância (×7 no fim dos 72 blocos). O fio do arco quebra blocos
+    (`komamuraBreak`) e o terreno volta em 1 minuto. 2500.
+- Limpeza: `ichigoSfCleanup` nos mesmos pontos do Komamura (desativar, morte,
+  sair do mundo).
+
 ## Animações
 
 `RP/animations/vizard.animation.json` define cinco animações e cada ataque tem
@@ -846,6 +904,13 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Titanic Slash | "lentidão 2" lida como lentidão II em quem é acertado, por 5s |
 | Terreno do Komamura | volta em 1 minuto (pedido era "destrói": dá pra deixar permanente tirando o `scheduleRestore`) |
 | Bankai do Komamura | escala 6,25 (~12 blocos); m1 do gigante 45 num arco de 6 blocos |
+| Momentum's Slash | 250 dividido em 5 cortes de 50 nos 2s |
+| Getsuga Counter | o golpe que ativa o contra-ataque não entra (igual ao Arrogant's Counter); ele não fica parado esperando |
+| AutoAcceptance | só desvia de golpe com autor; teleporte de 5 blocos, no máximo um a cada 4 ticks (os golpes no meio também são anulados) |
+| Duality Tenshou | os dois cortes dividem o acerto: 800 uma vez só, não 1600 |
+| Rush and Cut | raio 4; o "deslizar" é knockback de 0,55 a cada 2 ticks |
+| Getsuga Inside-Out | alcance 32, 2s de voo no máximo, paralisia 2s, explode 1s depois de empalar |
+| Sky Divide | 72 blocos, cresce ×7; terreno volta em 1 minuto como o do Komamura |
 
 ## Próximos passos sugeridos
 

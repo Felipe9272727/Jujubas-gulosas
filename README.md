@@ -14,15 +14,18 @@ o tier abre os personagens daquela raça naquele tier.
 | 2 | Mayuri Kurotsuchi (Shikai) | 600 | super: Konjiki Ashisogi Jizō |
 | 2 | Rukia Kuchiki (Sode no Shirayuki) | 600 | super |
 | 3 | Zaraki Kenpachi | 1700 | Pressão (tapa-olho removido) |
-| 3 | **Retsu Unohana** | 2000 | super: Kaidō Expert |
+| 3 | Retsu Unohana | 2000 | super: Kaidō Expert |
+| 4 | Yoruichi Shihōin | 4000 | Shunkō: Raijin Senkei (em `yoruichi.js`) |
 | 4 | Toshiro Hitsugaya (Hyōrinmaru) | 2500 | Daiguren Hyōrinmaru (3000), asas/cauda de partícula |
 | 4 | Soi Fon (Suzumebachi) | 2000 | super: Jakuhō Raikōben |
-| 4 | **Sajin Komamura** | 2300 | Bankai: Kokujō Tengen Myō'ō (3000, vira o gigante) |
+| 4 | Sajin Komamura | 2300 | Bankai: Kokujō Tengen Myō'ō (3000, vira o gigante) |
+| 5 | Isshin Kurosaki | 3400 | super: Meu Sol: Masaka (em `isshin.js`) |
+| 5 | Kisuke Urahara | 4000 | Just an ordinary shopkeeper. (4500) (em `urahara.js`) |
 | 5 | Gin Ichimaru | 4000 | super: Kamishini no Yari |
 | 5 | Shunsui Kyoraku (Katen Kyokotsu) | 4500 | super: Karamatsu Shinjū |
 | 5 | Jūshiro Ukitake (Sōgyo no Kotowari) | 4400 | super |
-| 6 | **Sousuke Aizen (Captain's Fight)** | 5500 | super: Hadō #90 Kurohitsugi |
-| 7 | **Yamamoto Genryūsai** | 8500 | Bankai: Zanka no Tachi |
+| 6 | Sousuke Aizen (Captain's Fight) | 5500 | super: Hadō #90 Kurohitsugi |
+| 7 | Yamamoto Genryūsai | 8500 | Bankai: Zanka no Tachi |
 
 ### Hollow
 | Tier | Personagem | Vida | Awakening / super |
@@ -34,18 +37,27 @@ o tier abre os personagens daquela raça naquele tier.
 | 3 | Ulquiorra Cifer | 1600 | Murciélago (2000) → Segunda Etapa |
 | 3 | Tier Harribel | 2600 | Tiburón (3000) |
 | 4 | Barragan Louisenbairn | 3000 | Arrogante |
-| 4 | Coyote Starkk | 4000 | Los Lobos (4000) |
 | 5 | Yammy Llargo | 1000 | Ira (6000) |
+| 6 | Coyote Starkk | 5000 | Los Lobos (5000); todo dano dele ×1,6 |
+
+### Fullbringer
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 2 | Orihime Inoue | 800 | super: Sōten Kisshun (em `orihime.js`) |
+| 3 | Shukuro Tsukishima (Book of the End) | 1600 | Escritas no lugar do awakening (em `tsukishima.js`) |
+| 3 | Yasutora Sado (Chad) | 1000 | Brazos del Gigante (em `chad.js`) |
 
 ### Híbrido
 | Tier | Personagem | Vida | Awakening / super |
 |---|---|---|---|
 | 2 | Ichigo Kurosaki (Shikai) | 700 | Tensa Zangetsu (1100) + Máscara |
 | 3 | Kaname Tōsen (Suzumushi) | 1500 | super: Enma Kōrogi; Visored como forma alternativa |
+| 3 | Ichigo Kurosaki (Fullbringer) | 1200 | Fullbringer Completo (1800) (em `ichigo_fullbringer.js`) |
+| 3 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
 | 4 | Shinji Hirako | 2600 | Sakanade (em `shinji.js`) |
-| 4 | Ichigo (pós-treino Vizard) | 1500 | Hollowficação → Vasto Lorde aos 100 de vida (3000) |
-| 7 | **Sousuke Aizen (Hōgyoku)** | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
-| 7 | **Ichigo Kurosaki (Dangai)** | 7500 | super: Mugetsu (Getsuga Tenshou Final) |
+| 4 | **Ichigo Kurosaki (SF)** | 3000 | Bankai: Tensa Zangetsu (3500, speed 7 correndo) |
+| 7 | Sousuke Aizen (Hōgyoku) | 7000 | Evolution → casulo → Monster Aizen (8000), permanente |
+| 7 | Ichigo Kurosaki (Dangai) | 7500 | super: Mugetsu (Getsuga Tenshou Final) |
 
 O **tier** não é só etiqueta: a Pressão Espiritual (skill genérica do slot 7)
 machuca quem está 2+ tiers abaixo e **mata na hora** quem está 5+ abaixo, e o
@@ -65,7 +77,7 @@ BP/                     behavior pack
 RP/                     resource pack
   manifest.json
   entity/               override do player (escala do modelo por Molang), boneco, clone, mortos, Myō'ō
-  attachables/          Hollowficação/Vasto Lorde (Vizard), Mugetsu (Dangai) e armadura do Myō'ō (Komamura)
+  attachables/          Hollowficação/Vasto Lorde (Vizard), Mugetsu (Dangai), armadura do Myō'ō (Komamura), casaco da Tensa Zangetsu (Ichigo SF)
   particles/            partículas customizadas (sakura:leaf, mayuri:poison_fog, grimmjow:cero, ...)
   textures/items/*.png  uma textura por item
   textures/item_texture.json
@@ -74,9 +86,9 @@ tools/
   gen_textures.py       renderiza os grids em PNG (upscale nearest 4x)
   boxmodel.py           base dos modelos de caixa (rig do player, UV, textura)
   hollow_model.py       modelo do Ichigo Vizard (attachable)
-  aizen_clone_model.py  modelo do clone dos dois Aizen
   mugetsu_model.py      roupa do Mugetsu do Ichigo Dangai (attachable)
   komamura_model.py     partes do Myō'ō e a armadura do Bankai do Komamura
+  tensa_sf_model.py     casaco da Tensa Zangetsu do Ichigo (SF)
   gen_model.py          renderiza os modelos em .geo.json
   vanilla_sounds.txt    IDs de som do Bedrock, pra validar os sons do script
   validate.py           JSON, itens, texturas, manifests, versões, sons, entidades

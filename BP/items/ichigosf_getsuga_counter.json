@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "ichigosf:getsuga_counter",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "ichigosf:getsuga_counter",
+      "minecraft:display_name": {
+        "value": "Getsuga Counter"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "ichigosf_getsuga_counter",
+        "duration": 25
+      }
+    }
+  }
+}

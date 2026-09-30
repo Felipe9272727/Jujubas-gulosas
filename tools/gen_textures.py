@@ -71,11 +71,14 @@ def render(spec: dict) -> Image.Image:
     return img
 
 
-def scale_for(name: str) -> int:
+def scale_for(name: str, width: int = 16) -> int:
     # skin/geometria de entidade tem tamanho fixo: upscalar quebraria o UV
     if name.startswith("entity/"):
         return 1
-    return PARTICLE_SCALE if name.startswith("particle/") else ITEM_SCALE
+    if name.startswith("particle/"):
+        return PARTICLE_SCALE
+    # icone com grade 32 (mais detalhe) sai 2x: todo icone fica com 64 no disco
+    return max(1, ITEM_SCALE * 16 // width)
 
 
 def main() -> int:
@@ -84,7 +87,7 @@ def main() -> int:
 
     for name, spec in sorted(TEXTURES.items()):
         img = render(spec)
-        scale = scale_for(name)
+        scale = scale_for(name, img.width)
         upscaled = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
 
         target = RP_TEXTURES / f"{name}.png"

@@ -4272,3 +4272,221 @@ TEXTURES.update({
         "grid": ["..bbb...", ".bBBBb..", "bBBBBBb.", "bBBBBBBb", "bBBBBBBb", ".bBBBBb.", "..bbbb..", "........"],
     },
 })
+
+# ---------------------------------------------------------------------------
+# Ichigo Kurosaki (SF): as duas espadas em 32x32 (detalhe da guarda do
+# Fullbring), ícones das skills, partículas e o casaco da Tensa Zangetsu
+# ---------------------------------------------------------------------------
+from tensa_sf_model import TEXTURE_SPEC as _TENSA_SF_TEXTURE  # noqa: E402
+
+TEXTURES["entity/tensa_sf"] = _TENSA_SF_TEXTURE
+
+_SF = {
+    "W": (250, 252, 255, 255),  # fio da lâmina
+    "#": (200, 206, 216, 255),  # aço
+    "%": (140, 148, 162, 255),  # aço na sombra
+    "k": (22, 22, 28, 255),     # preto
+    "K": (48, 48, 58, 255),     # preto claro
+    "s": (176, 180, 190, 255),  # prata da guarda
+    "S": (120, 124, 134, 255),  # prata escura
+    "h": (150, 150, 158, 255),  # cabo cinza
+    "H": (96, 96, 106, 255),    # trama do cabo
+    "c": (170, 170, 178, 255),  # corrente
+    "r": (170, 30, 34, 255),    # vermelho
+    "b": (120, 200, 255, 255),  # azul-céu
+    "B": (60, 130, 230, 255),   # azul
+    "l": (210, 240, 255, 255),  # azul quase branco
+    "n": (10, 10, 14, 255),     # negro do False Getsuga
+    "v": (110, 20, 30, 255),    # vinho
+}
+
+
+def _sf_axes(x, y, size=32):
+    """along: do cabo (canto de baixo-esquerda) pra ponta; perp: + = lado do fio"""
+    X, Y = x + 0.5, size - 0.5 - y
+    return (X + Y) / 2 ** 0.5, (X - Y) / 2 ** 0.5
+
+
+def _sf_zangetsu(x, y):
+    """Zangetsu depois do Fullbring: cutelo largo, cabo cinza com corrente e a
+    guarda de mão do Fullbring correndo NA FRENTE do punho, do pomo à lâmina"""
+    a, p = _sf_axes(x, y)
+    if 1.5 <= a <= 3.5 and abs(p) <= 1.2:
+        return "c" if int(a * 2) % 2 else "S"          # corrente curta no pomo
+    if 3.5 < a <= 13 and abs(p) <= 1.3:
+        return "H" if int(a * 1.5) % 2 else "h"        # cabo
+    if 13 < a <= 15 and -2.6 <= p <= 4.2:
+        return "s" if p < 3 else "S"                    # base da guarda
+    if 4 <= a <= 13 and 2.8 <= p <= 4.2:
+        return "s" if a > 5 else "S"                    # guarda indo na frente do punho
+    if 3.5 <= a <= 5 and 1.2 < p <= 3.2:
+        return "S"                                       # a guarda fecha no pomo
+    tip = a + max(0.0, p) * 0.9
+    if 15 < a and tip <= 43 and -3.4 <= p <= 4.2:
+        if p >= 3:
+            return "W"                                   # fio
+        if p <= -2.4:
+            return "k"                                   # costas escuras
+        return "#" if p > -0.5 else "%"
+    return None
+
+
+def _sf_tensa(x, y):
+    """Tensa Zangetsu (Fullbring): lâmina preta e longa de fio prateado, a
+    guarda do Fullbring envolvendo a mão e a corrente no pomo"""
+    a, p = _sf_axes(x, y)
+    if 1 <= a <= 4 and abs(p) <= 1.1:
+        return "c" if int(a * 2) % 2 else "S"
+    if 4 < a <= 12 and abs(p) <= 1.1:
+        return "r" if int(a * 1.5) % 2 else "k"         # cabo preto e vermelho
+    if 12 < a <= 13.5 and -2.2 <= p <= 3.4:
+        return "s"
+    if 4.5 <= a <= 12 and 2.2 <= p <= 3.4:
+        return "s" if a > 6 else "S"
+    if 4 <= a <= 5.5 and 1.1 < p <= 2.6:
+        return "S"
+    tip = a + max(0.0, p) * 1.2
+    if 13.5 < a and tip <= 44 and -1.8 <= p <= 2.2:
+        if p >= 1.3:
+            return "s"                                   # fio prateado
+        return "k" if p > -1 else "K"
+    return None
+
+
+def _sf_momentum(x, y):
+    dx, dy = x - 7.5, y - 7.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if r <= 2:
+        return "k"
+    for k in range(4):
+        import math
+        ang = math.atan2(dy, dx) + k * math.pi / 2
+        if 3 <= r <= 7 and abs(((ang % (math.pi / 2)) - 0.5)) < 0.12:
+            return "W" if r > 5 else "b"
+    if 6.5 <= r <= 7.2:
+        return "B"
+    return None
+
+
+def _sf_counter(x, y):
+    if 3 <= x <= 5 and 3 <= y <= 12:
+        return "k"                                        # o Ichigo parado
+    if 2 <= x <= 6 and y in (2, 3):
+        return "K"
+    dx, dy = x - 6, y - 7.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if 6 <= r <= 8 and x >= 9:
+        return "W" if r < 7 else "b"
+    return None
+
+
+def _sf_acceptance(x, y):
+    for off, col in ((0, "b"), (4, "B"), (8, "l")):
+        if 2 <= y <= 13 and x == 2 + off + (y % 3 == 0):
+            return col
+        if 3 <= y <= 12 and x == 3 + off and y % 2:
+            return "K"
+    return None
+
+
+def _sf_duality(x, y):
+    if x == y or x + 1 == y:
+        return "n" if 2 <= x <= 13 else None
+    if x + y == 15 or x + y == 16:
+        return "b" if (x + y == 15) else "l"
+    return None
+
+
+def _sf_rush(x, y):
+    if y in (4, 7, 10, 13) and 1 <= x <= 14 and (x + y) % 5 != 0:
+        return "W" if x > 9 else "b"
+    if 11 <= x <= 14 and 5 <= y <= 12 and (x + y) % 3 == 0:
+        return "k"
+    return None
+
+
+def _sf_barrage(x, y):
+    for off in (0, 5, 10):
+        u = x - off
+        if 0 <= u <= 5 and 3 <= y <= 12:
+            if u == (y - 3) * 5 // 9:
+                return "n"
+            if u == 5 - (y - 3) * 5 // 9:
+                return "b"
+    return None
+
+
+def _sf_inside_out(x, y):
+    if y == 7 or y == 8:
+        if x <= 6:
+            return "k" if x < 3 else "s"                  # a lâmina entrando
+    dx, dy = x - 10, y - 7.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if r <= 2:
+        return "W"
+    if r <= 3.5:
+        return "b"
+    if 4.5 <= r <= 5.5 and (x + y) % 2:
+        return "B"
+    return None
+
+
+def _sf_sky(x, y):
+    dx, dy = x - 1, y - 16
+    r = (dx * dx + dy * dy) ** 0.5
+    if 10 <= r <= 12.5 and y <= 13:
+        return "n" if r < 11.5 else "b"
+    if 13 <= r <= 13.8 and y <= 12:
+        return "l"
+    return None
+
+
+def _sf_coat(x, y):
+    if 2 <= y <= 15 and 3 <= x <= 12:
+        if 6 <= x <= 9 and y <= 9:
+            return "W" if y % 2 else "k"                  # peito aberto listrado
+        if x in (5, 10) and y <= 12:
+            return "r"
+        return "k"
+    if y in (0, 1) and 3 <= x <= 12 and x not in (6, 7, 8, 9):
+        return "k"
+    return None
+
+
+def _sf_particle(core, mid, edge):
+    return {
+        "palette": {"e": edge, "m": mid, "c": core},
+        "grid": ["..eeee..", ".emmmme.", "emccccme", "emccccme", "emccccme", "emccccme", ".emmmme.", "..eeee.."],
+    }
+
+
+TEXTURES.update({
+    "items/ichigosf_m1_zangetsu": {"palette": _SF, "grid": _draw(_sf_zangetsu, 32)},
+    "items/ichigosf_m1_tensa": {"palette": _SF, "grid": _draw(_sf_tensa, 32)},
+    "items/ichigosf_momentums_slash": {"palette": _SF, "grid": _draw(_sf_momentum)},
+    "items/ichigosf_getsuga_counter": {"palette": _SF, "grid": _draw(_sf_counter)},
+    "items/ichigosf_auto_acceptance": {"palette": _SF, "grid": _draw(_sf_acceptance)},
+    "items/ichigosf_duality_tenshou": {"palette": _SF, "grid": _draw(_sf_duality)},
+    "items/ichigosf_rush_and_cut": {"palette": _SF, "grid": _draw(_sf_rush)},
+    "items/ichigosf_duality_barrage": {"palette": _SF, "grid": _draw(_sf_barrage)},
+    "items/ichigosf_inside_out": {"palette": _SF, "grid": _draw(_sf_inside_out)},
+    "items/ichigosf_sky_divide": {"palette": _SF, "grid": _draw(_sf_sky)},
+    "items/ichigosf_tensa_coat": {"palette": _SF, "grid": _draw(_sf_coat)},
+    # Getsuga de Fullbringer: azul-claro vivo
+    "particle/ichigosf_azul": _sf_particle((235, 250, 255, 255), (130, 210, 255, 235), (60, 140, 240, 140)),
+    "particle/ichigosf_azul_borda": _sf_particle((255, 255, 255, 255), (180, 236, 255, 240), (110, 200, 255, 150)),
+    # False Getsuga: preto com borda vinho
+    "particle/ichigosf_negro": _sf_particle((4, 4, 6, 255), (20, 14, 18, 235), (60, 20, 28, 140)),
+    "particle/ichigosf_negro_borda": _sf_particle((16, 6, 8, 255), (90, 16, 24, 235), (140, 30, 40, 140)),
+    # aura azul-céu do Sky Divide e da esquiva
+    "particle/ichigosf_aura": _sf_particle((190, 236, 255, 230), (120, 200, 255, 170), (80, 170, 255, 90)),
+    "particle/ichigosf_faisca": {
+        "palette": {"b": (120, 200, 255, 200), "W": (240, 250, 255, 255)},
+        "grid": ["...b....", "...W....", "..bWb...", "bWWWWWb.", "..bWb...", "...W....", "...b....", "........"],
+    },
+    # talho do m1 e do Rush and Cut: risco fino branco-azulado
+    "particle/ichigosf_corte": {
+        "palette": {"b": (150, 210, 255, 150), "W": (250, 252, 255, 255)},
+        "grid": ["......bW", ".....bWb", "....bWb.", "...bWb..", "..bWb...", ".bWb....", "bWb.....", "Wb......"],
+    },
+})

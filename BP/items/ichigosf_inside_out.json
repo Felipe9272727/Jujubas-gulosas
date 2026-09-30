@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "ichigosf:inside_out",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "ichigosf:inside_out",
+      "minecraft:display_name": {
+        "value": "Getsuga Inside-Out"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "ichigosf_inside_out",
+        "duration": 45
+      }
+    }
+  }
+}

@@ -856,6 +856,39 @@
     },
     "fbichigo:bone_chest": {
       "textures": "textures/items/fbichigo_bone_chest"
+    },
+    "ichigosf:m1_zangetsu": {
+      "textures": "textures/items/ichigosf_m1_zangetsu"
+    },
+    "ichigosf:m1_tensa": {
+      "textures": "textures/items/ichigosf_m1_tensa"
+    },
+    "ichigosf:momentums_slash": {
+      "textures": "textures/items/ichigosf_momentums_slash"
+    },
+    "ichigosf:getsuga_counter": {
+      "textures": "textures/items/ichigosf_getsuga_counter"
+    },
+    "ichigosf:auto_acceptance": {
+      "textures": "textures/items/ichigosf_auto_acceptance"
+    },
+    "ichigosf:duality_tenshou": {
+      "textures": "textures/items/ichigosf_duality_tenshou"
+    },
+    "ichigosf:rush_and_cut": {
+      "textures": "textures/items/ichigosf_rush_and_cut"
+    },
+    "ichigosf:duality_barrage": {
+      "textures": "textures/items/ichigosf_duality_barrage"
+    },
+    "ichigosf:inside_out": {
+      "textures": "textures/items/ichigosf_inside_out"
+    },
+    "ichigosf:sky_divide": {
+      "textures": "textures/items/ichigosf_sky_divide"
+    },
+    "ichigosf:tensa_coat": {
+      "textures": "textures/items/ichigosf_tensa_coat"
     }
   }
 }

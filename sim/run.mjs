@@ -6287,6 +6287,246 @@ check("sem a armadura", eqK2.getEquipment("Chest")?.typeId !== "komamura:myoo_ch
 check("nenhuma parte do Myō'ō sobrando", myooParts("komamura:punho").length + myooParts("komamura:braco").length + myooParts("komamura:guarda").length === 0);
 noNewErrors("desativar sem erro", mark);
 
+/* ================= Ichigo Kurosaki (SF) ================= */
+
+const SF = game.ICHIGO_SF;
+function sfHits(target, since, amount) {
+  return log.damages.slice(since).filter((d) => d.target === target.name && (amount === undefined || Math.abs(virtualDamage(target, d) - amount) < 0.6));
+}
+function sfDist(a, b) {
+  return Math.hypot(a.location.x - b.location.x, a.location.y - b.location.y, a.location.z - b.location.z);
+}
+function sfCd(p, key) {
+  p.setDynamicProperty("mv:cd_" + key.replace(":", "_"), undefined);
+}
+
+scenario("Ichigo (SF): ativação (Híbrido, Tier 4)");
+mark = errors.length;
+const sf = await newPlayerAs("IchigoSF", { x: 70000, y: 64, z: 70000 }, "ichigo_sf");
+noNewErrors("ativar o Ichigo (SF) sem erro", mark);
+check("registro: Híbrido, Tier 4", RACE_TIER.ichigo_sf?.race === "hybrid" && RACE_TIER.ichigo_sf?.tier === 4);
+check("correções: Vizard tier 3, Fullbringer híbrido, Isshin tier 5",
+  RACE_TIER.ichigo_vizard?.tier === 3 && RACE_TIER.ichigo_fullbringer?.race === "hybrid" && RACE_TIER.isshin?.tier === 5);
+check("vida máxima 3000", virtualMax(sf) === 3000, String(virtualMax(sf)));
+check(
+  "Zangetsu, Momentum, Counter, AutoAcceptance e Duality nos slots 0-4",
+  JSON.stringify(slotIds(sf, 5)) ===
+    JSON.stringify(["ichigosf:m1_zangetsu", "ichigosf:momentums_slash", "ichigosf:getsuga_counter", "ichigosf:auto_acceptance", "ichigosf:duality_tenshou"]),
+  JSON.stringify(slotIds(sf, 5))
+);
+sf._view = { x: 1, y: 0, z: 0 };
+const alvoSf = createDummy("AlvoSF", { x: 70002, y: 64, z: 70000 }, 500000);
+dmgBefore = log.damages.length;
+hitWith(sf, alvoSf, "ichigosf:m1_zangetsu");
+check("m1 Zangetsu: 75", sfHits(alvoSf, dmgBefore, 75).length === 1);
+
+scenario("Momentum's Slash: imune e parado por 2s, cortes em volta de 5 blocos (250)");
+mark = errors.length;
+const grimSf = await newPlayerAs("GrimSF", { x: 70000, y: 64, z: 70003 }, "grimmjow");
+const longeSf = createDummy("LongeSF", { x: 70000, y: 64, z: 69992 }, 500000);
+fullHp(sf);
+dmgBefore = log.damages.length;
+useItem(sf, "ichigosf:momentums_slash");
+advanceTicks(2, "momentum");
+check("fica parado (lentidão máxima)", (sf.getEffect("slowness")?.amplifier ?? 0) >= 255);
+hitWith(grimSf, sf, "grimmjow:m1_zanpakuto");
+check("imune a dano durante o golpe", sfHits(sf, dmgBefore).length === 0);
+advanceTicks(45, "momentum-fim");
+const totalMom = sfHits(alvoSf, dmgBefore).reduce((s, d) => s + virtualDamage(alvoSf, d), 0);
+check("250 no total em quem está a 2 blocos", Math.abs(totalMom - game.DAMAGE.momentumsSlash) < 1, String(totalMom));
+check("não pega a 8 blocos", sfHits(longeSf, dmgBefore).length === 0);
+dmgBefore = log.damages.length;
+hitWith(grimSf, sf, "grimmjow:m1_zanpakuto");
+check("depois dos 2s volta a tomar dano", sfHits(sf, dmgBefore).length === 1);
+longeSf.kill();
+noNewErrors("Momentum sem erro", mark);
+
+scenario("Getsuga Counter: atacado em 5s → aparece atrás e solta o Getsuga à queima-roupa (330)");
+mark = errors.length;
+sf.teleport({ x: 70100, y: 64, z: 70000 });
+grimSf.teleport({ x: 70103, y: 64, z: 70000 });
+grimSf._view = { x: -1, y: 0, z: 0 }; // olhando pro Ichigo
+fullHp(sf);
+useItem(sf, "ichigosf:getsuga_counter");
+advanceTicks(20, "counter-armado");
+dmgBefore = log.damages.length;
+hitWith(grimSf, sf, "grimmjow:m1_zanpakuto");
+check("o golpe não entra", sfHits(sf, dmgBefore).length === 0);
+check("aparece atrás de quem atacou", sf.location.x > grimSf.location.x && sfDist(sf, grimSf) < 2.5, JSON.stringify(sf.location));
+advanceTicks(10, "counter-getsuga");
+check("Getsuga de 330 em quem atacou", sfHits(grimSf, dmgBefore, 330).length === 1, JSON.stringify(sfHits(grimSf, dmgBefore).map((d) => virtualDamage(grimSf, d))));
+check("Getsuga azul de Fullbringer", log.particles.some((p) => p.particleId === "ichigosf:azul_borda"));
+dmgBefore = log.damages.length;
+hitWith(grimSf, sf, "grimmjow:m1_zanpakuto");
+check("só um contra-ataque por uso", sfHits(sf, dmgBefore).length === 1);
+sfCd(sf, "ichigosf:getsuga_counter");
+useItem(sf, "ichigosf:getsuga_counter");
+advanceTicks(SF.counter.windowTicks + 5, "counter-expira");
+dmgBefore = log.damages.length;
+hitWith(grimSf, sf, "grimmjow:m1_zanpakuto");
+check("depois de 5s sem golpe a postura acaba", sfHits(sf, dmgBefore).length === 1);
+noNewErrors("Counter sem erro", mark);
+
+scenario("AutoAcceptance: desvia de tudo por 10s teleportando pra fora do golpe");
+mark = errors.length;
+sf.teleport({ x: 70200, y: 64, z: 70000 });
+grimSf.teleport({ x: 70202, y: 64, z: 70000 });
+useItem(sf, "ichigosf:auto_acceptance");
+advanceTicks(2, "acceptance");
+dmgBefore = log.damages.length;
+const antesEsq = { ...sf.location };
+hitWith(grimSf, sf, "grimmjow:m1_zanpakuto");
+check("o golpe não entra", sfHits(sf, dmgBefore).length === 0);
+check("se teleporta pra fora (≥ 3 blocos)", Math.hypot(sf.location.x - antesEsq.x, sf.location.z - antesEsq.z) >= 3, JSON.stringify(sf.location));
+advanceTicks(20, "acceptance-2");
+grimSf.teleport({ x: sf.location.x + 2, y: 64, z: sf.location.z });
+hitWith(grimSf, sf, "grimmjow:m1_zanpakuto");
+check("continua desviando no meio dos 10s", sfHits(sf, dmgBefore).length === 0);
+advanceTicks(SF.autoAcceptance.ticks, "acceptance-fim");
+dmgBefore = log.damages.length;
+grimSf.teleport({ x: sf.location.x + 2, y: 64, z: sf.location.z });
+hitWith(grimSf, sf, "grimmjow:m1_zanpakuto");
+check("depois de 10s volta a tomar dano", sfHits(sf, dmgBefore).length === 1);
+grimSf.teleport({ x: 71500, y: 64, z: 71500 });
+noNewErrors("AutoAcceptance sem erro", mark);
+
+scenario("Duality Tenshou: dois Getsugas em X (preto e azul), 800");
+mark = errors.length;
+sf.teleport({ x: 70300, y: 64, z: 70000 });
+sf._view = { x: 1, y: 0, z: 0 };
+const alvoDu = createDummy("AlvoDuality", { x: 70312, y: 64, z: 70000 }, 500000);
+const atrasDu = createDummy("AtrasDuality", { x: 70292, y: 64, z: 70000 }, 500000);
+dmgBefore = log.damages.length;
+let partDu = log.particles.length;
+useItem(sf, "ichigosf:duality_tenshou");
+advanceTicks(20, "duality");
+check("800 em quem está no cruzamento, uma vez só", sfHits(alvoDu, dmgBefore, 800).length === 1 && sfHits(alvoDu, dmgBefore).length === 1,
+  JSON.stringify(sfHits(alvoDu, dmgBefore).map((d) => virtualDamage(alvoDu, d))));
+check("não pega atrás", sfHits(atrasDu, dmgBefore).length === 0);
+const novasDu = log.particles.slice(partDu).map((p) => p.particleId);
+check("um preto e um azul", novasDu.includes("ichigosf:negro") && novasDu.includes("ichigosf:azul"));
+// o X: as pontas do corte azul sobem pra um lado, as do preto pro outro
+const pontasDu = log.particles.slice(partDu).filter((p) => p.particleId === "ichigosf:azul_borda" && p.location.y > 64 + 1.1 + 2);
+const ladosDu = new Set(pontasDu.map((p) => Math.sign(Math.round(p.location.z - 70000))));
+check("o corte azul é inclinado (em X, não em pé)", pontasDu.length > 0 && ladosDu.size === 1 && !ladosDu.has(0), JSON.stringify([...ladosDu]));
+atrasDu.kill();
+noNewErrors("Duality sem erro", mark);
+
+scenario("Bankai: Tensa Zangetsu — 3500, casaco da versão Fullbring, speed 7 correndo");
+mark = errors.length;
+sf.setDynamicProperty(DP.awakening, 100);
+sf.isSneaking = true;
+useItem(sf, "ichigosf:m1_zangetsu");
+sf.isSneaking = false;
+advanceTicks(20, "bankai-sf");
+check("desperta", sf.getDynamicProperty(DP.awakened) === true);
+check("vida 3500", virtualMax(sf) === 3500, String(virtualMax(sf)));
+check("veste o casaco", sf.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId === "ichigosf:tensa_coat");
+check(
+  "Tensa, Rush, Barrage, Inside-Out e Sky Divide",
+  JSON.stringify(slotIds(sf, 5)) ===
+    JSON.stringify(["ichigosf:m1_tensa", "ichigosf:rush_and_cut", "ichigosf:duality_barrage", "ichigosf:inside_out", "ichigosf:sky_divide"]),
+  JSON.stringify(slotIds(sf, 5))
+);
+sf.isSprinting = true;
+advanceTicks(8, "corre");
+check("correndo: speed 7", sf.getEffect("speed")?.amplifier === 6, String(sf.getEffect("speed")?.amplifier));
+sf.isSprinting = false;
+advanceTicks(8, "para");
+check("parado: volta pro speed normal", (sf.getEffect("speed")?.amplifier ?? 0) < 6);
+dmgBefore = log.damages.length;
+alvoDu.teleport({ x: 70302, y: 64, z: 70000 });
+hitWith(sf, alvoDu, "ichigosf:m1_tensa");
+check("m1 Tensa Zangetsu: 85", sfHits(alvoDu, dmgBefore, 85).length === 1);
+noNewErrors("Bankai sem erro", mark);
+
+scenario("Rush and Cut: desliza e corta em volta, 5 por tick por 10s");
+mark = errors.length;
+const kbAntes = log.knockbacks.length;
+dmgBefore = log.damages.length;
+useItem(sf, "ichigosf:rush_and_cut");
+advanceTicks(SF.rush.ticks + 10, "rush");
+const golpesRush = sfHits(alvoDu, dmgBefore, 5).length;
+check("~200 golpes de 5 em quem está perto", golpesRush >= 195 && golpesRush <= 201, String(golpesRush));
+check("o Ichigo desliza pra frente", log.knockbacks.slice(kbAntes).filter((k) => k.target === sf.name && k.horizontal.x > 0).length >= 90);
+advanceTicks(10, "rush-acabou");
+dmgBefore = log.damages.length;
+advanceTicks(10, "rush-parou");
+check("para depois de 10s", sfHits(alvoDu, dmgBefore).length === 0);
+noNewErrors("Rush sem erro", mark);
+
+scenario("Duality Barrage: três Duality Tenshou, 300 cada");
+mark = errors.length;
+alvoDu.teleport({ x: 70312, y: 64, z: 70000 });
+dmgBefore = log.damages.length;
+useItem(sf, "ichigosf:duality_barrage");
+advanceTicks(60, "barrage-sf");
+check("3 golpes de 300", sfHits(alvoDu, dmgBefore, 300).length === 3, JSON.stringify(sfHits(alvoDu, dmgBefore).map((d) => virtualDamage(alvoDu, d))));
+noNewErrors("Barrage sem erro", mark);
+
+scenario("Getsuga Inside-Out: avança no mais próximo, empala, paralisa e explode por dentro (1500)");
+mark = errors.length;
+alvoDu.kill();
+alvoSf.kill();
+sf.teleport({ x: 70400, y: 64, z: 70000 });
+const vitIO = createDummy("VitimaIO", { x: 70412, y: 64, z: 70003 }, 500000);
+dmgBefore = log.damages.length;
+useItem(sf, "ichigosf:inside_out");
+advanceTicks(12, "avanco");
+check("chega colado no alvo", sfDist(sf, vitIO) <= SF.insideOut.grabRange + 0.1, sfDist(sf, vitIO).toFixed(2));
+advanceTicks(SF.insideOut.holdTicks + 5, "empala");
+check("1500 de dentro pra fora", sfHits(vitIO, dmgBefore, 1500).length === 1, JSON.stringify(sfHits(vitIO, dmgBefore).map((d) => virtualDamage(vitIO, d))));
+vitIO.kill();
+sfCd(sf, "ichigosf:inside_out");
+const cdAntesIO = sf.getDynamicProperty("mv:cd_ichigosf_inside_out");
+useItem(sf, "ichigosf:inside_out");
+check("sem ninguém por perto não gasta o cooldown", sf.getDynamicProperty("mv:cd_ichigosf_inside_out") === cdAntesIO);
+noNewErrors("Inside-Out sem erro", mark);
+
+scenario("Sky Divide: corte pra baixo lança o Getsuga preto 45° acima da visão, crescendo e abrindo o céu (2500)");
+mark = errors.length;
+sf.teleport({ x: 70500, y: 64, z: 70000 });
+sf._view = { x: 1, y: 0, z: 0 };
+// 20 blocos na diagonal de 45°: 14,1 pra frente e 14,1 pra cima (o meio do alvo fica 1 acima dos pés)
+const alvoSky = createDummy("AlvoSky", { x: 70514, y: 64 + 1.6 + 14.1 - 1, z: 70000 }, 500000);
+const retoSky = createDummy("RetoSky", { x: 70520, y: 64, z: 70000 }, 500000);
+for (const y of [71, 72, 73]) stone(70507, y, 70000);
+dmgBefore = log.damages.length;
+let partSky = log.particles.length;
+useItem(sf, "ichigosf:sky_divide");
+advanceTicks(40, "sky");
+check("2500 em quem está na diagonal", sfHits(alvoSky, dmgBefore, 2500).length === 1, JSON.stringify(sfHits(alvoSky, dmgBefore).map((d) => virtualDamage(alvoSky, d))));
+check("não pega quem está reto na frente", sfHits(retoSky, dmgBefore).length === 0);
+check("preto com aura azul-céu", log.particles.slice(partSky).some((p) => p.particleId === "ichigosf:aura") && log.particles.slice(partSky).some((p) => p.particleId === "ichigosf:negro"));
+check("destrói os blocos no caminho", [71, 72, 73].some((y) => blockAt(70507, y, 70000) === "minecraft:air"));
+// a borda do arco: 6 da animação do golpe, depois 21 por tick + 24 dos raios
+const aurasSky = log.particles.slice(partSky).filter((p) => p.particleId === "ichigosf:aura");
+const primeiroArco = aurasSky.slice(6, 27);
+const ultimoArco = aurasSky.slice(-45, -24);
+const tamanhoDe = (ps) => {
+  let max = 0;
+  for (const a of ps) for (const b of ps) max = Math.max(max, Math.hypot(a.location.x - b.location.x, a.location.y - b.location.y, a.location.z - b.location.z));
+  return max;
+};
+check("cresce enquanto anda", tamanhoDe(ultimoArco) > tamanhoDe(primeiroArco) * 4, `${tamanhoDe(primeiroArco).toFixed(1)} -> ${tamanhoDe(ultimoArco).toFixed(1)}`);
+advanceTicks(game.KOMAMURA.restoreTicks + 40, "ceu-volta");
+check("os blocos voltam depois", [71, 72, 73].every((y) => blockAt(70507, y, 70000) === "minecraft:stone"));
+alvoSky.kill();
+retoSky.kill();
+noNewErrors("Sky Divide sem erro", mark);
+
+scenario("Ichigo (SF): desativar tira o casaco e as posturas");
+mark = errors.length;
+useItem(sf, "ichigosf:rush_and_cut");
+advanceTicks(2, "rush-no-ar");
+queueFormResponse(deactivateButtonIndex());
+useItem(sf, "multiversal:character_selector");
+await settleForms();
+advanceTicks(15, "desativar-sf");
+check("sem o casaco", sf.getComponent("minecraft:equippable").getEquipment("Chest")?.typeId !== "ichigosf:tensa_coat");
+check("sem itens do SF no inventário", !inv(sf).slots.some((s) => s?.typeId?.startsWith("ichigosf:")));
+noNewErrors("desativar sem erro", mark);
+
 /* ================= estabilidade longa ================= */
 
 scenario("Estabilidade: 2000 ticks livres");

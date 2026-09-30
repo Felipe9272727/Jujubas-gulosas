@@ -1086,6 +1086,39 @@ const CHARACTERS = {
       },
     },
   },
+  ichigo_sf: {
+    id: "ichigo_sf",
+    name: "Ichigo Kurosaki (SF)",
+    health: 3000,
+    items: {
+      0: "ichigosf:m1_zangetsu",
+      1: "ichigosf:momentums_slash",
+      2: "ichigosf:getsuga_counter",
+      3: "ichigosf:auto_acceptance",
+      4: "ichigosf:duality_tenshou",
+    },
+    // Awk-Bankai: agachar + usar a Zangetsu com o medidor em 100%
+    awakening: {
+      name: "Bankai: Tensa Zangetsu",
+      triggerItem: "ichigosf:m1_zangetsu",
+      health: 3500,
+      sprintSpeedAmplifier: 6, // speed 7 correndo
+      onActivate: "battlecry",
+      chatLine: "Ban... kai. Tensa Zangetsu!",
+      cryParticle: "ichigosf:negro",
+      cryPitch: 0.7,
+      armorPiece: "ichigosf:tensa_coat",
+      armorMessage: "§f§lO casaco da Tensa Zangetsu se fecha em volta de você.",
+      aura: { particle: "ichigosf:aura", radius: 0.8, height: 2.1, perTick: 1 },
+      items: {
+        0: "ichigosf:m1_tensa",
+        1: "ichigosf:rush_and_cut",
+        2: "ichigosf:duality_barrage",
+        3: "ichigosf:inside_out",
+        4: "ichigosf:sky_divide",
+      },
+    },
+  },
   komamura: {
     id: "komamura",
     name: "Sajin Komamura",
@@ -1150,6 +1183,7 @@ const EXTRA_OWNED_ITEMS = {
   "ulquiorra:segunda_chest": "ulquiorra",
   "dangai:mugetsu_chest": "ichigo_dangai",
   "fbichigo:bone_chest": "ichigo_fullbringer",
+  "ichigosf:tensa_coat": "ichigo_sf",
   // a Kyōka "oculta" (textura vazia) fica no slot 0 enquanto o Aizen esta invisivel
   "aizen:m1_kyoka_oculta": "aizen",
 };
@@ -1206,6 +1240,7 @@ const CHARACTER_RACE_TIER = {
   yamamoto: { race: "shinigami", tier: 7 },
   unohana: { race: "shinigami", tier: 3 },
   komamura: { race: "shinigami", tier: 4 },
+  ichigo_sf: { race: "hybrid", tier: 4 },
   tsukishima: { race: "fullbringer", tier: 3 },
   chad: { race: "fullbringer", tier: 3 },
   orihime: { race: "fullbringer", tier: 2 },
@@ -1466,12 +1501,16 @@ function dealDamage(target, amount, source, options) {
   if (tsukishima.blocksDamage(target, source)) return;
   // Shadow's Movement do Ichigo Fullbringer: nao entra dano nem knockback de ataque
   if (ichigoFB.blocksDamage(target)) return;
+  // Momentum's Slash (imune) e AutoAcceptance (esquiva) do Ichigo SF
+  if (ichigoSfBlocks(target, source)) return;
   // Santen Kesshun da Orihime: repele tudo de tier <= 4 que atinge quem esta na cupula
   if (source && orihime.blocksDamage(target, source, amount)) return;
   // Kaidō Expert: a Unohana lembra de quem tentou machucar ela (mesmo barrado)
   recordUnohanaAttacker(target, source);
   // Arrogant's Counter do Ichigo (Dangai): o golpe nao entra e vira o contra-ataque
   if (source && dangaiCounterIntercept(target, source)) return;
+  // Getsuga Counter do Ichigo SF: o golpe nao entra e vira o contra-ataque
+  if (source && ichigoSfCounterIntercept(target, source)) return;
   // Seki e Dankū da Unohana
   if (source && unohanaBarrierBlocks(target, source)) return;
   if (isIntocable(target)) {
@@ -1711,6 +1750,14 @@ const SKILL_COOLDOWN_TICKS = {
   "komamura:stomp": 700, // 35s
   "komamura:punch": 340, // 17s
   "komamura:susanoo_cut": 1200, // 60s
+  "ichigosf:momentums_slash": 300, // 15s
+  "ichigosf:getsuga_counter": 500, // 25s
+  "ichigosf:auto_acceptance": 800, // 40s
+  "ichigosf:duality_tenshou": 800, // 40s
+  "ichigosf:rush_and_cut": 500, // 25s
+  "ichigosf:duality_barrage": 800, // 40s
+  "ichigosf:inside_out": 900, // 45s
+  "ichigosf:sky_divide": 1300, // 65s
 };
 
 const SKILL_NAMES = {
@@ -1897,6 +1944,14 @@ const SKILL_NAMES = {
   "komamura:stomp": "Stomp",
   "komamura:punch": "Punch",
   "komamura:susanoo_cut": "Susano'o's Cut",
+  "ichigosf:momentums_slash": "Momentum's Slash",
+  "ichigosf:getsuga_counter": "Getsuga Counter",
+  "ichigosf:auto_acceptance": "AutoAcceptance",
+  "ichigosf:duality_tenshou": "Duality Tenshou",
+  "ichigosf:rush_and_cut": "Rush and Cut",
+  "ichigosf:duality_barrage": "Duality Barrage",
+  "ichigosf:inside_out": "Getsuga Inside-Out",
+  "ichigosf:sky_divide": "Sky Divide",
 };
 
 // dano aumentado
@@ -2116,6 +2171,16 @@ const DAMAGE = {
   myooStomp: 200,
   myooPunch: 100,
   susanooCut: 750,
+  // Ichigo Kurosaki (SF)
+  sfM1: 75,
+  momentumsSlash: 250,
+  getsugaCounter: 330,
+  dualityTenshou: 800,
+  tensaM1: 85,
+  rushAndCutTick: 5,
+  dualityBarrage: 300,
+  insideOut: 1500,
+  skyDivide: 2500,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -3315,6 +3380,7 @@ function deactivateCharacter(player) {
   if (character.id === "yamamoto") yamamotoCleanup(player.id);
   if (character.id === "unohana") unohanaCleanup(player.id, true);
   if (character.id === "komamura") komamuraCleanup(player.id);
+  if (character.id === "ichigo_sf") ichigoSfCleanup(player.id);
 
   if (isMasked(player)) {
     try {
@@ -3798,6 +3864,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     burns.delete(player.id);
     unohanaCleanup(player.id, false); // quem atacou antes de morrer continua marcado
     komamuraCleanup(player.id);
+    ichigoSfCleanup(player.id);
     unohanaHeals.delete(player.id);
     clearDots(player.id);
     ukitakeAbsorb.delete(player.id);
@@ -4635,6 +4702,30 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "komamura:susanoo_cut":
       castSusanooCut(player);
+      break;
+    case "ichigosf:momentums_slash":
+      castMomentumsSlash(player);
+      break;
+    case "ichigosf:getsuga_counter":
+      castGetsugaCounter(player);
+      break;
+    case "ichigosf:auto_acceptance":
+      castAutoAcceptance(player);
+      break;
+    case "ichigosf:duality_tenshou":
+      castDualityTenshou(player);
+      break;
+    case "ichigosf:rush_and_cut":
+      castRushAndCut(player);
+      break;
+    case "ichigosf:duality_barrage":
+      castDualityBarrage(player);
+      break;
+    case "ichigosf:inside_out":
+      castInsideOut(player);
+      break;
+    case "ichigosf:sky_divide":
+      castSkyDivide(player);
       break;
   }
 });
@@ -16862,7 +16953,8 @@ system.runInterval(() => {
     } catch (e) {
       continue;
     }
-    const amplifier = character?.sprintSpeedAmplifier;
+    // a forma pode ter a propria corrida (Bankai do Ichigo SF: speed 7)
+    const amplifier = activeFormOf(player, character)?.sprintSpeedAmplifier ?? character?.sprintSpeedAmplifier;
     if (amplifier === undefined) {
       dangaiSprinting.delete(player.id);
       continue;
@@ -17017,6 +17109,24 @@ function fireCrescent(player, cfg, look, options = {}) {
   let frame = crescentFrame(options.direction ?? player.getViewDirection());
   // corte deitado (Susano'o's Cut): o arco abre pros lados e a espessura vira altura
   if (options.horizontal) frame = { dir: frame.dir, up: frame.side, side: frame.up };
+  // corte inclinado (o X do Duality Tenshou): gira o arco em volta da direcao
+  if (options.roll) {
+    const cos = Math.cos(options.roll);
+    const sin = Math.sin(options.roll);
+    const { up, side } = frame;
+    frame = {
+      dir: frame.dir,
+      up: { x: up.x * cos + side.x * sin, y: up.y * cos + side.y * sin, z: up.z * cos + side.z * sin },
+      side: { x: side.x * cos - up.x * sin, y: side.y * cos - up.y * sin, z: side.z * cos - up.z * sin },
+    };
+  }
+  // corte que cresce enquanto anda (Sky Divide): grow(travelled) -> escala
+  const base = cfg;
+  const sized = (d) => {
+    if (!options.grow) return base;
+    const k = options.grow(d);
+    return { ...base, radius: base.radius * k, bulge: base.bulge * k, thickness: base.thickness * k, lateral: base.lateral * k };
+  };
   const hit = options.hitSet ?? new Set();
   const lite = options.lite === true;
   const start = { x: origin.x, y: origin.y + (options.startHeight ?? 1.1), z: origin.z };
@@ -17027,7 +17137,7 @@ function fireCrescent(player, cfg, look, options = {}) {
   });
   let travelled = options.startAhead ?? cfg.startAhead;
 
-  const strikeAround = (c) => {
+  const strikeAround = (c, cfg) => {
     for (const entity of dim.getEntities({ location: c, maxDistance: cfg.radius + cfg.lateral + 2 })) {
       if (entity.id === player.id || hit.has(entity.id)) continue;
       if (!entity.getComponent("minecraft:health")) continue;
@@ -17069,12 +17179,15 @@ function fireCrescent(player, cfg, look, options = {}) {
       }
       const from = travelled;
       travelled = Math.min(cfg.range, travelled + cfg.speed);
-      drawCrescent(dim, centerAt(travelled), frame, cfg, look, lite, travelled - from);
+      const now = sized(travelled);
+      drawCrescent(dim, centerAt(travelled), frame, now, look, lite, travelled - from);
       for (let k = 1; k <= cfg.subSteps; k++) {
-        const c = centerAt(from + ((travelled - from) * k) / cfg.subSteps);
-        cancelAttacksNear(player, dim, c, cfg.radius, cfg.cancelsUpToTier);
-        strikeAround(c);
-        options.onStep?.(c, frame);
+        const d = from + ((travelled - from) * k) / cfg.subSteps;
+        const c = centerAt(d);
+        const step = sized(d);
+        cancelAttacksNear(player, dim, c, step.radius, cfg.cancelsUpToTier, options.cancelLook);
+        strikeAround(c, step);
+        options.onStep?.(c, frame, step);
       }
     } catch (e) {
       system.clearRun(interval);
@@ -19660,6 +19773,604 @@ function komamuraCleanup(playerId) {
 }
 
 /* ---------------------------------------------------------
+   Ichigo Kurosaki (SF) - Tier 4 (Híbrido)
+   O Ichigo depois de recuperar os poderes: a Zangetsu com a guarda do
+   Fullbring na frente do punho, Getsugas de Fullbringer (azul-claro) e o
+   False Getsuga (preto) juntos no Duality. Bankai Tensa Zangetsu com o
+   casaco da versão Fullbring e speed 7 correndo.
+   --------------------------------------------------------- */
+
+const ICHIGO_SF = {
+  id: "ichigo_sf",
+  coat: "ichigosf:tensa_coat",
+  momentum: { ticks: 40, radius: 5, cuts: 5 }, // 5 cortes de 50 = 250
+  counter: { windowTicks: 100, behind: 1.6 },
+  autoAcceptance: { ticks: 200, distance: 5, gapTicks: 4 },
+  // Getsuga do contra-ataque e os dois do Duality
+  getsuga: {
+    radius: 3,
+    bulge: 1.3,
+    thickness: 1.4,
+    lateral: 2,
+    speed: 3,
+    range: 40,
+    subSteps: 4,
+    startAhead: 1.5,
+    cancelsUpToTier: -1,
+  },
+  duality: {
+    radius: 4,
+    bulge: 1.5,
+    thickness: 1.6,
+    lateral: 2.4,
+    speed: 3,
+    range: 48,
+    subSteps: 4,
+    startAhead: 1.5,
+    cancelsUpToTier: -1,
+  },
+  barrage: { volleys: 3, gapTicks: 12 },
+  rush: { ticks: 200, radius: 4, push: 0.55 },
+  insideOut: { searchRange: 32, speed: 1.6, maxTicks: 40, grabRange: 2.2, holdTicks: 20, paralysisTicks: 40 },
+  skyDivide: {
+    radius: 3,
+    bulge: 1.4,
+    thickness: 1.8,
+    lateral: 2.4,
+    speed: 2.5,
+    range: 72,
+    subSteps: 4,
+    startAhead: 2,
+    startHeight: 1.6,
+    cancelsUpToTier: -1,
+    growPerBlock: 1 / 12, // no fim do caminho o arco tem ~7x o tamanho do inicio
+    windupTicks: 6,
+    tilt: Math.PI / 4, // 45 graus acima de onde ele olha
+  },
+};
+
+CRESCENT_LOOKS.sfAzul = {
+  coreParticle: "ichigosf:azul",
+  edgeParticle: "ichigosf:azul_borda",
+  boltParticle: "ichigosf:faisca",
+  points: 15,
+  litePoints: 9,
+  bolts: 2,
+  boltSegments: 4,
+  boltStep: 0.5,
+};
+// False Getsuga: preto com a borda vinho e chama negra do Fullbring
+CRESCENT_LOOKS.sfNegro = {
+  coreParticle: "ichigosf:negro",
+  edgeParticle: "ichigosf:negro_borda",
+  boltParticle: "fbichigo:chama",
+  points: 15,
+  litePoints: 9,
+  bolts: 2,
+  boltSegments: 4,
+  boltStep: 0.5,
+};
+// Sky Divide: getsuga preto com aura azul-céu
+CRESCENT_LOOKS.skyDivide = {
+  coreParticle: "ichigosf:negro",
+  edgeParticle: "ichigosf:aura",
+  boltParticle: "ichigosf:aura",
+  points: 21,
+  litePoints: 21,
+  bolts: 4,
+  boltSegments: 6,
+  boltStep: 1.1,
+};
+
+function isIchigoSf(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === ICHIGO_SF.id;
+  } catch (e) {
+    return false;
+  }
+}
+
+const sfImmune = new Map(); // id -> tick limite (Momentum's Slash: imune a tudo)
+const sfAcceptance = new Map(); // id -> { until, lastDodge } (AutoAcceptance)
+const sfCounters = new Map(); // id -> { until, run } (Getsuga Counter armado)
+const sfRuns = new Map(); // id -> Set de intervals/timeouts em andamento
+
+function sfTrack(player, id) {
+  let set = sfRuns.get(player.id);
+  if (!set) {
+    set = new Set();
+    sfRuns.set(player.id, set);
+  }
+  set.add(id);
+  return id;
+}
+
+function sfStop(player, id) {
+  system.clearRun(id);
+  sfRuns.get(player.id)?.delete(id);
+}
+
+function sfAlive(player) {
+  return !isDownOrGone(player) && isIchigoSf(player);
+}
+
+function sfFx(dim, name, at) {
+  try {
+    dim.spawnParticle(name, at);
+  } catch (e) {}
+}
+
+function sfSound(dim, name, at, volume = 1, pitch = 1) {
+  try {
+    dim.playSound(name, at, { volume, pitch });
+  } catch (e) {}
+}
+
+// talho rapido: uma linha de particulas cruzando o ponto
+function sfSlashAt(dim, at, particle = "ichigosf:corte") {
+  const a = Math.random() * Math.PI;
+  const tilt = (Math.random() - 0.5) * 1.6;
+  for (let i = -3; i <= 3; i++) {
+    const k = i * 0.35;
+    sfFx(dim, particle, { x: at.x + Math.cos(a) * k, y: at.y + tilt * k * 0.5, z: at.z + Math.sin(a) * k });
+  }
+}
+
+/* ---------- defesas: Momentum (imune) e AutoAcceptance (esquiva) ---------- */
+
+// chamada pelo dealDamage antes de tudo: true = o golpe nao entra
+function ichigoSfBlocks(target, source) {
+  const id = target?.id;
+  if (!id) return false;
+  const now = system.currentTick;
+  const immuneUntil = sfImmune.get(id);
+  if (immuneUntil !== undefined) {
+    if (now < immuneUntil) return true;
+    sfImmune.delete(id);
+  }
+  const acceptance = sfAcceptance.get(id);
+  if (!acceptance) return false;
+  if (now >= acceptance.until) {
+    sfAcceptance.delete(id);
+    return false;
+  }
+  if (!source || source.id === id) return false;
+  if (now - acceptance.lastDodge >= ICHIGO_SF.autoAcceptance.gapTicks) {
+    acceptance.lastDodge = now;
+    sfDodge(target, source);
+  }
+  return true;
+}
+
+// sai da area do golpe: pro lado de quem atacou, depois o outro lado, depois pra tras
+function sfDodge(player, source) {
+  try {
+    const dim = player.dimension;
+    const from = player.location;
+    const s = source.location;
+    let away = { x: from.x - s.x, z: from.z - s.z };
+    const length = Math.hypot(away.x, away.z);
+    if (length < 0.1) {
+      const f = forwardDirection(player);
+      away = { x: -f.x, z: -f.z };
+    } else {
+      away = { x: away.x / length, z: away.z / length };
+    }
+    const d = ICHIGO_SF.autoAcceptance.distance;
+    const side = { x: -away.z, z: away.x };
+    const options = [
+      { x: side.x * d + away.x * 1.5, z: side.z * d + away.z * 1.5 },
+      { x: -side.x * d + away.x * 1.5, z: -side.z * d + away.z * 1.5 },
+      { x: away.x * d, z: away.z * d },
+    ];
+    for (const o of options) {
+      const spot = { x: from.x + o.x, y: from.y, z: from.z + o.z };
+      if (!aizenStandable(dim, spot)) continue;
+      for (let i = 0; i < 6; i++) {
+        sfFx(dim, "ichigosf:aura", { x: from.x + (Math.random() - 0.5), y: from.y + 0.3 + i * 0.3, z: from.z + (Math.random() - 0.5) });
+      }
+      player.teleport(spot, { dimension: dim, keepVelocity: false, rotation: player.getRotation() });
+      sfSound(dim, "mob.endermen.portal", spot, 0.7, 1.6);
+      return;
+    }
+  } catch (e) {}
+}
+
+/* ---------- Momentum's Slash ---------- */
+
+function castMomentumsSlash(player) {
+  if (!tryUseSkill(player, "ichigosf:momentums_slash")) return;
+  const cfg = ICHIGO_SF.momentum;
+  world.sendMessage(`§b${player.name}: §f§lMomentum's Slash`);
+  sfImmune.set(player.id, system.currentTick + cfg.ticks);
+  holdJump(player, cfg.ticks);
+  try {
+    player.addEffect("slowness", cfg.ticks, { amplifier: 255, showParticles: false });
+  } catch (e) {}
+  const perCut = DAMAGE.momentumsSlash / cfg.cuts;
+  const gap = Math.floor(cfg.ticks / cfg.cuts);
+  let cut = 0;
+  const run = sfTrack(
+    player,
+    system.runInterval(() => {
+      if (!sfAlive(player) || cut >= cfg.cuts) {
+        sfStop(player, run);
+        return;
+      }
+      cut++;
+      const dim = player.dimension;
+      const l = player.location;
+      // talhos por toda a volta dele, ate 5 blocos
+      for (let i = 0; i < 10; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = 1 + Math.random() * (cfg.radius - 1);
+        sfSlashAt(dim, { x: l.x + Math.cos(a) * r, y: l.y + 0.5 + Math.random() * 1.5, z: l.z + Math.sin(a) * r });
+      }
+      sfSound(dim, "item.trident.riptide_3", l, 0.9, 1.5 + cut * 0.05);
+      damageNearbyEntities(player, { x: l.x, y: l.y + 1, z: l.z }, cfg.radius, perCut);
+    }, gap)
+  );
+}
+
+/* ---------- Getsuga Counter ---------- */
+
+function castGetsugaCounter(player) {
+  if (sfCounters.has(player.id)) {
+    player.sendMessage("§7O Getsuga Counter já está armado.");
+    return;
+  }
+  if (!tryUseSkill(player, "ichigosf:getsuga_counter")) return;
+  const cfg = ICHIGO_SF.counter;
+  const stance = { until: system.currentTick + cfg.windowTicks };
+  sfCounters.set(player.id, stance);
+  world.sendMessage(`§b${player.name} §7espera o golpe... §f§lGetsuga Counter`);
+  sfSound(player.dimension, "item.trident.return", player.location, 1.1, 0.8);
+  stance.run = sfTrack(
+    player,
+    system.runInterval(() => {
+      if (sfCounters.get(player.id) !== stance) {
+        sfStop(player, stance.run);
+        return;
+      }
+      if (!sfAlive(player) || system.currentTick >= stance.until) {
+        sfCounters.delete(player.id);
+        sfStop(player, stance.run);
+        if (sfAlive(player)) player.sendMessage("§7Ninguém caiu no Getsuga Counter.");
+        return;
+      }
+      const l = player.location;
+      const a = (system.currentTick % 20) * (Math.PI / 10);
+      sfFx(player.dimension, "ichigosf:azul", { x: l.x + Math.cos(a) * 0.9, y: l.y + 1, z: l.z + Math.sin(a) * 0.9 });
+    }, 2)
+  );
+}
+
+// chamada pelo dealDamage: o golpe nao entra e vira o contra-ataque
+function ichigoSfCounterIntercept(target, source) {
+  const stance = sfCounters.get(target?.id);
+  if (!stance || !source || source.id === target.id) return false;
+  if (system.currentTick >= stance.until) return false;
+  try {
+    if (!source.getComponent("minecraft:health") || isDownOrGone(source)) return false;
+  } catch (e) {
+    return false;
+  }
+  sfCounters.delete(target.id);
+  sfStop(target, stance.run);
+  runSfCounter(target, source);
+  return true;
+}
+
+function runSfCounter(player, attacker) {
+  world.sendMessage(`§b${player.name}: §f§lGetsuga Tenshou!`);
+  try {
+    const spot = aizenSpotBehind(attacker, ICHIGO_SF.counter.behind);
+    player.teleport(spot, {
+      dimension: attacker.dimension,
+      keepVelocity: false,
+      rotation: levelRotationToward(spot, attacker.location),
+    });
+    sfSound(player.dimension, "mob.endermen.portal", spot, 1, 0.8);
+  } catch (e) {}
+  // a queima-roupa: o Getsuga de Fullbringer sai colado nas costas dele
+  sfTrack(
+    player,
+    system.runTimeout(() => {
+      if (!sfAlive(player) || isDownOrGone(attacker)) return;
+      try {
+        const from = player.location;
+        const to = attacker.location;
+        getsugaSound(player, 0.9);
+        fireCrescent(player, ICHIGO_SF.getsuga, CRESCENT_LOOKS.sfAzul, {
+          damage: DAMAGE.getsugaCounter,
+          direction: { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z },
+          startAhead: 0,
+        });
+      } catch (e) {}
+    }, 2)
+  );
+}
+
+/* ---------- AutoAcceptance ---------- */
+
+function castAutoAcceptance(player) {
+  if (!tryUseSkill(player, "ichigosf:auto_acceptance")) return;
+  const cfg = ICHIGO_SF.autoAcceptance;
+  const until = system.currentTick + cfg.ticks;
+  sfAcceptance.set(player.id, { until, lastDodge: -Infinity });
+  world.sendMessage(`§b${player.name}: §f§lAutoAcceptance`);
+  sfSound(player.dimension, "item.trident.thunder", player.location, 0.6, 1.8);
+  const run = sfTrack(
+    player,
+    system.runInterval(() => {
+      if (!sfAlive(player) || system.currentTick >= until || !sfAcceptance.has(player.id)) {
+        sfStop(player, run);
+        if (sfAcceptance.get(player.id)?.until === until) sfAcceptance.delete(player.id);
+        return;
+      }
+      const l = player.location;
+      sfFx(player.dimension, "ichigosf:aura", { x: l.x + (Math.random() - 0.5) * 1.2, y: l.y + Math.random() * 2, z: l.z + (Math.random() - 0.5) * 1.2 });
+    }, 3)
+  );
+}
+
+/* ---------- Duality Tenshou (e a Barrage do Bankai) ---------- */
+
+// o X: um False Getsuga preto e um Getsuga azul, cruzados. Os dois dividem o
+// mesmo conjunto de acertos: quem esta no cruzamento toma uma vez so
+function fireDuality(player, damage) {
+  const hit = new Set();
+  const direction = player.getViewDirection();
+  getsugaSound(player, 0.7);
+  fireCrescent(player, ICHIGO_SF.duality, CRESCENT_LOOKS.sfAzul, { damage, direction, roll: Math.PI / 4, hitSet: hit });
+  fireCrescent(player, ICHIGO_SF.duality, CRESCENT_LOOKS.sfNegro, { damage, direction, roll: -Math.PI / 4, hitSet: hit });
+}
+
+function castDualityTenshou(player) {
+  if (!tryUseSkill(player, "ichigosf:duality_tenshou")) return;
+  world.sendMessage(`§b${player.name}: §f§lDuality Tenshou!`);
+  fireDuality(player, DAMAGE.dualityTenshou);
+}
+
+function castDualityBarrage(player) {
+  if (!tryUseSkill(player, "ichigosf:duality_barrage")) return;
+  world.sendMessage(`§b${player.name}: §f§lDuality Barrage!`);
+  const cfg = ICHIGO_SF.barrage;
+  for (let i = 0; i < cfg.volleys; i++) {
+    sfTrack(
+      player,
+      system.runTimeout(() => {
+        if (sfAlive(player)) fireDuality(player, DAMAGE.dualityBarrage);
+      }, i * cfg.gapTicks)
+    );
+  }
+}
+
+/* ---------- Rush and Cut ---------- */
+
+function castRushAndCut(player) {
+  if (!tryUseSkill(player, "ichigosf:rush_and_cut")) return;
+  const cfg = ICHIGO_SF.rush;
+  world.sendMessage(`§b${player.name}: §f§lRush and Cut!`);
+  let tick = 0;
+  const run = sfTrack(
+    player,
+    system.runInterval(() => {
+      if (!sfAlive(player) || tick >= cfg.ticks) {
+        sfStop(player, run);
+        return;
+      }
+      tick++;
+      const dim = player.dimension;
+      const l = player.location;
+      // desliza pra onde esta andando (parado: pra onde olha)
+      let dir;
+      try {
+        const v = player.getVelocity();
+        const speed = Math.hypot(v.x, v.z);
+        dir = speed > 0.05 ? { x: v.x / speed, z: v.z / speed } : forwardDirection(player);
+      } catch (e) {
+        dir = forwardDirection(player);
+      }
+      if (tick % 2 === 0) {
+        try {
+          player.applyKnockback({ x: dir.x * cfg.push, z: dir.z * cfg.push }, 0);
+        } catch (e) {}
+      }
+      // milhares de cortes em volta
+      for (let i = 0; i < 4; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.random() * cfg.radius;
+        sfSlashAt(dim, { x: l.x + Math.cos(a) * r, y: l.y + 0.3 + Math.random() * 1.8, z: l.z + Math.sin(a) * r }, i % 2 ? "ichigosf:corte" : "ichigosf:faisca");
+      }
+      if (tick % 4 === 0) sfSound(dim, "item.trident.riptide_1", l, 0.7, 1.7);
+      damageNearbyEntities(player, { x: l.x, y: l.y + 1, z: l.z }, cfg.radius, DAMAGE.rushAndCutTick);
+    }, 1)
+  );
+}
+
+/* ---------- Getsuga Inside-Out ---------- */
+
+function castInsideOut(player) {
+  const cfg = ICHIGO_SF.insideOut;
+  const target = nearestTarget(player, cfg.searchRange);
+  if (!target) {
+    player.sendMessage("§7Não há ninguém por perto para o Getsuga Inside-Out.");
+    return;
+  }
+  if (!tryUseSkill(player, "ichigosf:inside_out")) return;
+  world.sendMessage(`§b${player.name}: §f§lGetsuga... Inside-Out!`);
+  sfSound(player.dimension, "mob.wither.shoot", player.location, 1.2, 1.2);
+  let ticks = 0;
+  const run = sfTrack(
+    player,
+    system.runInterval(() => {
+      if (!sfAlive(player) || isDownOrGone(target) || ticks >= cfg.maxTicks) {
+        sfStop(player, run);
+        return;
+      }
+      ticks++;
+      try {
+        const dim = player.dimension;
+        const from = player.location;
+        const to = target.location;
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const dz = to.z - from.z;
+        const distance = Math.hypot(dx, dy, dz);
+        if (distance <= cfg.grabRange) {
+          sfStop(player, run);
+          sfImpale(player, target);
+          return;
+        }
+        const step = Math.min(cfg.speed, distance - cfg.grabRange * 0.8);
+        const next = { x: from.x + (dx / distance) * step, y: from.y + (dy / distance) * step, z: from.z + (dz / distance) * step };
+        if (!aizenStandable(dim, next)) {
+          next.y += 1;
+          if (!aizenStandable(dim, next)) {
+            sfStop(player, run);
+            player.sendMessage("§7O avanço bateu num bloco.");
+            return;
+          }
+        }
+        player.teleport(next, { dimension: dim, keepVelocity: false, rotation: levelRotationToward(next, to) });
+        sfFx(dim, "ichigosf:azul", { x: from.x, y: from.y + 1, z: from.z });
+        sfFx(dim, "ichigosf:negro", { x: from.x, y: from.y + 1.4, z: from.z });
+      } catch (e) {
+        sfStop(player, run);
+      }
+    }, 1)
+  );
+}
+
+// empala, paralisa e explode o Getsuga por dentro
+function sfImpale(player, target) {
+  const cfg = ICHIGO_SF.insideOut;
+  if (!isIntocable(target)) paralyzeFor(target, cfg.paralysisTicks, "§bVocê foi empalado pela Tensa Zangetsu!");
+  holdJump(player, cfg.holdTicks);
+  const dim = player.dimension;
+  sfSound(dim, "item.trident.hit", target.location, 1.2, 0.7);
+  let t = 0;
+  const run = sfTrack(
+    player,
+    system.runInterval(() => {
+      if (!sfAlive(player) || isDownOrGone(target)) {
+        sfStop(player, run);
+        return;
+      }
+      t++;
+      const p = player.location;
+      const q = target.location;
+      // a lamina atravessando o alvo, cada vez mais carregada
+      for (let i = 0; i <= 6; i++) {
+        const k = i / 6;
+        sfFx(dim, t % 2 ? "ichigosf:azul" : "ichigosf:negro", {
+          x: p.x + (q.x - p.x) * k * 1.4,
+          y: p.y + 1.2 + (q.y - p.y) * k,
+          z: p.z + (q.z - p.z) * k * 1.4,
+        });
+      }
+      if (t < cfg.holdTicks) return;
+      sfStop(player, run);
+      const at = { x: q.x, y: q.y + 1, z: q.z };
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        const r = 0.5 + Math.random() * 2.5;
+        sfFx(dim, i % 3 === 0 ? "minecraft:large_explosion" : i % 2 ? "ichigosf:azul" : "ichigosf:negro", {
+          x: at.x + Math.cos(a) * r,
+          y: at.y + (Math.random() - 0.3) * 2,
+          z: at.z + Math.sin(a) * r,
+        });
+      }
+      sfSound(dim, "random.explode", at, 1.6, 0.9);
+      getsugaSound(player, 0.5);
+      try {
+        dealDamage(target, DAMAGE.insideOut * dmgMultiplier(player), player, { breaksBlock: true });
+      } catch (e) {}
+    }, 1)
+  );
+}
+
+/* ---------- Sky Divide ---------- */
+
+// 45 graus acima de onde ele olha (olhando reto, sobe na diagonal)
+function skyDivideDirection(player) {
+  const v = player.getViewDirection();
+  let h = Math.hypot(v.x, v.z);
+  let hx;
+  let hz;
+  if (h < 1e-3) {
+    const f = forwardDirection(player);
+    hx = f.x;
+    hz = f.z;
+    h = 0;
+  } else {
+    hx = v.x / h;
+    hz = v.z / h;
+  }
+  const pitch = Math.atan2(v.y, h);
+  const up = Math.min(pitch + ICHIGO_SF.skyDivide.tilt, Math.PI / 2 - 0.05);
+  return { x: hx * Math.cos(up), y: Math.sin(up), z: hz * Math.cos(up) };
+}
+
+function castSkyDivide(player) {
+  if (!tryUseSkill(player, "ichigosf:sky_divide")) return;
+  const cfg = ICHIGO_SF.skyDivide;
+  world.sendMessage(`§b${player.name}: §f§lSky Divide!`);
+  const dim = player.dimension;
+  // o golpe de cima pra baixo antes do corte sair
+  const f = forwardDirection(player);
+  const l = player.location;
+  for (let i = 0; i <= 10; i++) {
+    const a = (i / 10) * Math.PI;
+    sfFx(dim, i % 2 ? "ichigosf:aura" : "ichigosf:negro", {
+      x: l.x + f.x * (0.8 + Math.sin(a) * 1.4),
+      y: l.y + 1.2 + Math.cos(a) * 2,
+      z: l.z + f.z * (0.8 + Math.sin(a) * 1.4),
+    });
+  }
+  sfSound(dim, "item.trident.riptide_3", l, 1.2, 0.6);
+  sfTrack(
+    player,
+    system.runTimeout(() => {
+      if (!sfAlive(player)) return;
+      const ledger = [];
+      const seen = new Set();
+      getsugaSound(player, 0.4);
+      shakeNear(player.dimension, player.location, 30, 0.4, 1);
+      fireCrescent(player, cfg, CRESCENT_LOOKS.skyDivide, {
+        damage: DAMAGE.skyDivide,
+        direction: skyDivideDirection(player),
+        startHeight: cfg.startHeight,
+        grow: (d) => 1 + d * cfg.growPerBlock,
+        // abre o ceu: o fio do arco destroi os blocos por onde passa (voltam em 1 min)
+        onStep: (c, frame, step) => {
+          for (let v = -step.radius; v <= step.radius; v += 1) {
+            const along = arcAlong(step, v);
+            for (let lat = -1; lat <= 1; lat++) {
+              const p = framePoint(c, frame, along, v, lat);
+              komamuraBreak(ledger, player.dimension, Math.floor(p.x), Math.floor(p.y), Math.floor(p.z), seen);
+            }
+          }
+        },
+      });
+      scheduleRestore(ledger);
+    }, cfg.windupTicks)
+  );
+}
+
+/* ---------- limpeza ---------- */
+
+function ichigoSfCleanup(playerId) {
+  sfImmune.delete(playerId);
+  sfAcceptance.delete(playerId);
+  sfCounters.delete(playerId);
+  const set = sfRuns.get(playerId);
+  if (set) for (const id of set) system.clearRun(id);
+  sfRuns.delete(playerId);
+}
+
+/* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
@@ -19690,6 +20401,17 @@ const MELEE_WEAPONS = {
     particle: "komamura:corte",
     dot: null,
     giant: true,
+  },
+  // Zangetsu com a guarda do Fullbring; no Bankai, a Tensa Zangetsu
+  "ichigosf:m1_zangetsu": {
+    baseDamage: DAMAGE.sfM1,
+    particle: "ichigosf:corte",
+    dot: null,
+  },
+  "ichigosf:m1_tensa": {
+    baseDamage: DAMAGE.tensaM1,
+    particle: "ichigosf:azul",
+    dot: null,
   },
   "unohana:m1_zanpakuto": {
     baseDamage: DAMAGE.unohanaM1,
@@ -20796,6 +21518,7 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   unohanaHeals.delete(playerId);
   clearDots(playerId);
   komamuraCleanup(playerId);
+  ichigoSfCleanup(playerId);
 });
 
 
@@ -20966,6 +21689,7 @@ const TSUKISHIMA_ATTACK_POOL = [
   { id: "yamamoto", name: "Yamamoto", skills: [["M1 Ryūjin Jakka", DAMAGE.yamamotoM1], ["Ittō Kasō", DAMAGE.ittoKaso]] },
   { id: "unohana", name: "Unohana", skills: [["M1 Zanpakuto", DAMAGE.unohanaM1], ["Hadō #33 Sōkatsui", DAMAGE.sokatsui]] },
   { id: "komamura", name: "Komamura", skills: [["M1 Tenken", DAMAGE.tenkenM1], ["Destructive Slash", DAMAGE.destructiveSlash]] },
+  { id: "ichigo_sf", name: "Ichigo (SF)", skills: [["M1 Zangetsu", DAMAGE.sfM1], ["Duality Tenshou", DAMAGE.dualityTenshou]] },
 ];
 
 const tsukishima = createTsukishima({
@@ -21039,6 +21763,7 @@ export {
   UNOHANA,
   KOMAMURA,
   STARKK_DAMAGE_MULTIPLIER,
+  ICHIGO_SF,
   // efeitos negativos pro Diagnóstico da Unohana ter o que limpar na simulacao
   applyBurn,
   applyDeterioration,
