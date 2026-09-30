@@ -361,6 +361,39 @@ class OnScreenDisplay {
 
 let nextEntityId = 1;
 
+// entidades do BP que declaram minecraft:tameable (o Minami doma os mortos no
+// invocador): lido do BP de verdade, como os itens
+const TAMEABLE_TYPES = new Set();
+try {
+  const entitiesDir = new URL("../../BP/entities/", import.meta.url);
+  for (const file of fs.readdirSync(entitiesDir)) {
+    if (!file.endsWith(".json")) continue;
+    const data = JSON.parse(fs.readFileSync(new URL(file, entitiesDir), "utf-8"));
+    const entity = data["minecraft:entity"];
+    if (entity?.components?.["minecraft:tameable"]) TAMEABLE_TYPES.add(entity.description.identifier);
+  }
+} catch (e) {
+  throw new Error(`stub nao conseguiu ler BP/entities: ${e.message}`);
+}
+
+function tameableFor(entity) {
+  if (!TAMEABLE_TYPES.has(entity.typeId)) return undefined;
+  return {
+    get isTamed() {
+      return !!entity._tamedTo;
+    },
+    get tamedToPlayer() {
+      return entity._tamedTo;
+    },
+    tame(player) {
+      entity._assertValid();
+      if (!player || player.typeId !== "minecraft:player") throw new Error("tame precisa de um player");
+      entity._tamedTo = player;
+      return true;
+    },
+  };
+}
+
 export class Entity {
   constructor({ typeId = "minecraft:zombie", name, dimension, location = { x: 0, y: 64, z: 0 }, maxHealth = 20 } = {}) {
     this.id = String(nextEntityId++);
@@ -426,6 +459,9 @@ export class Entity {
       case "minecraft:item":
       case "item":
         return this.itemStackComponent;
+      case "minecraft:tameable":
+      case "tameable":
+        return tameableFor(this);
       default:
         return undefined;
     }
@@ -555,6 +591,11 @@ export class Entity {
   getEffect(effectType) {
     this._assertValid();
     return this._activeEffect(effectType);
+  }
+
+  clearVelocity() {
+    this._assertValid();
+    this._velocity = { x: 0, y: 0, z: 0 };
   }
 
   getVelocity() {

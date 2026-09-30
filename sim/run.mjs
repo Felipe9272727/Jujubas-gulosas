@@ -1637,6 +1637,11 @@ check(
 
 /* ================= Coyote Starkk ================= */
 
+// desde a 1.27.6 o Starkk e tier 6: 5000 de vida e todo dano dele x1,6
+const STARKK_HP = game.CHARACTERS.starkk.health;
+function starkkIs(amount, base) {
+  return Math.abs(amount - base * game.STARKK_DAMAGE_MULTIPLIER) < 0.01;
+}
 scenario("Coyote Starkk: ativação");
 const starkk = createPlayer("StarkkPlayer", { x: -600, y: 64, z: -600 });
 emit("playerSpawn", { player: starkk, initialSpawn: true });
@@ -1646,7 +1651,7 @@ mark = errors.length;
 await pickCharacter(starkk, "starkk");
 advanceTicks(20, "ativar-starkk");
 noNewErrors("ativar Starkk sem erro", mark);
-check("vida maxima 4000", virtualMax(starkk) === 4000, `${virtualMax(starkk)}`);
+check(`vida maxima ${STARKK_HP}`, virtualMax(starkk) === STARKK_HP, `${virtualMax(starkk)}`);
 check(
   "pool real no teto do Bedrock",
   hp(starkk).effectiveMax === 1044,
@@ -1677,7 +1682,7 @@ dmgBefore = log.damages.length;
 useItem(starkk, "starkk:slash_barrage");
 advanceTicks(80, "slash-barrage");
 noNewErrors("Slash's Barrage executa limpo", mark);
-const barragemHits = log.damages.slice(dmgBefore).filter((d) => d.amount === 100);
+const barragemHits = log.damages.slice(dmgBefore).filter((d) => starkkIs(d.amount, 100));
 check(
   "os 5 avanços acertam, 100 cada",
   barragem.every((d) => barragemHits.filter((h) => h.target === d.name).length === 1),
@@ -1701,7 +1706,7 @@ noNewErrors("Sideway Cuts executa limpo", mark);
 const ladoHits = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoLado");
 check(
   "dois cortes de 200 no alvo",
-  ladoHits.length === 2 && ladoHits.every((d) => d.amount === 200),
+  ladoHits.length === 2 && ladoHits.every((d) => starkkIs(d.amount, 200)),
   JSON.stringify(ladoHits.map((d) => d.amount))
 );
 const ladoDist = Math.hypot(
@@ -1750,11 +1755,11 @@ noNewErrors("Crescent Canines executa limpo", mark);
 hits = log.damages.slice(dmgBefore);
 check(
   "150 em quem está na trajetória",
-  hits.some((d) => d.target === "NoCaminho" && d.amount === 150)
+  hits.some((d) => d.target === "NoCaminho" && starkkIs(d.amount, 150))
 );
 check(
   "300 no estouro do fim",
-  hits.some((d) => d.target === "NoEstouro" && d.amount === 300)
+  hits.some((d) => d.target === "NoEstouro" && starkkIs(d.amount, 300))
 );
 noCaminho.kill();
 noEstouro.kill();
@@ -1771,7 +1776,7 @@ noNewErrors("Kamarada executa limpo", mark);
 const loboHits = log.damages.slice(dmgBefore).filter((d) => d.target === "PresaLobo");
 check(
   "os lobos alcançam o alvo e explodem (200 cada)",
-  loboHits.length >= 1 && loboHits.every((d) => d.amount === 200),
+  loboHits.length >= 1 && loboHits.every((d) => starkkIs(d.amount, 200)),
   `${loboHits.length} explosões: ${JSON.stringify(loboHits.map((d) => d.amount))}`
 );
 presaLobo.kill();
@@ -1801,7 +1806,7 @@ check(
     .some((m) => m.message === "<StarkkPlayer> Kick About, Los Lobos")
 );
 check("awakened = true", starkk.getDynamicProperty(DP.awakened) === true);
-check("vida continua 4000 (a Resurrección não aumenta)", virtualMax(starkk) === 4000, `${virtualMax(starkk)}`);
+check(`vida continua ${STARKK_HP} (a Resurrección não aumenta)`, virtualMax(starkk) === STARKK_HP, `${virtualMax(starkk)}`);
 check(
   "m1 vira os Cuchillos, as 4 skills continuam",
   JSON.stringify(slotIds(starkk, 5)) ===
@@ -1869,7 +1874,7 @@ advanceTicks(60, "lilynette-shot");
 noNewErrors("Disparo executa limpo", mark);
 check(
   "120 de dano",
-  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoTiro" && d.amount === 120)
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoTiro" && starkkIs(d.amount, 120))
 );
 check(
   "não manda mensagem no chat (senão spamaria)",
@@ -1888,7 +1893,7 @@ noNewErrors("Rifle executa limpo", mark);
 const rifleHits = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro");
 check(
   "3 tiros de 120 acertam mesmo com o player olhando pro outro lado",
-  rifleHits.length === 3 && rifleHits.every((d) => d.amount === 120),
+  rifleHits.length === 3 && rifleHits.every((d) => starkkIs(d.amount, 120)),
   JSON.stringify(rifleHits.map((d) => d.amount))
 );
 
@@ -1903,7 +1908,7 @@ advanceTicks(30, "escopeta");
 noNewErrors("Escopeta executa limpo", mark);
 check(
   "240 de dano (dobro do disparo)",
-  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoTiro" && d.amount === 240)
+  log.damages.slice(dmgBefore).some((d) => d.target === "AlvoTiro" && starkkIs(d.amount, 240))
 );
 
 starkk.setDynamicProperty("mv:cd_starkk_escopeta", undefined);
@@ -1932,7 +1937,7 @@ noNewErrors("Cero Metralleta executa limpo", mark);
 const primeiraFileira = log.damages.slice(dmgBefore).filter((d) => d.target === "AlvoTiro");
 check(
   "a fileira inteira acerta de uma vez (balas de 30)",
-  primeiraFileira.length >= 2 && primeiraFileira.every((d) => d.amount === 30),
+  primeiraFileira.length >= 2 && primeiraFileira.every((d) => starkkIs(d.amount, 30)),
   `${primeiraFileira.length} balas de ${JSON.stringify([...new Set(primeiraFileira.map((d) => d.amount))])}`
 );
 check(
@@ -1982,7 +1987,7 @@ advanceTicks(90, "drenar-los-lobos");
 noNewErrors("reversão sem erro", mark);
 check("awakened = false", starkk.getDynamicProperty(DP.awakened) === false);
 check("persona volta pro Starkk", starkk.getDynamicProperty("mv:starkk_form") === "starkk");
-check("vida continua 4000", virtualMax(starkk) === 4000, `${virtualMax(starkk)}`);
+check(`vida continua ${STARKK_HP}`, virtualMax(starkk) === STARKK_HP, `${virtualMax(starkk)}`);
 check(
   "itens base restaurados",
   JSON.stringify(slotIds(starkk, 5)) ===
@@ -5633,10 +5638,13 @@ const mortos = overworld.getEntities({ type: "yamamoto:morto" });
 check("10 mortos", mortos.length === 10, String(mortos.length));
 const bpMorto = JSON.parse(fs.readFileSync(new URL("../BP/entities/yamamoto_morto.json", import.meta.url), "utf8"))["minecraft:entity"].components;
 check("400 de vida cada", bpMorto["minecraft:health"].value === 400);
+// desde a 1.27.6 o morto e domado pelo invocador e caca qualquer um que nao seja ele
 check(
-  "o alvo vanilla é player sem a tag do Yamamoto",
-  JSON.stringify(bpMorto["minecraft:behavior.nearest_attackable_target"]).includes(`"value":"${YM.tag}"`)
+  "o alvo vanilla é quem não é o dono (morto domado pelo invocador)",
+  JSON.stringify(bpMorto["minecraft:behavior.nearest_attackable_target"]).includes('"test":"is_owner"') &&
+    !!bpMorto["minecraft:tameable"]
 );
+check("domado pelo Yamamoto que invocou", mortos.every((m) => m._tamedTo?.id === yama.id));
 check("o golpe vanilla não dá dano (os 50 saem do script)", bpMorto["minecraft:attack"].damage === 0);
 // um morto encostado no Yamamoto: nao bate nele
 mortos[0].teleport({ x: 41401, y: 64, z: 41400 });

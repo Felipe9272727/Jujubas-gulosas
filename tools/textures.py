@@ -3527,10 +3527,6 @@ TEXTURES["entity/hollow_ichigo"] = _HOLLOW_TEXTURES["hollow"]
 TEXTURES["entity/vasto_lorde"] = _HOLLOW_TEXTURES["vasto"]
 
 # o clone da Illusion's Mastery do Aizen: mesma logica, textura e geometria
-# saem de tools/aizen_clone_model.py
-from aizen_clone_model import TEXTURE_SPEC as _AIZEN_CLONE_TEXTURE  # noqa: E402
-
-TEXTURES["entity/aizen_clone"] = _AIZEN_CLONE_TEXTURE
 
 # roupa do Mugetsu (cabelo, faixas e hakama) do Ichigo Dangai (tools/mugetsu_model.py)
 from mugetsu_model import TEXTURE_SPEC as _MUGETSU_TEXTURE  # noqa: E402

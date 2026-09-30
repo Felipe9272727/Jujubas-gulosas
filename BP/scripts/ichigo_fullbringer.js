@@ -294,7 +294,7 @@ export function createIchigoFullbringer(api) {
         showParticles: false,
       });
     } catch (err) {}
-    sound(dim, "mob.enderman.portal", player.location, 0.8, 0.6);
+    sound(dim, "mob.endermen.portal", player.location, 0.8, 0.6);
     state.timer = system.runInterval(() => {
       if (!alive(player) || !mine(player) || system.currentTick >= until) {
         endShadow(player, !alive(player));

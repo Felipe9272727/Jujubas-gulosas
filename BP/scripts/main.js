@@ -1186,7 +1186,7 @@ const TIERS = [
 
 // Classificação atual dos personagens disponíveis no seletor.
 const CHARACTER_RACE_TIER = {
-  isshin: { race: "shinigami", tier: 4 },
+  isshin: { race: "shinigami", tier: 5 },
   yoruichi: { race: "shinigami", tier: 4 },
   urahara: { race: "shinigami", tier: 5 },
   byakuya: { race: "shinigami", tier: 2 },
@@ -1209,7 +1209,7 @@ const CHARACTER_RACE_TIER = {
   tsukishima: { race: "fullbringer", tier: 3 },
   chad: { race: "fullbringer", tier: 3 },
   orihime: { race: "fullbringer", tier: 2 },
-  ichigo_fullbringer: { race: "fullbringer", tier: 3 },
+  ichigo_fullbringer: { race: "hybrid", tier: 3 },
 
   grimmjow: { race: "hollow", tier: 2 },
   szayelaporro: { race: "hollow", tier: 2 },
@@ -1222,7 +1222,7 @@ const CHARACTER_RACE_TIER = {
   yammy: { race: "hollow", tier: 5 },
 
   ichigo: { race: "hybrid", tier: 2 },
-  ichigo_vizard: { race: "hybrid", tier: 4 },
+  ichigo_vizard: { race: "hybrid", tier: 3 },
 };
 
 // Tier do personagem ATIVO (0 sem personagem). A Pressao Espiritual
@@ -3339,9 +3339,12 @@ function deactivateCharacter(player) {
     }
   }
   player.setDynamicProperty(DP.airStepActive,false);removeAirStepBlock(player);player.setDynamicProperty(DP.pressureActiveUntil,0);
-  for (const slot in activeItems) {
+  // a lista de antes dos resets (Chad) E a de depois das limpezas: a limpeza do
+  // Aizen devolve a Kyōka normal no lugar da oculta, e ela tambem tem que sair
+  const itemsAfterCleanup = getActiveItemsForPlayer(player, character);
+  for (const slot of new Set([...Object.keys(activeItems), ...Object.keys(itemsAfterCleanup)])) {
     const item = inv.getItem(Number(slot));
-    if (item && item.typeId === activeItems[slot]) {
+    if (item && (item.typeId === activeItems[slot] || item.typeId === itemsAfterCleanup[slot])) {
       inv.setItem(Number(slot), undefined);
     }
   }
@@ -21035,6 +21038,7 @@ export {
   TIER_DAMAGE_REDUCTION,
   UNOHANA,
   KOMAMURA,
+  STARKK_DAMAGE_MULTIPLIER,
   // efeitos negativos pro Diagnóstico da Unohana ter o que limpar na simulacao
   applyBurn,
   applyDeterioration,
