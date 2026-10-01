@@ -6,7 +6,7 @@ export const URAHARA = {
     "urahara:nake": 200, "urahara:kirisaki": 500, "urahara:chikasumi": 400,
     "urahara:hiasobi": 700, "urahara:juzutsunagi": 200,
     "urahara:shibari": 400, "urahara:hado_91": 1200,
-    "urahara:hyappo_rankan": 600, "urahara:kin": 3000,
+    "urahara:hyappo_rankan": 600, "urahara:kin": 1800, // Kin: 90s (era 150s)
   },
   names: {
     "urahara:nake": "Nake, Benihime", "urahara:kirisaki": "Kirisaki, Benihime",

@@ -17,7 +17,7 @@
       "minecraft:should_despawn": false,
       "minecraft:cooldown": {
         "category": "urahara_kin",
-        "duration": 150
+        "duration": 90
       }
     }
   }

@@ -78,15 +78,17 @@ try {
     "minecraft:large_explosion",
     "minecraft:huge_explosion_emitter",
   ]);
-  let tokens = 320;
+  let tokens = 240;
   let lastRefillTick = system.currentTick;
   let pHeavy = 0;
   Dimension.prototype.spawnParticle = function (effectName, location, molang) {
     const now = system.currentTick;
     if (now !== lastRefillTick) {
       // rendimento cai sozinho se o mundo está lento
-      const rate = __tickGapMs > 90 ? 20 : __tickGapMs > 65 ? 45 : 80;
-      const cap = __tickGapMs > 90 ? 110 : __tickGapMs > 65 ? 200 : 320;
+      // (1.29: 80/320 virou 48/240 - cada partícula é um pacote pra todo
+      // cliente perto, e era o que mais pesava no celular em luta de 3+ skills)
+      const rate = __tickGapMs > 90 ? 14 : __tickGapMs > 65 ? 30 : 48;
+      const cap = __tickGapMs > 90 ? 80 : __tickGapMs > 65 ? 150 : 240;
       tokens = Math.min(cap, tokens + Math.min(10, now - lastRefillTick) * rate);
       lastRefillTick = now;
       pHeavy = 0;
@@ -1265,8 +1267,8 @@ const CHARACTER_RACE_TIER = {
 // aqui. A funcao era chamada em dez lugares e nao existia: cada chamada lancava
 // ReferenceError, que o anti-lag dos loops engolia em silencio.
 function tierOfPlayer(entity) {
-  const id = entity?.getDynamicProperty?.(DP.character);
-  return CHARACTER_RACE_TIER[id]?.tier ?? 0;
+  if (!entity?.getDynamicProperty) return 0;
+  return CHARACTER_RACE_TIER[activeCharacterId(entity)]?.tier ?? 0;
 }
 
 // Jurisdição dos mais fortes: tiers altos (7/8/9) reduzem o dano recebido de
@@ -2546,8 +2548,33 @@ function getInv(player) {
   return player.getComponent("minecraft:inventory").container;
 }
 
+// O personagem ativo e lido dezenas de vezes por tick (todo loop, todo golpe,
+// todo dano) e cada leitura de propriedade dinamica atravessa pra engine. Ele so
+// muda no activate/deactivate (setActiveCharacterId), entao a leitura vale pelo
+// tick inteiro. O mapa e zerado a cada tick novo: nao cresce com mob nenhum.
+let characterCacheTick = -1;
+const characterCache = new Map(); // id da entidade -> id do personagem
+
+function activeCharacterId(entity) {
+  const now = system.currentTick;
+  if (now !== characterCacheTick) {
+    characterCache.clear();
+    characterCacheTick = now;
+  }
+  const key = entity.id;
+  if (characterCache.has(key)) return characterCache.get(key);
+  const value = entity.getDynamicProperty(DP.character);
+  characterCache.set(key, value);
+  return value;
+}
+
+function setActiveCharacterId(player, characterId) {
+  player.setDynamicProperty(DP.character, characterId);
+  characterCache.delete(player.id);
+}
+
 function getActiveCharacter(player) {
-  const id = player.getDynamicProperty(DP.character);
+  const id = activeCharacterId(player);
   return id ? CHARACTERS[id] : undefined;
 }
 
@@ -3324,7 +3351,7 @@ function activateCharacter(player, characterId) {
   ichigoFB.reset(player);
   clearLegacyMovement(player);
 
-  player.setDynamicProperty(DP.character, characterId);
+  setActiveCharacterId(player, characterId);
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.byakuyaWeapon, "base");
   player.setDynamicProperty(DP.starkkForm, "starkk");
@@ -3428,7 +3455,7 @@ function deactivateCharacter(player) {
   player.removeEffect("regeneration");
   player.setDynamicProperty(DP.healthScale, 1);
   player.setDynamicProperty(DP.markedEnd, 0);
-  player.setDynamicProperty(DP.character, undefined);
+  setActiveCharacterId(player, undefined);
   player.setDynamicProperty(DP.awakened, false);
   player.setDynamicProperty(DP.trueForm, false);
   player.setDynamicProperty(DP.awakening, 0);
@@ -6279,7 +6306,7 @@ function clearAaronieroDevoured(player) {
 
 function isEspadaPlayer(entity) {
   if (!entity || entity.typeId !== "minecraft:player") return false;
-  const id = entity.getDynamicProperty(DP.character);
+  const id = activeCharacterId(entity);
   return !!AARONIERO_SIGNATURES[id];
 }
 
@@ -6290,7 +6317,7 @@ function currentConfiguredMaxHealth(entity) {
 }
 
 function absorbEspada(player, target) {
-  const targetId = target.getDynamicProperty(DP.character);
+  const targetId = activeCharacterId(target);
   const signature = AARONIERO_SIGNATURES[targetId];
   if (!signature) return false;
 
@@ -11580,10 +11607,21 @@ function iceRestoreEntry(e) {
   } catch (err) {}
 }
 
+// devolve os blocos. Ate ICE_RESTORE_PER_TICK volta na hora; o resto segue nos
+// ticks seguintes (o Kurohitsugi Encantado trocava 2000 blocos num tick so)
+const ICE_RESTORE_PER_TICK = 200;
 function iceRestore(ledger) {
-  for (let i = ledger.length - 1; i >= 0; i--) iceRestoreEntry(ledger[i]);
-  ledger.length = 0;
+  const pending = ledger.splice(0);
   iceRegistry.delete(ledger);
+  let i = pending.length - 1;
+  const step = () => {
+    for (let n = 0; n < ICE_RESTORE_PER_TICK && i >= 0; n++, i--) iceRestoreEntry(pending[i]);
+    return i < 0;
+  };
+  if (step()) return;
+  const run = system.runInterval(() => {
+    if (step()) system.clearRun(run);
+  }, 1);
 }
 
 // congela o primeiro bloco de verdade (agua ou solido) que achar de cima pra baixo
@@ -12570,12 +12608,18 @@ function castIrooni(player) {
   const z0 = Math.floor(o.z) - cfg.arena / 2;
   const yTop = Math.floor(o.y) + 3;
   const yBottom = Math.floor(o.y) - 4;
-  for (let dx = 0; dx < cfg.arena; dx++) {
-    for (let dz = 0; dz < cfg.arena; dz++) {
-      const color = IROONI_COLORS[palette[Math.floor(dz / cfg.tile) * tiles + Math.floor(dx / cfg.tile)]];
-      iceFreezeColumn(dim, ledger, x0 + dx, z0 + dz, yTop, yBottom, color.block);
+  // o chao sai em 10 ticks, 2 fileiras por vez (as 3200 leituras de bloco num
+  // tick so davam um engasgo visivel)
+  const buildRows = (from) => {
+    for (let dx = from; dx < Math.min(cfg.arena, from + 2); dx++) {
+      for (let dz = 0; dz < cfg.arena; dz++) {
+        const color = IROONI_COLORS[palette[Math.floor(dz / cfg.tile) * tiles + Math.floor(dx / cfg.tile)]];
+        iceFreezeColumn(dim, ledger, x0 + dx, z0 + dz, yTop, yBottom, color.block);
+      }
     }
-  }
+  };
+  buildRows(0);
+  for (let from = 2; from < cfg.arena; from += 2) system.runTimeout(() => buildRows(from), from / 2);
 
   // sorteia uma cor pra cada player na area de 50 blocos (Shunsui incluso)
   const assigned = new Map();
@@ -17137,8 +17181,14 @@ function fireCrescent(player, cfg, look, options = {}) {
   });
   let travelled = options.startAhead ?? cfg.startAhead;
 
-  const strikeAround = (c, cfg) => {
-    for (const entity of dim.getEntities({ location: c, maxDistance: cfg.radius + cfg.lateral + 2 })) {
+  // `nearby`: os candidatos do tick inteiro (uma busca so, nao uma por sub-passo)
+  const strikeAround = (c, cfg, nearby) => {
+    for (const entity of nearby) {
+      try {
+        if (!entity.isValid) continue;
+      } catch (e) {
+        continue;
+      }
       if (entity.id === player.id || hit.has(entity.id)) continue;
       if (!entity.getComponent("minecraft:health")) continue;
       if (options.ignore?.(entity)) continue;
@@ -17181,12 +17231,17 @@ function fireCrescent(player, cfg, look, options = {}) {
       travelled = Math.min(cfg.range, travelled + cfg.speed);
       const now = sized(travelled);
       drawCrescent(dim, centerAt(travelled), frame, now, look, lite, travelled - from);
+      // uma busca cobrindo todo o trecho deste tick (era uma por sub-passo)
+      const nearby = dim.getEntities({
+        location: centerAt((from + travelled) / 2),
+        maxDistance: (travelled - from) / 2 + now.radius + now.lateral + now.bulge + 2,
+      });
       for (let k = 1; k <= cfg.subSteps; k++) {
         const d = from + ((travelled - from) * k) / cfg.subSteps;
         const c = centerAt(d);
         const step = sized(d);
         cancelAttacksNear(player, dim, c, step.radius, cfg.cancelsUpToTier, options.cancelLook);
-        strikeAround(c, step);
+        strikeAround(c, step, nearby);
         options.onStep?.(c, frame, step);
       }
     } catch (e) {
@@ -19216,7 +19271,7 @@ const KOMAMURA = {
   },
   giantM1: { reach: 6, arcCos: 0.35, cooldownTicks: 8 },
   restoreTicks: 1200,
-  restorePerTick: 300,
+  restorePerTick: 120, // blocos por tick (300 dava pico de lag na volta do terreno)
 };
 
 CRESCENT_LOOKS.myoo = {
@@ -20836,6 +20891,11 @@ system.runInterval(() => {
   for (const player of world.getPlayers()) {
     const character = getActiveCharacter(player);
     if (!character) continue;
+    // so quem esta agachado pode estar dando o dash: o resto nem le propriedade
+    if (!player.isSneaking) {
+      wasSneakJumping.set(player.id, false);
+      continue;
+    }
     if (trappingZoneFor(player)) continue;
     // perna cortada pelo Teatro de Títeres: sem dash
     if (player.getDynamicProperty(DP.legCut)) continue;
