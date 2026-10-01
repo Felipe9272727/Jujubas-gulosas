@@ -122,6 +122,10 @@ try {
     "komamura:braco",
     "komamura:punho",
     "komamura:guarda",
+    // barris, cogumelo e Pac-Man do Yukio: so visual (o dano e do script)
+    "yukio:barril",
+    "yukio:cogumelo",
+    "yukio:pacman",
     "urahara:blood_shield",
     "urahara:kin_cross",
     "yoruichi:afterimage",
@@ -1121,6 +1125,36 @@ const CHARACTERS = {
       },
     },
   },
+  yukio: {
+    id: "yukio",
+    name: "Yukio Hans Vorarlberna",
+    health: 1300,
+    items: {
+      0: "yukio:m1_invaders",
+      1: "yukio:saving",
+      2: "yukio:chat_room",
+      3: "yukio:digital_clone",
+      4: "yukio:snake_game",
+    },
+    // Awakening: agachar + usar o m1 com o medidor em 100%. Desfaz o Chat Room
+    awakening: {
+      name: "Digital Radial Invaders",
+      triggerItem: "yukio:m1_invaders",
+      health: 1500,
+      onActivate: "battlecry",
+      chatLine: "Digital Radial Invaders!",
+      cryParticle: "yukio:pixel",
+      cryPitch: 1.6,
+      aura: { particle: "yukio:pixel", radius: 0.8, height: 2, perTick: 1 },
+      items: {
+        0: "yukio:m1_radial",
+        1: "yukio:barrel_rolls",
+        2: "yukio:sonic_spin",
+        3: "yukio:red_mushroom",
+        4: "yukio:pac_man",
+      },
+    },
+  },
   komamura: {
     id: "komamura",
     name: "Sajin Komamura",
@@ -1243,6 +1277,7 @@ const CHARACTER_RACE_TIER = {
   unohana: { race: "shinigami", tier: 3 },
   komamura: { race: "shinigami", tier: 4 },
   ichigo_sf: { race: "hybrid", tier: 4 },
+  yukio: { race: "fullbringer", tier: 3 },
   tsukishima: { race: "fullbringer", tier: 3 },
   chad: { race: "fullbringer", tier: 3 },
   orihime: { race: "fullbringer", tier: 2 },
@@ -1505,6 +1540,8 @@ function dealDamage(target, amount, source, options) {
   if (ichigoFB.blocksDamage(target)) return;
   // Momentum's Slash (imune) e AutoAcceptance (esquiva) do Ichigo SF
   if (ichigoSfBlocks(target, source)) return;
+  // Saving do Yukio: quem esta salvo na caixa nao toma dano
+  if (yukioSavedBlocks(target)) return;
   // Santen Kesshun da Orihime: repele tudo de tier <= 4 que atinge quem esta na cupula
   if (source && orihime.blocksDamage(target, source, amount)) return;
   // Kaidō Expert: a Unohana lembra de quem tentou machucar ela (mesmo barrado)
@@ -1760,6 +1797,14 @@ const SKILL_COOLDOWN_TICKS = {
   "ichigosf:duality_barrage": 800, // 40s
   "ichigosf:inside_out": 900, // 45s
   "ichigosf:sky_divide": 1300, // 65s
+  "yukio:saving": 700, // 35s
+  "yukio:chat_room": 200, // 10s depois de fechar (a arena dura ate o awakening/reset/morte)
+  "yukio:digital_clone": 400, // 20s
+  "yukio:snake_game": 500, // 25s
+  "yukio:barrel_rolls": 400, // 20s
+  "yukio:sonic_spin": 600, // 30s
+  "yukio:red_mushroom": 600, // 30s
+  "yukio:pac_man": 900, // 45s
 };
 
 const SKILL_NAMES = {
@@ -1954,6 +1999,14 @@ const SKILL_NAMES = {
   "ichigosf:duality_barrage": "Duality Barrage",
   "ichigosf:inside_out": "Getsuga Inside-Out",
   "ichigosf:sky_divide": "Sky Divide",
+  "yukio:saving": "Saving",
+  "yukio:chat_room": "Chat Room",
+  "yukio:digital_clone": "Digital Clone",
+  "yukio:snake_game": "Snake Game",
+  "yukio:barrel_rolls": "Barrel Rolls",
+  "yukio:sonic_spin": "Sonic Spin",
+  "yukio:red_mushroom": "Red Mushroom",
+  "yukio:pac_man": "Pac-Man",
 };
 
 // dano aumentado
@@ -2183,6 +2236,16 @@ const DAMAGE = {
   dualityBarrage: 300,
   insideOut: 1500,
   skyDivide: 2500,
+  // Yukio Hans Vorarlberna
+  yukioM1: 25,
+  yukioBarrel: 50,
+  yukioClone: 25,
+  snakeGame: 250,
+  barrelRow: 100, // 3 fileiras = 300
+  sonicSpin: 350, // total das 5 passadas
+  mushroom: 250,
+  mushroomHeal: 500,
+  pacMan: 500,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -3408,6 +3471,7 @@ function deactivateCharacter(player) {
   if (character.id === "unohana") unohanaCleanup(player.id, true);
   if (character.id === "komamura") komamuraCleanup(player.id);
   if (character.id === "ichigo_sf") ichigoSfCleanup(player.id);
+  if (character.id === "yukio") yukioCleanup(player.id);
 
   if (isMasked(player)) {
     try {
@@ -3510,6 +3574,8 @@ function activateAwakening(player, character) {
   const items = form.items ?? character.items;
   if (character.id === "urahara") getInv(player).setItem(5, undefined);
   if (character.id === "chad") chad.setArm(player, "right");
+  // Digital Radial Invaders: o digital vem pro mundo real e a arena se desfaz
+  if (character.id === "yukio") closeArena(player.id);
 
   player.setDynamicProperty(DP.awakened, true);
   // Toda ativacao entra pela PRIMEIRA fase. O medidor continua em 100% e
@@ -3892,6 +3958,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     unohanaCleanup(player.id, false); // quem atacou antes de morrer continua marcado
     komamuraCleanup(player.id);
     ichigoSfCleanup(player.id);
+    yukioCleanup(player.id);
     unohanaHeals.delete(player.id);
     clearDots(player.id);
     ukitakeAbsorb.delete(player.id);
@@ -4753,6 +4820,34 @@ world.afterEvents.itemUse.subscribe((ev) => {
       break;
     case "ichigosf:sky_divide":
       castSkyDivide(player);
+      break;
+    case "yukio:m1_invaders":
+    case "yukio:m1_radial":
+      yukioThrowBlades(player);
+      break;
+    case "yukio:saving":
+      castSaving(player);
+      break;
+    case "yukio:chat_room":
+      castChatRoom(player);
+      break;
+    case "yukio:digital_clone":
+      castDigitalClone(player);
+      break;
+    case "yukio:snake_game":
+      castSnakeGame(player);
+      break;
+    case "yukio:barrel_rolls":
+      castBarrelRolls(player);
+      break;
+    case "yukio:sonic_spin":
+      castSonicSpin(player);
+      break;
+    case "yukio:red_mushroom":
+      castRedMushroom(player);
+      break;
+    case "yukio:pac_man":
+      castPacMan(player);
       break;
   }
 });
@@ -20426,6 +20521,1003 @@ function ichigoSfCleanup(playerId) {
 }
 
 /* ---------------------------------------------------------
+   Yukio Hans Vorarlberna - Tier 3 (Fullbringer)
+   Invaders Must Die: o Fullbring dele é o videogame. Na base ele arma o
+   Chat Room (arena branca fechada) e o resto da base só funciona com ela de
+   pé. O Awakening (Digital Radial Invaders) desfaz a arena e traz os jogos
+   pro mundo real: barris do Donkey Kong, o Sonic, o cogumelo do Mario e o
+   Pac-Man gigante do filme Pixels.
+   --------------------------------------------------------- */
+
+// particulas do Yukio (as chaves terminam em Particle: o validador acha por elas)
+const YK_FX = {
+  pixelParticle: "yukio:pixel",
+  laminaParticle: "yukio:lamina",
+  cobraParticle: "yukio:cobra",
+  cabecaParticle: "yukio:cobra_cabeca",
+  explosaoParticle: "yukio:explosao",
+  sonicParticle: "yukio:sonic",
+  energiaParticle: "yukio:energia",
+};
+
+const YUKIO = {
+  id: "yukio",
+  entities: { clone: "yukio:clone", barril: "yukio:barril", cogumelo: "yukio:cogumelo", pacman: "yukio:pacman" },
+  blades: { reach: 3, width: 1.1, gapTicks: 8, homingRange: 12, homingSpeed: 1.4, homingTicks: 16, hitRadius: 1.2 },
+  barrelEveryHits: 5,
+  fallingBarrel: { height: 7, fallTicks: 7, radius: 2.5 },
+  saving: { range: 24, ticks: 300 },
+  arena: { half: 10, height: 8, opsPerTick: 250 }, // ~6000 blocos: ~1,2s pra subir
+  clone: { count: 2, lifeTicks: 300, speed: 0.45, reach: 1.9, attackGapTicks: 12, searchRange: 24 },
+  snake: { searchRange: 30, speed: 1.1, maxTargets: 10, maxTicks: 220, hitRadius: 1.5, length: 14 },
+  barrelRolls: { rows: 3, perRow: 3, gapTicks: 10, spacing: 1.5, speed: 0.9, range: 26, hitRadius: 1.3 },
+  sonic: { range: 28, passes: 5, ticksPerPass: 10, cameraHeight: 19, radius: 5 },
+  mushroom: { lifeTicks: 400, speed: 0.12, touch: 1.3, turnTicks: 20 },
+  pacman: { speed: 1, range: 50, radius: 3.2, eatRadius: 2.5, killUpToTier: 3 },
+  restoreTicks: 1200,
+};
+
+// blocos das caixas do Yukio (o Saving) também são inquebráveis enquanto valem
+const YUKIO_SAVING_BLOCK = "minecraft:light_blue_stained_glass";
+const YUKIO_ARENA_BLOCK = "minecraft:white_concrete";
+
+function isYukio(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && getActiveCharacter(entity)?.id === YUKIO.id;
+  } catch (e) {
+    return false;
+  }
+}
+
+function yukioAlive(player) {
+  return !isDownOrGone(player) && isYukio(player);
+}
+
+function ykFx(dim, name, at) {
+  try {
+    dim.spawnParticle(name, at);
+  } catch (e) {}
+}
+
+function ykSound(dim, name, at, volume = 1, pitch = 1) {
+  try {
+    dim.playSound(name, at, { volume, pitch });
+  } catch (e) {}
+}
+
+const yukioRuns = new Map(); // id do Yukio -> Set de intervals/timeouts
+const yukioEntities = new Map(); // id da entidade -> { entity, ownerId }
+const yukioHits = new Map(); // id do Yukio -> golpes do m1 desperto (barril a cada 5)
+const yukioLastThrow = new Map(); // id -> tick do ultimo arremesso de laminas
+
+function ykTrack(player, id) {
+  let set = yukioRuns.get(player.id);
+  if (!set) {
+    set = new Set();
+    yukioRuns.set(player.id, set);
+  }
+  set.add(id);
+  return id;
+}
+
+function ykStop(player, id) {
+  system.clearRun(id);
+  yukioRuns.get(player.id)?.delete(id);
+}
+
+function ykSpawn(player, type, at, yaw = 0) {
+  try {
+    const entity = player.dimension.spawnEntity(type, at);
+    entity.teleport(at, { keepVelocity: false, rotation: { x: 0, y: yaw } });
+    yukioEntities.set(entity.id, { entity, ownerId: player.id });
+    return entity;
+  } catch (e) {
+    return undefined;
+  }
+}
+
+function ykRemove(entity) {
+  if (!entity) return;
+  yukioEntities.delete(entity.id);
+  try {
+    entity.remove();
+  } catch (e) {}
+}
+
+function yawToward(from, to) {
+  return (Math.atan2(-(to.x - from.x), to.z - from.z) * 180) / Math.PI;
+}
+
+// quem o Yukio (e as coisas dele) pode acertar: tudo com vida, menos ele e as
+// copias dele mesmo
+function ykCanHit(player, entity) {
+  try {
+    if (!entity || entity.id === player.id) return false;
+    if (!entity.isValid || !entity.getComponent("minecraft:health")) return false;
+    if (isDownOrGone(entity)) return false;
+    const mine = yukioEntities.get(entity.id);
+    if (mine && mine.ownerId === player.id) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function ykHit(player, entity, amount, options) {
+  if (isRespiring(entity)) {
+    showRespiraGuard(entity);
+    return false;
+  }
+  try {
+    dealDamage(entity, amount * dmgMultiplier(player), player, options);
+  } catch (e) {}
+  return true;
+}
+
+function ykNearest(player, from, range, skip) {
+  let best;
+  let bestD = Infinity;
+  for (const entity of player.dimension.getEntities({ location: from, maxDistance: range })) {
+    if (!ykCanHit(player, entity) || skip?.has(entity.id)) continue;
+    const l = entity.location;
+    const d = Math.hypot(l.x - from.x, l.y - from.y, l.z - from.z);
+    if (d < bestD) {
+      bestD = d;
+      best = entity;
+    }
+  }
+  return best;
+}
+
+/* ---------- Chat Room: a arena branca fechada ---------- */
+
+const yukioArenas = new Map(); // id do Yukio -> arena
+
+function yukioArenaOf(playerId) {
+  return yukioArenas.get(playerId);
+}
+
+function insideArena(arena, l) {
+  return (
+    Math.abs(l.x - arena.cx) <= arena.half + 0.5 &&
+    Math.abs(l.z - arena.cz) <= arena.half + 0.5 &&
+    l.y >= arena.y0 - 0.5 &&
+    l.y <= arena.y0 + arena.height + 0.5
+  );
+}
+
+function castChatRoom(player) {
+  if (yukioArenas.has(player.id)) {
+    player.sendMessage("§7O Chat Room já está aberto.");
+    return;
+  }
+  if (!tryUseSkill(player, "yukio:chat_room")) return;
+  const cfg = YUKIO.arena;
+  const dim = player.dimension;
+  const l = player.location;
+  const arena = {
+    ownerId: player.id,
+    dim,
+    cx: Math.floor(l.x) + 0.5,
+    cz: Math.floor(l.z) + 0.5,
+    y0: Math.floor(l.y),
+    half: cfg.half,
+    height: cfg.height,
+    ledger: iceTrack([]),
+    inside: new Set(),
+    ops: [],
+  };
+  yukioArenas.set(player.id, arena);
+  world.sendMessage(`§b${player.name}: §f§lChat Room. §r§7Bem-vindos ao meu jogo.`);
+  ykSound(dim, "random.levelup", l, 1, 1.8);
+
+  // a lista de blocos: chao, paredes e teto brancos; o miolo vira ar. Sai aos
+  // poucos (250 por tick) pra nao travar o mundo
+  const x0 = Math.floor(l.x);
+  const z0 = Math.floor(l.z);
+  const h = cfg.half + 1;
+  for (let dy = -1; dy <= cfg.height + 1; dy++) {
+    for (let dx = -h; dx <= h; dx++) {
+      for (let dz = -h; dz <= h; dz++) {
+        const shell = dy === -1 || dy === cfg.height + 1 || Math.abs(dx) === h || Math.abs(dz) === h;
+        arena.ops.push([x0 + dx, arena.y0 + dy, z0 + dz, shell ? YUKIO_ARENA_BLOCK : "minecraft:air"]);
+      }
+    }
+  }
+  // quem ja esta dentro fica preso dentro
+  for (const entity of dim.getEntities({ location: { x: arena.cx, y: arena.y0 + 2, z: arena.cz }, maxDistance: cfg.half * 1.5 + cfg.height })) {
+    if (insideArena(arena, entity.location)) arena.inside.add(entity.id);
+  }
+  arena.inside.add(player.id);
+}
+
+function closeArena(playerId) {
+  const arena = yukioArenas.get(playerId);
+  if (!arena) return;
+  yukioArenas.delete(playerId);
+  arena.ops.length = 0;
+  iceRestore(arena.ledger);
+}
+
+// constroi aos poucos e segura todo mundo que esta dentro (dash e teleporte nao
+// atravessam a parede: quem sair e puxado de volta pro lado de dentro)
+system.runInterval(() => {
+  for (const arena of yukioArenas.values()) {
+    for (let n = 0; n < YUKIO.arena.opsPerTick && arena.ops.length; n++) {
+      const [x, y, z, type] = arena.ops.shift();
+      iceSet(arena.ledger, arena.dim, x, y, z, type);
+    }
+    if (system.currentTick % 2) continue;
+    const center = { x: arena.cx, y: arena.y0 + 2, z: arena.cz };
+    let nearby = [];
+    try {
+      nearby = arena.dim.getEntities({ location: center, maxDistance: arena.half * 1.5 + arena.height + 8 });
+    } catch (e) {}
+    const seen = new Set();
+    for (const entity of nearby) {
+      try {
+        seen.add(entity.id);
+        const l = entity.location;
+        if (insideArena(arena, l)) {
+          arena.inside.add(entity.id);
+          continue;
+        }
+        if (!arena.inside.has(entity.id)) continue;
+        // saiu: volta pro ponto mais perto do lado de dentro
+        const limit = arena.half - 0.3;
+        entity.teleport(
+          {
+            x: Math.max(arena.cx - limit, Math.min(arena.cx + limit, l.x)),
+            y: Math.max(arena.y0, Math.min(arena.y0 + arena.height - 2, l.y)),
+            z: Math.max(arena.cz - limit, Math.min(arena.cz + limit, l.z)),
+          },
+          { dimension: arena.dim, keepVelocity: false }
+        );
+      } catch (e) {}
+    }
+    // quem foi longe demais (teleporte grande) tambem volta, pro centro
+    for (const id of arena.inside) {
+      if (seen.has(id)) continue;
+      const entity = world.getPlayers().find((p) => p.id === id);
+      if (!entity) continue;
+      try {
+        if (isDownOrGone(entity)) {
+          arena.inside.delete(id);
+          continue;
+        }
+        entity.teleport({ x: arena.cx, y: arena.y0, z: arena.cz }, { dimension: arena.dim, keepVelocity: false });
+      } catch (e) {}
+    }
+  }
+}, 1);
+
+function needsChatRoom(player) {
+  if (yukioArenas.has(player.id)) return true;
+  player.sendMessage("§7Essa skill só funciona com o §fChat Room§7 aberto.");
+  return false;
+}
+
+/* ---------- Saving: a caixa inquebrável ---------- */
+
+const yukioSaves = new Map(); // id de quem esta preso -> { until, ledger, at, ownerId }
+
+function yukioSavedBlocks(target) {
+  const save = yukioSaves.get(target?.id);
+  if (!save) return false;
+  if (system.currentTick < save.until) return true;
+  return false;
+}
+
+function castSaving(player) {
+  const cfg = YUKIO.saving;
+  let target;
+  try {
+    target = player
+      .getEntitiesFromViewDirection({ maxDistance: cfg.range })
+      .map((hit) => hit.entity)
+      .find((e) => ykCanHit(player, e) && !yukioSaves.has(e.id));
+  } catch (e) {}
+  if (!target) {
+    player.sendMessage("§7Mire em alguém para salvar no Saving.");
+    return;
+  }
+  if (!tryUseSkill(player, "yukio:saving")) return;
+  const dim = target.dimension;
+  const l = target.location;
+  const bx = Math.floor(l.x);
+  const by = Math.floor(l.y);
+  const bz = Math.floor(l.z);
+  const at = { x: bx + 0.5, y: by, z: bz + 0.5 };
+  const ledger = iceTrack([]);
+  // casca 3x4x3 de vidro em volta de um vao 1x2
+  for (let dy = -1; dy <= 2; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const inner = dx === 0 && dz === 0 && (dy === 0 || dy === 1);
+        iceSet(ledger, dim, bx + dx, by + dy, bz + dz, inner ? "minecraft:air" : YUKIO_SAVING_BLOCK);
+      }
+    }
+  }
+  try {
+    target.teleport(at, { dimension: dim, keepVelocity: false });
+  } catch (e) {}
+  const save = { until: system.currentTick + cfg.ticks, ledger, at, dim, ownerId: player.id };
+  yukioSaves.set(target.id, save);
+  world.sendMessage(`§b${player.name}: §f§lSaving... §r§7${target.nameTag || target.typeId} foi salvo.`);
+  ykSound(dim, "random.orb", at, 1, 0.6);
+  try {
+    if (target.typeId === "minecraft:player") target.sendMessage("§bVocê foi salvo no Saving: preso e imune por 15s.");
+  } catch (e) {}
+  save.run = system.runInterval(() => {
+    if (yukioSaves.get(target.id) !== save) {
+      system.clearRun(save.run);
+      return;
+    }
+    if (system.currentTick >= save.until || isDownOrGone(target)) {
+      endSave(target.id);
+      return;
+    }
+    try {
+      const p = target.location;
+      if (Math.hypot(p.x - at.x, p.z - at.z) > 0.6 || Math.abs(p.y - at.y) > 1.2) {
+        target.teleport(at, { dimension: dim, keepVelocity: false });
+      }
+      if (system.currentTick % 10 === 0) ykFx(dim, YK_FX.pixelParticle, { x: at.x, y: at.y + 2.2, z: at.z });
+    } catch (e) {}
+  }, 2);
+}
+
+function endSave(targetId) {
+  const save = yukioSaves.get(targetId);
+  if (!save) return;
+  yukioSaves.delete(targetId);
+  system.clearRun(save.run);
+  iceRestore(save.ledger);
+}
+
+/* ---------- m1: as laminas digitais ---------- */
+
+function bladeTrail(dim, from, to) {
+  const d = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
+  const n = Math.max(2, Math.ceil(d / 0.5));
+  for (let i = 0; i <= n; i++) {
+    const k = i / n;
+    ykFx(dim, i % 3 === 0 ? YK_FX.pixelParticle : YK_FX.laminaParticle, {
+      x: from.x + (to.x - from.x) * k,
+      y: from.y + (to.y - from.y) * k,
+      z: from.z + (to.z - from.z) * k,
+    });
+  }
+}
+
+// o golpe corpo a corpo: as laminas saem da mao e cravam no alvo
+function yukioMelee(player, target, awakened) {
+  try {
+    const p = player.getHeadLocation();
+    const t = target.location;
+    bladeTrail(player.dimension, { x: p.x, y: p.y - 0.4, z: p.z }, { x: t.x, y: t.y + 1, z: t.z });
+  } catch (e) {}
+  if (awakened) yukioCountHit(player, target);
+}
+
+// usar o m1 (sem agachar) arremessa as laminas: na base vao 3 blocos reto; no
+// Awakening sao teleguiadas
+function yukioThrowBlades(player) {
+  const now = system.currentTick;
+  if (now - (yukioLastThrow.get(player.id) ?? -Infinity) < YUKIO.blades.gapTicks) return;
+  yukioLastThrow.set(player.id, now);
+  const awakened = isAwakened(player);
+  const dim = player.dimension;
+  const head = player.getHeadLocation();
+  const from = { x: head.x, y: head.y - 0.4, z: head.z };
+  ykSound(dim, "random.bow", from, 0.8, 1.8);
+  if (!awakened) {
+    const cfg = YUKIO.blades;
+    const v = unitVector(player.getViewDirection());
+    const to = { x: from.x + v.x * cfg.reach, y: from.y + v.y * cfg.reach, z: from.z + v.z * cfg.reach };
+    bladeTrail(dim, from, to);
+    for (const entity of dim.getEntities({ location: from, maxDistance: cfg.reach + 2 })) {
+      if (!ykCanHit(player, entity)) continue;
+      const l = entity.location;
+      const rel = { x: l.x - from.x, y: l.y + 1 - from.y, z: l.z - from.z };
+      const along = rel.x * v.x + rel.y * v.y + rel.z * v.z;
+      if (along < 0 || along > cfg.reach + 0.5) continue;
+      const off = Math.hypot(rel.x - v.x * along, rel.y - v.y * along, rel.z - v.z * along);
+      if (off > cfg.width) continue;
+      ykHit(player, entity, DAMAGE.yukioM1);
+    }
+    return;
+  }
+  const target = ykNearest(player, from, YUKIO.blades.homingRange);
+  if (!target) {
+    const v = unitVector(player.getViewDirection());
+    bladeTrail(dim, from, { x: from.x + v.x * 3, y: from.y + v.y * 3, z: from.z + v.z * 3 });
+    return;
+  }
+  launchHomingBlade(player, from, target);
+}
+
+function launchHomingBlade(player, from, target) {
+  const cfg = YUKIO.blades;
+  const dim = player.dimension;
+  let pos = { ...from };
+  let ticks = 0;
+  const run = ykTrack(
+    player,
+    system.runInterval(() => {
+      if (!yukioAlive(player) || isDownOrGone(target) || ticks++ >= cfg.homingTicks) {
+        ykStop(player, run);
+        return;
+      }
+      try {
+        const t = target.location;
+        const aim = { x: t.x, y: t.y + 1, z: t.z };
+        const d = Math.hypot(aim.x - pos.x, aim.y - pos.y, aim.z - pos.z);
+        const step = Math.min(cfg.homingSpeed, d);
+        const next = {
+          x: pos.x + ((aim.x - pos.x) / (d || 1)) * step,
+          y: pos.y + ((aim.y - pos.y) / (d || 1)) * step,
+          z: pos.z + ((aim.z - pos.z) / (d || 1)) * step,
+        };
+        bladeTrail(dim, pos, next);
+        pos = next;
+        if (d - step <= cfg.hitRadius) {
+          ykStop(player, run);
+          ykHit(player, target, DAMAGE.yukioM1);
+          yukioCountHit(player, target);
+        }
+      } catch (e) {
+        ykStop(player, run);
+      }
+    }, 1)
+  );
+}
+
+// a cada 5 golpes do m1 desperto um barril do Donkey Kong cai no alvo
+function yukioCountHit(player, target) {
+  const n = (yukioHits.get(player.id) ?? 0) + 1;
+  if (n < YUKIO.barrelEveryHits) {
+    yukioHits.set(player.id, n);
+    return;
+  }
+  yukioHits.set(player.id, 0);
+  dropBarrel(player, target);
+}
+
+function dropBarrel(player, target) {
+  const cfg = YUKIO.fallingBarrel;
+  const dim = player.dimension;
+  const t = target.location;
+  const top = { x: t.x, y: t.y + cfg.height, z: t.z };
+  const barrel = ykSpawn(player, YUKIO.entities.barril, top, yawToward(player.location, t));
+  ykSound(dim, "random.anvil_land", top, 0.6, 1.6);
+  let tick = 0;
+  const run = ykTrack(
+    player,
+    system.runInterval(() => {
+      tick++;
+      let ground = t;
+      try {
+        if (!isDownOrGone(target)) ground = target.location;
+      } catch (e) {}
+      const k = Math.min(1, tick / cfg.fallTicks);
+      const at = { x: ground.x, y: ground.y + cfg.height * (1 - k * k), z: ground.z };
+      try {
+        barrel?.teleport(at, { keepVelocity: false });
+      } catch (e) {}
+      if (k < 1) return;
+      ykStop(player, run);
+      ykRemove(barrel);
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        ykFx(dim, i % 2 ? YK_FX.explosaoParticle : "minecraft:large_explosion", {
+          x: ground.x + Math.cos(a) * cfg.radius * 0.6,
+          y: ground.y + 0.6 + Math.random(),
+          z: ground.z + Math.sin(a) * cfg.radius * 0.6,
+        });
+      }
+      ykSound(dim, "random.explode", ground, 1.2, 1.3);
+      for (const entity of dim.getEntities({ location: { x: ground.x, y: ground.y + 1, z: ground.z }, maxDistance: cfg.radius })) {
+        if (ykCanHit(player, entity)) ykHit(player, entity, DAMAGE.yukioBarrel);
+      }
+    }, 1)
+  );
+}
+
+/* ---------- Digital Clone ---------- */
+
+function castDigitalClone(player) {
+  if (!needsChatRoom(player)) return;
+  if (!tryUseSkill(player, "yukio:digital_clone")) return;
+  const cfg = YUKIO.clone;
+  world.sendMessage(`§b${player.name}: §f§lDigital Clone`);
+  const l = player.location;
+  const f = forwardDirection(player);
+  const side = rightOf(f);
+  const yaw = player.getRotation().y;
+  for (let i = 0; i < cfg.count; i++) {
+    const s = i === 0 ? 1 : -1;
+    const at = { x: l.x + side.x * 1.5 * s + f.x, y: l.y, z: l.z + side.z * 1.5 * s + f.z };
+    const clone = ykSpawn(player, YUKIO.entities.clone, at, yaw);
+    if (!clone) continue;
+    try {
+      clone.nameTag = player.name;
+    } catch (e) {}
+    for (let k = 0; k < 6; k++) ykFx(player.dimension, YK_FX.pixelParticle, { x: at.x + (Math.random() - 0.5), y: at.y + Math.random() * 2, z: at.z + (Math.random() - 0.5) });
+    runClone(player, clone);
+  }
+  ykSound(player.dimension, "random.orb", l, 1, 1.4);
+}
+
+function runClone(player, clone) {
+  const cfg = YUKIO.clone;
+  let tick = 0;
+  let lastAttack = -Infinity;
+  const run = ykTrack(
+    player,
+    system.runInterval(() => {
+      tick += 2;
+      let valid = false;
+      try {
+        valid = clone.isValid && !isDownOrGone(clone);
+      } catch (e) {}
+      if (!valid || !yukioAlive(player) || tick >= cfg.lifeTicks) {
+        ykStop(player, run);
+        try {
+          for (let k = 0; k < 6; k++) ykFx(clone.dimension, YK_FX.pixelParticle, { x: clone.location.x, y: clone.location.y + k * 0.3, z: clone.location.z });
+        } catch (e) {}
+        ykRemove(clone);
+        return;
+      }
+      try {
+        const c = clone.location;
+        const target = ykNearest(player, c, cfg.searchRange);
+        if (!target) return;
+        const t = target.location;
+        const d = Math.hypot(t.x - c.x, t.z - c.z);
+        const yaw = yawToward(c, t);
+        if (d > cfg.reach) {
+          const step = Math.min(cfg.speed * 2, d - cfg.reach * 0.8);
+          const next = { x: c.x + ((t.x - c.x) / d) * step, y: c.y, z: c.z + ((t.z - c.z) / d) * step };
+          // degrau de 1 bloco: sobe
+          if (!aizenStandable(clone.dimension, next)) next.y += 1;
+          if (!aizenStandable(clone.dimension, next)) return;
+          clone.teleport(next, { keepVelocity: false, rotation: { x: 0, y: yaw } });
+          return;
+        }
+        clone.teleport(c, { keepVelocity: false, rotation: { x: 0, y: yaw } });
+        if (tick - lastAttack < cfg.attackGapTicks) return;
+        lastAttack = tick;
+        bladeTrail(clone.dimension, { x: c.x, y: c.y + 1.3, z: c.z }, { x: t.x, y: t.y + 1, z: t.z });
+        ykHit(player, target, DAMAGE.yukioClone);
+      } catch (e) {}
+    }, 2)
+  );
+}
+
+/* ---------- Snake Game ---------- */
+
+function castSnakeGame(player) {
+  if (!needsChatRoom(player)) return;
+  const cfg = YUKIO.snake;
+  const head0 = player.getHeadLocation();
+  if (!ykNearest(player, head0, cfg.searchRange)) {
+    player.sendMessage("§7Não há ninguém para a cobrinha caçar.");
+    return;
+  }
+  if (!tryUseSkill(player, "yukio:snake_game")) return;
+  world.sendMessage(`§b${player.name}: §f§lSnake Game!`);
+  const dim = player.dimension;
+  const hit = new Set();
+  let head = { x: head0.x, y: head0.y - 0.5, z: head0.z };
+  const body = [];
+  let target = ykNearest(player, head, cfg.searchRange);
+  let ticks = 0;
+  ykSound(dim, "random.orb", head, 1, 0.5);
+  const run = ykTrack(
+    player,
+    system.runInterval(() => {
+      ticks++;
+      if (!yukioAlive(player) || ticks > cfg.maxTicks || hit.size >= cfg.maxTargets) {
+        ykStop(player, run);
+        return;
+      }
+      try {
+        if (!target || isDownOrGone(target) || hit.has(target.id)) {
+          target = ykNearest(player, head, cfg.searchRange, hit);
+          if (!target) {
+            ykStop(player, run);
+            return;
+          }
+        }
+        const t = target.location;
+        const aim = { x: t.x, y: t.y + 1, z: t.z };
+        // a cobrinha anda em grade: um eixo por vez, o de maior distancia
+        const dx = aim.x - head.x;
+        const dy = aim.y - head.y;
+        const dz = aim.z - head.z;
+        const ax = Math.abs(dx);
+        const ay = Math.abs(dy);
+        const az = Math.abs(dz);
+        const step = cfg.speed;
+        if (ax >= az && ax >= ay) head = { ...head, x: head.x + Math.sign(dx) * Math.min(step, ax) };
+        else if (az >= ay) head = { ...head, z: head.z + Math.sign(dz) * Math.min(step, az) };
+        else head = { ...head, y: head.y + Math.sign(dy) * Math.min(step, ay) };
+        body.unshift({ ...head });
+        if (body.length > cfg.length) body.length = cfg.length;
+        if (ticks % 2 === 0) {
+          for (let i = 0; i < body.length; i++) ykFx(dim, i === 0 ? YK_FX.cabecaParticle : YK_FX.cobraParticle, body[i]);
+        }
+        // acerta quem a cabeca encostar no caminho (o alvo e quem mais estiver)
+        for (const entity of dim.getEntities({ location: head, maxDistance: cfg.hitRadius + 1.5 })) {
+          if (hit.size >= cfg.maxTargets) break;
+          if (!ykCanHit(player, entity) || hit.has(entity.id)) continue;
+          const l = entity.location;
+          if (Math.hypot(l.x - head.x, l.y + 1 - head.y, l.z - head.z) > cfg.hitRadius + 0.5) continue;
+          hit.add(entity.id);
+          ykHit(player, entity, DAMAGE.snakeGame);
+          ykSound(dim, "random.pop", l, 1, 1.6);
+        }
+      } catch (e) {
+        ykStop(player, run);
+      }
+    }, 1)
+  );
+}
+
+/* ---------- Barrel Rolls ---------- */
+
+function castBarrelRolls(player) {
+  if (!tryUseSkill(player, "yukio:barrel_rolls")) return;
+  const cfg = YUKIO.barrelRolls;
+  world.sendMessage(`§b${player.name}: §f§lBarrel Rolls!`);
+  const f = forwardDirection(player);
+  const side = rightOf(f);
+  const yaw = player.getRotation().y;
+  for (let r = 0; r < cfg.rows; r++) {
+    ykTrack(
+      player,
+      system.runTimeout(() => {
+        if (!yukioAlive(player)) return;
+        const l = player.location;
+        const hit = new Set();
+        const barrels = [];
+        for (let i = 0; i < cfg.perRow; i++) {
+          const off = (i - (cfg.perRow - 1) / 2) * cfg.spacing;
+          const at = { x: l.x + f.x * 1.5 + side.x * off, y: l.y, z: l.z + f.z * 1.5 + side.z * off };
+          barrels.push({ entity: ykSpawn(player, YUKIO.entities.barril, at, yaw), pos: at });
+        }
+        ykSound(player.dimension, "random.anvil_land", l, 0.6, 1.4);
+        rollBarrels(player, barrels, f, hit);
+      }, r * cfg.gapTicks)
+    );
+  }
+}
+
+function rollBarrels(player, barrels, f, hit) {
+  const cfg = YUKIO.barrelRolls;
+  const dim = player.dimension;
+  let travelled = 0;
+  const run = ykTrack(
+    player,
+    system.runInterval(() => {
+      travelled += cfg.speed;
+      if (!yukioAlive(player) || travelled > cfg.range) {
+        ykStop(player, run);
+        for (const b of barrels) ykRemove(b.entity);
+        return;
+      }
+      for (const b of barrels) {
+        const next = { x: b.pos.x + f.x * cfg.speed, y: b.pos.y, z: b.pos.z + f.z * cfg.speed };
+        // segue o chao: sobe um degrau, desce se nao tiver nada embaixo
+        if (!aizenStandable(dim, next)) next.y += 1;
+        else if (aizenStandable(dim, { x: next.x, y: next.y - 1, z: next.z })) next.y -= 1;
+        b.pos = next;
+        try {
+          b.entity?.teleport(next, { keepVelocity: false });
+        } catch (e) {}
+        if (travelled % 3 < cfg.speed) ykFx(dim, YK_FX.pixelParticle, { x: next.x, y: next.y + 0.2, z: next.z });
+        // atravessa os alvos: cada fileira acerta cada um uma vez
+        for (const entity of dim.getEntities({ location: next, maxDistance: cfg.hitRadius + 1.2 })) {
+          if (!ykCanHit(player, entity) || hit.has(entity.id)) continue;
+          const l = entity.location;
+          if (Math.hypot(l.x - next.x, l.z - next.z) > cfg.hitRadius || Math.abs(l.y - next.y) > 1.6) continue;
+          hit.add(entity.id);
+          ykHit(player, entity, DAMAGE.barrelRow);
+          ykSound(dim, "random.break", l, 0.8, 0.8);
+        }
+      }
+    }, 1)
+  );
+}
+
+/* ---------- Sonic Spin (o Showdown da Yoruichi virando uma bola azul) ---------- */
+
+const yukioSpins = new Map(); // id -> estado
+
+function castSonicSpin(player) {
+  const cfg = YUKIO.sonic;
+  let target;
+  try {
+    target = player
+      .getEntitiesFromViewDirection({ maxDistance: cfg.range })
+      .map((h) => h.entity)
+      .find((e) => ykCanHit(player, e));
+  } catch (e) {}
+  if (!target) target = ykNearest(player, player.location, cfg.range);
+  if (!target) {
+    player.sendMessage("§7Mire em alguém para o Sonic Spin.");
+    return;
+  }
+  if (yukioSpins.has(player.id)) return;
+  if (!tryUseSkill(player, "yukio:sonic_spin")) return;
+  world.sendMessage(`§b${player.name}: §f§lSonic Spin!`);
+  const dim = player.dimension;
+  const state = { target, pass: -1, hit: new Set(), tick: 0, rotation: player.getRotation() };
+  yukioSpins.set(player.id, state);
+  try {
+    player.addEffect("invisibility", cfg.passes * cfg.ticksPerPass + 4, { amplifier: 0, showParticles: false });
+  } catch (e) {}
+  holdJump(player, cfg.passes * cfg.ticksPerPass + 2);
+  ykSound(dim, "mob.enderdragon.flap", player.location, 1.4, 1.6);
+  const perPass = DAMAGE.sonicSpin / cfg.passes;
+  state.run = ykTrack(
+    player,
+    system.runInterval(() => {
+      if (!yukioAlive(player) || isDownOrGone(target) || state.tick >= cfg.passes * cfg.ticksPerPass) {
+        endSonicSpin(player);
+        return;
+      }
+      state.tick++;
+      try {
+        const c = target.location;
+        const pass = Math.floor((state.tick - 1) / cfg.ticksPerPass);
+        const phase = (state.tick - 1) % cfg.ticksPerPass;
+        try {
+          player.camera.setCamera("minecraft:free", {
+            location: { x: c.x, y: c.y + cfg.cameraHeight, z: c.z },
+            rotation: { x: 90, y: 0 },
+          });
+        } catch (e) {}
+        if (pass !== state.pass) {
+          state.pass = pass;
+          const a = (pass * Math.PI * 4) / 5; // estrela: cada passada cruza a anterior
+          state.entry = { x: c.x + Math.cos(a) * cfg.radius, y: c.y, z: c.z + Math.sin(a) * cfg.radius };
+          state.exit = { x: c.x - Math.cos(a) * cfg.radius, y: c.y, z: c.z - Math.sin(a) * cfg.radius };
+          state.from = { ...player.location };
+          state.passHit = false;
+        }
+        const lerpTo = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k });
+        const from = { ...player.location };
+        const to = phase < 3 ? lerpTo(state.from, state.entry, (phase + 1) / 3) : lerpTo(state.entry, state.exit, (phase - 2) / 7);
+        player.teleport(to, { dimension: dim, keepVelocity: false, rotation: { x: 0, y: yawToward(to, c) } });
+        // a bola azul e o rastro de energia
+        for (let i = 0; i < 6; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const b = Math.random() * Math.PI;
+          ykFx(dim, YK_FX.sonicParticle, { x: to.x + Math.cos(a) * Math.sin(b) * 0.6, y: to.y + 0.8 + Math.cos(b) * 0.6, z: to.z + Math.sin(a) * Math.sin(b) * 0.6 });
+        }
+        bladeTrailWith(dim, { x: from.x, y: from.y + 0.8, z: from.z }, { x: to.x, y: to.y + 0.8, z: to.z }, YK_FX.energiaParticle);
+        if (phase >= 3 && !state.passHit) {
+          const mid = { x: c.x, y: c.y + 1, z: c.z };
+          if (segDistance(mid, { x: from.x, y: from.y + 1, z: from.z }, { x: to.x, y: to.y + 1, z: to.z }) < 1.8) {
+            state.passHit = true;
+            ykHit(player, target, perPass);
+            ykFx(dim, YK_FX.explosaoParticle, mid);
+            ykSound(dim, "game.player.attack.strong", c, 1.4, 1.2);
+          }
+        }
+      } catch (e) {}
+    }, 1)
+  );
+}
+
+function bladeTrailWith(dim, from, to, particle) {
+  const d = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
+  const n = Math.max(2, Math.ceil(d / 0.6));
+  for (let i = 0; i <= n; i++) {
+    const k = i / n;
+    ykFx(dim, particle, { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, z: from.z + (to.z - from.z) * k });
+  }
+}
+
+function segDistance(p, a, b) {
+  const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  const len2 = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z || 1;
+  const k = Math.max(0, Math.min(1, ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y + (p.z - a.z) * ab.z) / len2));
+  return Math.hypot(a.x + ab.x * k - p.x, a.y + ab.y * k - p.y, a.z + ab.z * k - p.z);
+}
+
+function endSonicSpin(player) {
+  const state = yukioSpins.get(player.id);
+  if (!state) return;
+  yukioSpins.delete(player.id);
+  ykStop(player, state.run);
+  try {
+    player.camera.clear();
+  } catch (e) {}
+  try {
+    player.removeEffect("invisibility");
+    player.teleport(player.location, { keepVelocity: false, rotation: state.rotation });
+  } catch (e) {}
+  releaseJump(player);
+}
+
+/* ---------- Red Mushroom ---------- */
+
+function castRedMushroom(player) {
+  if (!tryUseSkill(player, "yukio:red_mushroom")) return;
+  const cfg = YUKIO.mushroom;
+  world.sendMessage(`§b${player.name}: §c§lRed Mushroom`);
+  const f = forwardDirection(player);
+  const l = player.location;
+  let pos = { x: l.x + f.x * 3, y: l.y, z: l.z + f.z * 3 };
+  if (!aizenStandable(player.dimension, pos)) pos = { ...l };
+  const dim = player.dimension;
+  const mushroom = ykSpawn(player, YUKIO.entities.cogumelo, pos, player.getRotation().y);
+  ykSound(dim, "random.pop", pos, 1, 0.8);
+  let tick = 0;
+  let heading = Math.random() * Math.PI * 2;
+  const run = ykTrack(
+    player,
+    system.runInterval(() => {
+      tick++;
+      const done = () => {
+        ykStop(player, run);
+        ykRemove(mushroom);
+      };
+      if (!yukioAlive(player) || tick >= cfg.lifeTicks) {
+        done();
+        return;
+      }
+      // anda pra uma direcao sorteada; troca a cada 1s ou quando bate em algo
+      if (tick % cfg.turnTicks === 0) heading = Math.random() * Math.PI * 2;
+      const next = { x: pos.x + Math.cos(heading) * cfg.speed, y: pos.y, z: pos.z + Math.sin(heading) * cfg.speed };
+      if (!aizenStandable(dim, next)) {
+        next.y += 1;
+        if (!aizenStandable(dim, next)) {
+          heading += Math.PI;
+          return;
+        }
+      } else if (aizenStandable(dim, { x: next.x, y: next.y - 1, z: next.z })) {
+        next.y -= 1;
+      }
+      pos = next;
+      try {
+        mushroom?.teleport(pos, { keepVelocity: false, rotation: { x: 0, y: (-heading * 180) / Math.PI - 90 } });
+      } catch (e) {}
+      if (tick % 2) return;
+      // encostou: o Yukio cura, qualquer outro toma dano
+      for (const entity of dim.getEntities({ location: pos, maxDistance: cfg.touch + 1 })) {
+        const e = entity.location;
+        if (Math.hypot(e.x - pos.x, e.z - pos.z) > cfg.touch || Math.abs(e.y - pos.y) > 1.5) continue;
+        if (entity.id === player.id) {
+          healVirtual(player, DAMAGE.mushroomHeal);
+          ykSound(dim, "random.levelup", pos, 1, 1.6);
+          player.sendMessage(`§a+${DAMAGE.mushroomHeal} de vida (Red Mushroom)`);
+          done();
+          return;
+        }
+        if (!ykCanHit(player, entity)) continue;
+        ykHit(player, entity, DAMAGE.mushroom);
+        for (let i = 0; i < 6; i++) ykFx(dim, YK_FX.explosaoParticle, { x: pos.x + (Math.random() - 0.5), y: pos.y + Math.random(), z: pos.z + (Math.random() - 0.5) });
+        ykSound(dim, "random.explode", pos, 0.8, 1.6);
+        done();
+        return;
+      }
+    }, 1)
+  );
+}
+
+/* ---------- Pac-Man ---------- */
+
+function castPacMan(player) {
+  if (!tryUseSkill(player, "yukio:pac_man")) return;
+  const cfg = YUKIO.pacman;
+  world.sendMessage(`§b${player.name}: §e§lPAC-MAN!`);
+  const dim = player.dimension;
+  const dir = unitVector(player.getViewDirection());
+  const yaw = player.getRotation().y;
+  const l = player.location;
+  let pos = { x: l.x + dir.x * 3, y: l.y + 0.5 + dir.y * 3, z: l.z + dir.z * 3 };
+  const pac = ykSpawn(player, YUKIO.entities.pacman, pos, yaw);
+  const hit = new Set();
+  const ledger = [];
+  const seen = new Set();
+  let travelled = 0;
+  ykSound(dim, "random.eat", pos, 1.6, 0.6);
+  const run = ykTrack(
+    player,
+    system.runInterval(() => {
+      travelled += cfg.speed;
+      if (!yukioAlive(player) || travelled > cfg.range) {
+        ykStop(player, run);
+        ykRemove(pac);
+        return;
+      }
+      pos = { x: pos.x + dir.x * cfg.speed, y: pos.y + dir.y * cfg.speed, z: pos.z + dir.z * cfg.speed };
+      try {
+        pac?.teleport(pos, { keepVelocity: false, rotation: { x: 0, y: yaw } });
+      } catch (e) {}
+      const mid = { x: pos.x, y: pos.y + cfg.radius * 0.6, z: pos.z };
+      if (travelled % 4 < cfg.speed) ykSound(dim, "random.eat", mid, 1.2, 0.5 + (travelled % 8) / 8);
+      // come o terreno da frente (volta em 1 minuto, como o do Komamura)
+      const r = Math.ceil(cfg.eatRadius);
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dz = -r; dz <= r; dz++) {
+            if (dx * dx + dy * dy + dz * dz > cfg.eatRadius * cfg.eatRadius) continue;
+            komamuraBreak(ledger, dim, Math.floor(mid.x + dx), Math.floor(mid.y + dy), Math.floor(mid.z + dz), seen);
+          }
+        }
+      }
+      // e quem estiver na frente: tier 3 ou menor morre, acima toma 500
+      for (const entity of dim.getEntities({ location: mid, maxDistance: cfg.radius + 1.5 })) {
+        if (!ykCanHit(player, entity) || hit.has(entity.id)) continue;
+        const e = entity.location;
+        if (Math.hypot(e.x - mid.x, e.y + 1 - mid.y, e.z - mid.z) > cfg.radius + 0.5) continue;
+        hit.add(entity.id);
+        if (tierOfPlayer(entity) <= cfg.killUpToTier) {
+          let max = 0;
+          try {
+            max = virtualHealth(entity);
+          } catch (e2) {}
+          ykHit(player, entity, (max + 1000) / Math.max(0.01, dmgMultiplier(player)), { ignoresReduction: true, breaksBlock: true });
+        } else {
+          ykHit(player, entity, DAMAGE.pacMan, { breaksBlock: true });
+        }
+        ykFx(dim, YK_FX.explosaoParticle, { x: e.x, y: e.y + 1, z: e.z });
+      }
+    }, 1)
+  );
+  scheduleRestore(ledger);
+}
+
+/* ---------- limpeza ---------- */
+
+function yukioCleanup(playerId) {
+  closeArena(playerId);
+  for (const [targetId, save] of yukioSaves) if (save.ownerId === playerId) endSave(targetId);
+  const set = yukioRuns.get(playerId);
+  if (set) for (const id of set) system.clearRun(id);
+  yukioRuns.delete(playerId);
+  yukioHits.delete(playerId);
+  yukioLastThrow.delete(playerId);
+  for (const [id, info] of yukioEntities) {
+    if (info.ownerId !== playerId) continue;
+    yukioEntities.delete(id);
+    try {
+      info.entity.remove();
+    } catch (e) {}
+  }
+  const spin = yukioSpins.get(playerId);
+  if (spin) {
+    const p = world.getPlayers().find((pl) => pl.id === playerId);
+    if (p) endSonicSpin(p);
+    else yukioSpins.delete(playerId);
+  }
+}
+
+// sobra de sessao anterior (o mundo fechou com um clone ou barril no mundo)
+system.runInterval(() => {
+  for (const id of ["overworld", "nether", "the_end"]) {
+    let dim;
+    try {
+      dim = world.getDimension(id);
+    } catch (e) {
+      continue;
+    }
+    for (const type of Object.values(YUKIO.entities)) {
+      try {
+        for (const entity of dim.getEntities({ type })) {
+          if (!yukioEntities.has(entity.id)) entity.remove();
+        }
+      } catch (e) {}
+    }
+  }
+}, 40);
+
+/* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
@@ -20456,6 +21548,20 @@ const MELEE_WEAPONS = {
     particle: "komamura:corte",
     dot: null,
     giant: true,
+  },
+  // laminas digitais do Yukio (usar o m1 arremessa; no Awakening, teleguiadas)
+  "yukio:m1_invaders": {
+    baseDamage: DAMAGE.yukioM1,
+    particle: "yukio:lamina",
+    dot: null,
+    yukio: true,
+  },
+  "yukio:m1_radial": {
+    baseDamage: DAMAGE.yukioM1,
+    particle: "yukio:lamina",
+    dot: null,
+    yukio: true,
+    yukioAwakened: true,
   },
   // Zangetsu com a guarda do Fullbring; no Bankai, a Tensa Zangetsu
   "ichigosf:m1_zangetsu": {
@@ -20843,6 +21949,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       if (weapon.burn) applyBurn(hitEntity, damagingEntity, weapon.burn.seconds, weapon.burn.infernal);
       if (weapon.tenken) komamuraTenkenHit(damagingEntity);
       if (weapon.giant) komamuraGiantSweep(damagingEntity, hitEntity);
+      if (weapon.yukio) yukioMelee(damagingEntity, hitEntity, !!weapon.yukioAwakened);
       // m1 com estouro (o Zangetsu do Vasto Lorde)
       if (weapon.blast) {
         try {
@@ -21522,7 +22629,7 @@ system.runInterval(() => {
 
 // blocos de skill que ninguem quebra enquanto o livro-caixa estiver aberto:
 // a Enma Kōrogi e a Kurohitsugi (concreto preto) e o casulo do Hōgyoku (branco)
-const LEDGER_PROTECTED_BLOCKS = new Set(["minecraft:black_concrete", "minecraft:white_concrete"]);
+const LEDGER_PROTECTED_BLOCKS = new Set(["minecraft:black_concrete", "minecraft:white_concrete", YUKIO_SAVING_BLOCK]);
 
 world.beforeEvents.playerBreakBlock.subscribe((ev) => {
   try {
@@ -21579,6 +22686,7 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   clearDots(playerId);
   komamuraCleanup(playerId);
   ichigoSfCleanup(playerId);
+  yukioCleanup(playerId);
 });
 
 
@@ -21750,6 +22858,7 @@ const TSUKISHIMA_ATTACK_POOL = [
   { id: "unohana", name: "Unohana", skills: [["M1 Zanpakuto", DAMAGE.unohanaM1], ["Hadō #33 Sōkatsui", DAMAGE.sokatsui]] },
   { id: "komamura", name: "Komamura", skills: [["M1 Tenken", DAMAGE.tenkenM1], ["Destructive Slash", DAMAGE.destructiveSlash]] },
   { id: "ichigo_sf", name: "Ichigo (SF)", skills: [["M1 Zangetsu", DAMAGE.sfM1], ["Duality Tenshou", DAMAGE.dualityTenshou]] },
+  { id: "yukio", name: "Yukio", skills: [["M1 Lâminas digitais", DAMAGE.yukioM1], ["Snake Game", DAMAGE.snakeGame]] },
 ];
 
 const tsukishima = createTsukishima({
@@ -21824,6 +22933,7 @@ export {
   KOMAMURA,
   STARKK_DAMAGE_MULTIPLIER,
   ICHIGO_SF,
+  YUKIO,
   // efeitos negativos pro Diagnóstico da Unohana ter o que limpar na simulacao
   applyBurn,
   applyDeterioration,

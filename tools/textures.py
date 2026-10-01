@@ -4490,3 +4490,195 @@ TEXTURES.update({
         "grid": ["......bW", ".....bWb", "....bWb.", "...bWb..", "..bWb...", ".bWb....", "bWb.....", "Wb......"],
     },
 })
+
+# ---------------------------------------------------------------------------
+# Yukio Hans Vorarlberna: entidades (tools/yukio_model.py), ícones e o digital
+# ---------------------------------------------------------------------------
+from yukio_model import TEXTURE_SPECS as _YUKIO_TEXTURES  # noqa: E402
+
+for _name, _spec in _YUKIO_TEXTURES.items():
+    TEXTURES[f"entity/{_name}"] = _spec
+
+_YK = {
+    "k": (24, 24, 30, 255),
+    "g": (120, 124, 140, 255),
+    "G": (170, 174, 188, 255),
+    "s": (60, 200, 120, 255),    # tela verde
+    "S": (150, 255, 190, 255),
+    "c": (70, 220, 255, 255),    # ciano digital
+    "C": (200, 250, 255, 255),
+    "b": (40, 90, 220, 255),     # azul
+    "B": (90, 150, 255, 255),
+    "w": (245, 246, 250, 255),
+    "r": (220, 34, 30, 255),
+    "R": (160, 20, 20, 255),
+    "y": (255, 222, 40, 255),
+    "Y": (220, 180, 20, 255),
+    "n": (176, 104, 46, 255),    # madeira do barril
+    "N": (110, 62, 26, 255),
+    "e": (246, 222, 176, 255),   # talo do cogumelo
+    "l": (40, 180, 60, 255),     # cobra
+    "L": (20, 120, 40, 255),
+}
+
+
+def _yk_console(screen, glow):
+    def f(x, y):
+        if 1 <= x <= 14 and 3 <= y <= 12:
+            if 3 <= x <= 12 and 4 <= y <= 9:
+                # invasor no meio da tela
+                inv = {(6, 5), (9, 5), (5, 6), (6, 6), (7, 6), (8, 6), (9, 6), (10, 6), (5, 7), (7, 7), (8, 7), (10, 7), (6, 8), (9, 8)}
+                return glow if (x, y) in inv else screen
+            if y == 11 and x in (3, 4, 5) or (y in (10, 12) and x == 4):
+                return "k"                                  # direcional
+            if y == 11 and x in (11, 13):
+                return "r"                                  # botões
+            return "g" if (x + y) % 5 else "G"
+        return None
+    return f
+
+
+def _yk_saving(x, y):
+    if 2 <= x <= 13 and 2 <= y <= 13:
+        if 4 <= x <= 10 and 2 <= y <= 6:
+            return "G" if not (8 <= x <= 9 and 3 <= y <= 5) else "k"   # tampa de metal
+        if 4 <= x <= 11 and 9 <= y <= 13:
+            return "w"                                               # etiqueta
+        return "b"
+    return None
+
+
+def _yk_chat(x, y):
+    if 1 <= x <= 14 and 2 <= y <= 10:
+        if (x in (1, 14) or y in (2, 10)):
+            return "c"
+        if y in (5, 7) and 3 <= x <= 12 and (x + y) % 4:
+            return "g"
+        return "w"
+    if 3 <= x <= 5 and 11 <= y <= 13 and x - 3 >= y - 11:
+        return "c"
+    return None
+
+
+def _yk_clone(x, y):
+    for ox, col in ((2, "c"), (9, "C")):
+        u = x - ox
+        if 1 <= u <= 3 and 1 <= y <= 3:
+            return col
+        if 0 <= u <= 4 and 4 <= y <= 9:
+            return col if u in (0, 4) and y > 6 else col
+        if u in (1, 3) and 10 <= y <= 14:
+            return col
+    return None
+
+
+def _yk_snake(x, y):
+    path = [(2, 12), (3, 12), (4, 12), (5, 12), (5, 11), (5, 10), (5, 9), (6, 9), (7, 9), (8, 9), (9, 9), (9, 8), (9, 7), (9, 6), (10, 6), (11, 6)]
+    if (x, y) in path:
+        return "S" if (x, y) == path[-1] else ("l" if path.index((x, y)) % 2 else "L")
+    if (x, y) in ((13, 3), (12, 3), (13, 4), (12, 4)):
+        return "r"
+    if (x, y) == (13, 2):
+        return "l"
+    if x % 4 == 0 and y % 4 == 0:
+        return "k"
+    return None
+
+
+def _yk_barrel(x, y):
+    dx, dy = x - 7.5, y - 7.5
+    if abs(dx) <= 6 and abs(dy) <= 5 and (abs(dx) <= 5 or abs(dy) <= 4):
+        if abs(dx) == 4.5:
+            return "k"                                      # aros de ferro
+        if abs(dx) >= 5.5:
+            return "N"
+        return "N" if (y % 3 == 0) else "n"
+    return None
+
+
+def _yk_sonic(x, y):
+    dx, dy = x - 7.5, y - 8
+    r = (dx * dx + dy * dy) ** 0.5
+    if r <= 5:
+        if dx > 1 and abs(dy) < 1.5:
+            return "e" if dx < 3 else "w"
+        return "b" if r < 4 else "B"
+    if dx < -4 and abs(dy) <= 5 and (int(dy) % 3 == 0):
+        return "c"
+    return None
+
+
+def _yk_mushroom(x, y):
+    if 1 <= y <= 8 and 1 <= x <= 14:
+        dx, dy = x - 7.5, y - 8
+        if dx * dx / 49 + dy * dy / 49 > 1:
+            return None
+        if (x - 7.5) ** 2 + (y - 3.5) ** 2 <= 3 or (x - 3) ** 2 + (y - 6) ** 2 <= 2 or (x - 12) ** 2 + (y - 6) ** 2 <= 2:
+            return "w"
+        return "r" if y > 2 else "R"
+    if 9 <= y <= 14 and 4 <= x <= 11:
+        if y in (10, 11) and x in (6, 9):
+            return "k"
+        return "e"
+    return None
+
+
+def _yk_pacman(x, y):
+    import math
+    dx, dy = x - 7.5, y - 7.5
+    r = (dx * dx + dy * dy) ** 0.5
+    if r > 6.5:
+        return None
+    ang = math.degrees(math.atan2(-dy, dx))
+    if -32 <= ang <= 32 and dx > 0:
+        return None
+    if (x, y) in ((7, 4), (8, 4)):
+        return "k"
+    return "y" if r < 5.5 else "Y"
+
+
+TEXTURES.update({
+    "items/yukio_m1_invaders": {"palette": _YK, "grid": _draw(_yk_console("s", "S"))},
+    "items/yukio_m1_radial": {"palette": _YK, "grid": _draw(_yk_console("b", "C"))},
+    "items/yukio_saving": {"palette": _YK, "grid": _draw(_yk_saving)},
+    "items/yukio_chat_room": {"palette": _YK, "grid": _draw(_yk_chat)},
+    "items/yukio_digital_clone": {"palette": _YK, "grid": _draw(_yk_clone)},
+    "items/yukio_snake_game": {"palette": _YK, "grid": _draw(_yk_snake)},
+    "items/yukio_barrel_rolls": {"palette": _YK, "grid": _draw(_yk_barrel)},
+    "items/yukio_sonic_spin": {"palette": _YK, "grid": _draw(_yk_sonic)},
+    "items/yukio_red_mushroom": {"palette": _YK, "grid": _draw(_yk_mushroom)},
+    "items/yukio_pac_man": {"palette": _YK, "grid": _draw(_yk_pacman)},
+    # pixel digital (quadradinho ciano de borda clara)
+    "particle/yukio_pixel": {
+        "palette": {"c": (70, 220, 255, 230), "C": (210, 250, 255, 255)},
+        "grid": ["CCCCCCCC", "CccccccC", "CccccccC", "CccccccC", "CccccccC", "CccccccC", "CccccccC", "CCCCCCCC"],
+    },
+    # faca digital: lâmina branca de fio ciano, recortada em pixel
+    "particle/yukio_lamina": {
+        "palette": {"c": (70, 220, 255, 220), "W": (250, 252, 255, 255)},
+        "grid": [".......W", "......Wc", ".....Wc.", "....Wc..", "...Wc...", "..Wc....", ".Wc.....", "c......."],
+    },
+    # corpo e cabeça da cobrinha (quadrados verdes de jogo antigo)
+    "particle/yukio_cobra": {
+        "palette": {"l": (40, 180, 60, 255), "L": (20, 120, 40, 255)},
+        "grid": ["LLLLLLLL", "LllllllL", "LllllllL", "LllllllL", "LllllllL", "LllllllL", "LllllllL", "LLLLLLLL"],
+    },
+    "particle/yukio_cobra_cabeca": {
+        "palette": {"l": (120, 240, 120, 255), "L": (20, 120, 40, 255), "k": (10, 10, 10, 255)},
+        "grid": ["LLLLLLLL", "LllllllL", "LlkllklL", "LlkllklL", "LllllllL", "LllllllL", "LllllllL", "LLLLLLLL"],
+    },
+    # explosão de pixel (laranja e amarelo)
+    "particle/yukio_explosao": {
+        "palette": {"o": (255, 140, 30, 230), "y": (255, 230, 80, 255), "r": (220, 50, 20, 200)},
+        "grid": ["r.o..o.r", ".oyyyyo.", "oyyyyyyo", ".yyyyyy.", ".yyyyyy.", "oyyyyyyo", ".oyyyyo.", "r.o..o.r"],
+    },
+    # a bola azul do Sonic e o rastro de energia
+    "particle/yukio_sonic": {
+        "palette": {"b": (40, 90, 230, 255), "B": (110, 170, 255, 255), "w": (230, 240, 255, 255)},
+        "grid": ["..bbbb..", ".bBBBBb.", "bBBwwBBb", "bBwwBBBb", "bBBBBBBb", "bBBBBBBb", ".bBBBBb.", "..bbbb.."],
+    },
+    "particle/yukio_energia": {
+        "palette": {"c": (90, 200, 255, 120), "C": (170, 230, 255, 220)},
+        "grid": ["...cc...", "..cCCc..", ".cCCCCc.", "cCCCCCCc", "cCCCCCCc", ".cCCCCc.", "..cCCc..", "...cc..."],
+    },
+})

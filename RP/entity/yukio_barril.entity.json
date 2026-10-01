@@ -1,0 +1,30 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "yukio:barril",
+      "min_engine_version": "1.13.0",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/yukio_barril"
+      },
+      "geometry": {
+        "default": "geometry.yukio_barril"
+      },
+      "animations": {
+        "acao": "animation.yukio.barril.rola"
+      },
+      "scripts": {
+        "scale": "1.3",
+        "animate": [
+          "acao"
+        ]
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

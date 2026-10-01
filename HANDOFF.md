@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 1259 checks na simulação, zero exceções. Packs na versão 1.28.0.
+- **Estado**: 1336 checks na simulação, zero exceções. Packs na versão 1.29.0.
 - **Base**: a partir da 1.20.0 o repo parte da **1.19.25 (TosenVisored)** que o
   usuário mandou em `.mcaddon` — ela descende da 1.14.0 daqui (mesmos UUIDs) e foi
   desenvolvida fora deste branch. Foi importada byte a byte no commit
@@ -30,6 +30,8 @@ python3 tools/gen_textures.py   # renderiza os grids de tools/textures.py em PNG
 python3 tools/gen_model.py      # geometrias feitas por código (Vizard, clone do Aizen, Mugetsu, Myō'ō)
 python3 tools/bump_version.py minor   # OBRIGATÓRIO a cada release de conteúdo
 node --import ./sim/register.mjs sim/run.mjs   # só a simulação
+node --import ./sim/register.mjs sim/profile.mjs loops    # custo dos loops (lag)
+node --import ./sim/register.mjs sim/profile.mjs skills   # custo de cada skill
 ```
 
 O `build.py` roda tudo e **se recusa a empacotar** se qualquer etapa falhar.
@@ -52,6 +54,7 @@ tools/
   boxmodel.py           base comum dos modelos de caixa (rig do player, UV, textura)
   hollow_model.py       modelo dos attachables do Ichigo Vizard
   tensa_sf_model.py     casaco da Tensa Zangetsu (Ichigo SF)
+  yukio_model.py        barril, cogumelo, Pac-Man e a skin do clone (Yukio)
   mugetsu_model.py      cabelo, faixas e hakama do Mugetsu (Ichigo Dangai)
   komamura_model.py     braço, punho, guarda e armadura do Myō'ō (Komamura)
   gen_textures.py       grids -> PNG (e --check)
@@ -62,7 +65,8 @@ tools/
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~6400 linhas, 1201 checks
+  run.mjs               ~6900 linhas, 1336 checks
+  profile.mjs           conta chamadas nativas por loop e por skill (o "lag")
 ```
 
 ### A simulação
@@ -133,6 +137,7 @@ menu**. Tabela gerada do registro do `main.js`:
 | 2 | Orihime Inoue | 800 | super: Sōten Kisshun (em `orihime.js`) |
 | 3 | Shukuro Tsukishima (Book of the End) | 1600 | Escritas no lugar do awakening (em `tsukishima.js`) |
 | 3 | Yasutora Sado (Chad) | 1000 | Brazos del Gigante (em `chad.js`) |
+| 3 | **Yukio Hans Vorarlberna** | 1300 | Digital Radial Invaders (1500) |
 
 ### Híbrido
 | Tier | Personagem | Vida | Awakening / super |
@@ -756,6 +761,61 @@ correndo na frente do punho**, do pomo até a base da lâmina.
 - Limpeza: `ichigoSfCleanup` nos mesmos pontos do Komamura (desativar, morte,
   sair do mundo).
 
+## Lag (1.29)
+
+`sim/profile.mjs` conta, no stub, cada chamada à API nativa (é o que custa no
+Bedrock): `loops` mostra o custo de cada `runInterval` parado (arquivo:linha
+onde foi criado) e `skills` usa cada skill sozinha e mostra total e pico por
+tick de chamadas, partículas, buscas e blocos trocados. O que foi feito:
+
+- `getActiveCharacter` lê a propriedade uma vez por tick (`activeCharacterId`,
+  cache zerado a cada tick); todo `setDynamicProperty(DP.character)` passa por
+  `setActiveCharacterId`. O loop do dash só olha quem está agachado.
+  Parado com 8 personagens: 118 → 67 chamadas por tick.
+- `fireCrescent` faz uma busca de entidades por tick (cobrindo o trecho
+  inteiro) em vez de uma por sub-passo.
+- Orçamento de partículas: 48 por tick, rajada de 240 (era 80/320).
+- `scheduleRestore` devolve 120 blocos por tick (era 300) e o `iceRestore`
+  devolve 200 por tick em vez de tudo de uma vez (Kurohitsugi Encantado: pico
+  de 2125 → 482). O chão do Irooni sai em 10 ticks.
+- Ainda pesados (só na hora que são usados): Susano'o's Cut (~1800 leituras de
+  bloco por tick), White Moon, Ice Age, Dragon's Breath. O caminho seria
+  `dimension.getBlocks` com filtro, se a versão da API do servidor tiver.
+
+## Yukio Hans Vorarlberna
+
+Tier 3, Fullbringer, 1300 de vida. Config em `YUKIO`, prefixo `yukio:`.
+Entidades (`tools/yukio_model.py`): `yukio:clone` (geometria
+`geometry.humanoid.custom` do jogo com a skin do Yukio + linhas de tela),
+`yukio:barril`, `yukio:cogumelo` e `yukio:pacman` (este com a boca abrindo e
+fechando: duas metades animadas). Barril/cogumelo/Pac-Man ficam fora das buscas
+(`SKIPPED_ENTITY_TYPES`); o clone é acertável. Tudo que ele cria fica em
+`yukioEntities` e sai no `yukioCleanup` (desativar, morte, sair).
+
+- **m1 (25)**: o golpe direto desenha as facas digitais até o alvo; **usar** o
+  item (sem agachar) arremessa as facas 3 blocos pra frente. Desperto
+  (`yukio:m1_radial`), o arremesso é teleguiado e todo 5º acerto derruba um
+  barril do Donkey Kong no alvo (50 em raio 2,5).
+- **Saving**: caixa de vidro 3×4×3 em quem ele mira, 15s; o preso fica imune
+  (`yukioSavedBlocks` no `dealDamage`) e é puxado de volta se sair. O vidro
+  entrou no `LEDGER_PROTECTED_BLOCKS` (só vale enquanto está no livro-caixa).
+- **Chat Room**: arena de concreto branco 21×21×8 (chão, paredes e teto; o
+  miolo vira ar), montada 250 blocos por tick. Quem estiver dentro (ou entrar)
+  não sai: a cada 2 ticks quem passou da parede é posto de volta no ponto mais
+  perto do lado de dentro — é isso que impede dash/teleporte de atravessar.
+  Digital Clone e Snake Game exigem a arena (`needsChatRoom`); ela só fecha no
+  Awakening (`activateAwakening` chama `closeArena`), no reset ou na morte.
+- **Digital Clone**: 2 clones com o nome do player, 15s, andam por script
+  atrás do alvo mais perto (tudo menos o Yukio e os clones dele) e batem 25.
+- **Snake Game**: a cobrinha anda em grade, um eixo por vez, persegue o mais
+  perto, acerta até 10 alvos diferentes (250 cada) e redesenha o corpo verde.
+- **Digital Radial Invaders** (1500): **Barrel Rolls** (3 fileiras de 3 barris
+  rolando no chão, atravessam, 100 por fileira), **Sonic Spin** (o Showdown da
+  Yoruichi refeito aqui: câmera de cima, 5 passadas em estrela, invisível com a
+  bola azul e o rastro; 350), **Red Mushroom** (anda aleatório; Yukio encosta
+  e cura 500, outro encosta e toma 250), **Pac-Man** (escala 4,5, vai reto na
+  mira 50 blocos comendo blocos e gente: tier ≤ 3 morre, acima toma 500).
+
 ## Animações
 
 `RP/animations/vizard.animation.json` define cinco animações e cada ataque tem
@@ -911,6 +971,17 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Rush and Cut | raio 4; o "deslizar" é knockback de 0,55 a cada 2 ticks |
 | Getsuga Inside-Out | alcance 32, 2s de voo no máximo, paralisia 2s, explode 1s depois de empalar |
 | Sky Divide | 72 blocos, cresce ×7; terreno volta em 1 minuto como o do Komamura |
+| Kin (Urahara) | cooldown 150s → 90s ("abaixe um minuto") |
+| m1 do Yukio | golpe direto 25 e, usando o item, arremesso de 3 blocos (8 ticks entre arremessos); desperto: teleguiado até 12 blocos |
+| Barril do m1 desperto | 50 em raio 2,5 em volta do alvo |
+| Saving | mira de 24 blocos; caixa de vidro azul-claro 3×4×3; o preso não sai (puxado de volta) |
+| Chat Room | arena 21×21, 8 de altura (miolo vira ar); cooldown de 10s depois de fechar; entra quem quiser, sai ninguém |
+| Digital Clone | 15s, 100 de vida cada, golpe a cada 0,6s; não copia a skin (o Bedrock não deixa) |
+| Snake Game | 30 blocos de busca, 11s no máximo; anda em grade, um eixo por vez |
+| Barrel Rolls | 100 por fileira (3 fileiras = 300 no total), 26 blocos |
+| Sonic Spin | 5 passadas de 70 (350); câmera de cima como a da Yoruichi |
+| Red Mushroom | some depois de 20s ou no primeiro toque |
+| Pac-Man | 50 blocos, raio 3,2; come o terreno (volta em 1 minuto); "morre" = dano de toda a vida, ignorando redução |
 
 ## Próximos passos sugeridos
 

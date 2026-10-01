@@ -46,6 +46,7 @@ o tier abre os personagens daquela raça naquele tier.
 | 2 | Orihime Inoue | 800 | super: Sōten Kisshun (em `orihime.js`) |
 | 3 | Shukuro Tsukishima (Book of the End) | 1600 | Escritas no lugar do awakening (em `tsukishima.js`) |
 | 3 | Yasutora Sado (Chad) | 1000 | Brazos del Gigante (em `chad.js`) |
+| 3 | **Yukio Hans Vorarlberna** | 1300 | Digital Radial Invaders (1500) |
 
 ### Híbrido
 | Tier | Personagem | Vida | Awakening / super |
@@ -71,7 +72,7 @@ com a pressão ligada; o Aizen Hōgyoku (7) apaga até o tier 2. O Ichigo (Danga
 BP/                     behavior pack
   manifest.json
   items/*.json          um arquivo por item (format_version 1.26.40)
-  entities/*.json       boneco de teste, clone do Aizen, mortos do Yamamoto, partes do Myō'ō
+  entities/*.json       boneco de teste, clone do Aizen, mortos do Yamamoto, partes do Myō'ō, clone/barril/cogumelo/Pac-Man do Yukio
   scripts/main.js       TODO o gameplay (@minecraft/server 2.0 + server-ui)
   scripts/shinji.js     o Shinji Hirako (importado pelo main.js)
 RP/                     resource pack
@@ -89,6 +90,7 @@ tools/
   mugetsu_model.py      roupa do Mugetsu do Ichigo Dangai (attachable)
   komamura_model.py     partes do Myō'ō e a armadura do Bankai do Komamura
   tensa_sf_model.py     casaco da Tensa Zangetsu do Ichigo (SF)
+  yukio_model.py        barril, cogumelo, Pac-Man e a skin do clone do Yukio
   gen_model.py          renderiza os modelos em .geo.json
   vanilla_sounds.txt    IDs de som do Bedrock, pra validar os sons do script
   validate.py           JSON, itens, texturas, manifests, versões, sons, entidades
@@ -97,6 +99,7 @@ tools/
 sim/
   stubs/                @minecraft/server e @minecraft/server-ui falsos
   run.mjs               simulação completa do main.js fora do jogo
+  profile.mjs           mede o custo (chamadas nativas) de cada loop e de cada skill
 ```
 
 ## Build
@@ -113,6 +116,8 @@ python3 tools/validate.py                    # JSON, itens sem textura, manifest
 node --check BP/scripts/main.js              # sintaxe
 python3 tools/gen_textures.py --check        # texturas batem com os grids
 node --import ./sim/register.mjs sim/run.mjs # simulação
+node --import ./sim/register.mjs sim/profile.mjs loops   # custo dos loops parados
+node --import ./sim/register.mjs sim/profile.mjs skills  # custo de cada skill
 ```
 
 ### Teto de vida do Bedrock

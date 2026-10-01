@@ -6527,6 +6527,287 @@ check("sem o casaco", sf.getComponent("minecraft:equippable").getEquipment("Ches
 check("sem itens do SF no inventário", !inv(sf).slots.some((s) => s?.typeId?.startsWith("ichigosf:")));
 noNewErrors("desativar sem erro", mark);
 
+/* ================= Yukio Hans Vorarlberna ================= */
+
+const YK = game.YUKIO;
+function ykHits(target, since, amount) {
+  return log.damages.slice(since).filter((d) => d.target === target.name && (amount === undefined || Math.abs(virtualDamage(target, d) - amount) < 0.6));
+}
+function ykCd(p, key) {
+  p.setDynamicProperty("mv:cd_" + key.replace(":", "_"), undefined);
+}
+function ykEntities(type) {
+  return overworld.getEntities({ type });
+}
+
+scenario("Yukio: ativação (Fullbringer, Tier 3)");
+mark = errors.length;
+const yk = await newPlayerAs("YukioPlayer", { x: 80000, y: 64, z: 80000 }, "yukio");
+noNewErrors("ativar o Yukio sem erro", mark);
+check("registro: Fullbringer, Tier 3", RACE_TIER.yukio?.race === "fullbringer" && RACE_TIER.yukio?.tier === 3);
+check("vida máxima 1300", virtualMax(yk) === 1300, String(virtualMax(yk)));
+check(
+  "m1, Saving, Chat Room, Digital Clone e Snake Game nos slots 0-4",
+  JSON.stringify(slotIds(yk, 5)) === JSON.stringify(["yukio:m1_invaders", "yukio:saving", "yukio:chat_room", "yukio:digital_clone", "yukio:snake_game"]),
+  JSON.stringify(slotIds(yk, 5))
+);
+
+scenario("m1: lâminas digitais até 3 blocos (25)");
+mark = errors.length;
+yk._view = { x: 1, y: 0, z: 0 };
+const pertoYk = createDummy("PertoYk", { x: 80002.5, y: 64, z: 80000 }, 500000);
+const longeYk = createDummy("LongeYk", { x: 80006, y: 64, z: 80000 }, 500000);
+dmgBefore = log.damages.length;
+hitWith(yk, pertoYk, "yukio:m1_invaders");
+check("golpe direto: 25", ykHits(pertoYk, dmgBefore, 25).length === 1);
+check("as lâminas aparecem", log.particles.some((p) => p.particleId === "yukio:lamina"));
+advanceTicks(10, "m1-gap");
+dmgBefore = log.damages.length;
+useItem(yk, "yukio:m1_invaders");
+check("usar o m1 arremessa: 25 em quem está a 2,5 blocos", ykHits(pertoYk, dmgBefore, 25).length === 1);
+check("não chega a 6 blocos", ykHits(longeYk, dmgBefore).length === 0);
+useItem(yk, "yukio:m1_invaders");
+check("não metralha: um arremesso a cada 8 ticks", ykHits(pertoYk, dmgBefore).length === 1);
+longeYk.kill();
+noNewErrors("m1 sem erro", mark);
+
+scenario("Digital Clone e Snake Game só funcionam com o Chat Room aberto");
+mark = errors.length;
+useItem(yk, "yukio:digital_clone");
+useItem(yk, "yukio:snake_game");
+check("sem arena não gasta o cooldown", yk.getDynamicProperty("mv:cd_yukio_digital_clone") === undefined && yk.getDynamicProperty("mv:cd_yukio_snake_game") === undefined);
+check("nenhum clone", ykEntities("yukio:clone").length === 0);
+noNewErrors("gate sem erro", mark);
+
+scenario("Saving: quem ele olha fica 15s numa caixa inquebrável, imune a dano");
+mark = errors.length;
+yk.teleport({ x: 80100, y: 64, z: 80000 });
+yk._view = { x: 1, y: 0, z: 0 };
+const salvo = createDummy("SalvoYk", { x: 80108.3, y: 64, z: 80000.2 }, 500000);
+useItem(yk, "yukio:saving");
+advanceTicks(2, "saving");
+check("vai pro meio da caixa", Math.abs(salvo.location.x - 80108.5) < 0.01 && Math.abs(salvo.location.z - 80000.5) < 0.01);
+check("caixa de vidro em volta", ["minecraft:light_blue_stained_glass"].includes(blockAt(80109, 64, 80000)) && blockAt(80108, 66, 80000) === "minecraft:light_blue_stained_glass" && blockAt(80108, 63, 80000) === "minecraft:light_blue_stained_glass");
+check("o vão dele fica livre", blockAt(80108, 64, 80000) === "minecraft:air" && blockAt(80108, 65, 80000) === "minecraft:air");
+const vidro = { block: overworld.getBlock({ x: 80109, y: 64, z: 80000 }), dimension: overworld, player: yk, cancel: false };
+world.beforeEvents.playerBreakBlock._emit(vidro);
+check("a caixa não quebra", vidro.cancel === true);
+dmgBefore = log.damages.length;
+yk.teleport({ x: 80107, y: 64, z: 80000 });
+hitWith(yk, salvo, "yukio:m1_invaders");
+check("imune lá dentro", ykHits(salvo, dmgBefore).length === 0);
+salvo.teleport({ x: 80112, y: 64, z: 80000 });
+advanceTicks(4, "foge");
+check("não sai da caixa", Math.abs(salvo.location.x - 80108.5) < 0.01);
+advanceTicks(YK.saving.ticks, "saving-fim");
+check("15s depois a caixa some", blockAt(80109, 64, 80000) === "minecraft:air" && blockAt(80108, 63, 80000) === "minecraft:air");
+dmgBefore = log.damages.length;
+hitWith(yk, salvo, "yukio:m1_invaders");
+check("e volta a tomar dano", ykHits(salvo, dmgBefore, 25).length === 1);
+salvo.kill();
+pertoYk.kill();
+noNewErrors("Saving sem erro", mark);
+
+scenario("Chat Room: arena branca fechada, chão inquebrável, ninguém sai");
+mark = errors.length;
+yk.teleport({ x: 80300.5, y: 64, z: 80000.5 });
+const presoArena = createDummy("PresoArena", { x: 80304, y: 64, z: 80003 }, 500000);
+for (let x = 80295; x <= 80305; x++) stone(x, 63, 80000, "minecraft:grass_block");
+stone(80302, 65, 80000);
+useItem(yk, "yukio:chat_room");
+advanceTicks(30, "arena-sobe");
+const h = YK.arena.half + 1;
+check("o chão vira o bloco da arena", blockAt(80300, 63, 80000) === "minecraft:white_concrete" && blockAt(80295, 63, 80000) === "minecraft:white_concrete");
+check("paredes e teto brancos", blockAt(80300 + h, 66, 80000) === "minecraft:white_concrete" && blockAt(80300, 64 + YK.arena.height + 1, 80000) === "minecraft:white_concrete");
+check("o miolo fica livre", blockAt(80302, 65, 80000) === "minecraft:air");
+const chao = { block: overworld.getBlock({ x: 80300, y: 63, z: 80000 }), dimension: overworld, player: yk, cancel: false };
+world.beforeEvents.playerBreakBlock._emit(chao);
+check("o chão não quebra", chao.cancel === true);
+presoArena.teleport({ x: 80330, y: 64, z: 80003 }); // um dash/teleporte pra fora
+advanceTicks(2, "contencao");
+check("quem estava dentro é puxado de volta", Math.abs(presoArena.location.x - 80300.5) <= YK.arena.half, String(presoArena.location.x));
+yk.teleport({ x: 80300.5, y: 64, z: 80030 });
+advanceTicks(2, "contencao-yk");
+check("o próprio Yukio também não sai", Math.abs(yk.location.z - 80000.5) <= YK.arena.half, String(yk.location.z));
+useItem(yk, "yukio:chat_room");
+check("não abre duas", log.blocks.length >= 0);
+noNewErrors("Chat Room sem erro", mark);
+
+scenario("Digital Clone: duas cópias que atacam tudo menos o Yukio (25)");
+mark = errors.length;
+yk.teleport({ x: 80300.5, y: 64, z: 80000.5 });
+yk._view = { x: 1, y: 0, z: 0 };
+fullHp(yk);
+dmgBefore = log.damages.length;
+useItem(yk, "yukio:digital_clone");
+advanceTicks(2, "clones");
+check("duas cópias", ykEntities("yukio:clone").length === 2);
+check("com o nome do player", ykEntities("yukio:clone").every((c) => c.nameTag === yk.name));
+advanceTicks(80, "clones-atacam");
+check("os clones batem 25 em quem está na arena", ykHits(presoArena, dmgBefore, 25).length >= 2, String(ykHits(presoArena, dmgBefore).length));
+check("nunca no Yukio", ykHits(yk, dmgBefore).length === 0);
+advanceTicks(YK.clone.lifeTicks, "clones-somem");
+check("somem depois de 15s", ykEntities("yukio:clone").length === 0);
+noNewErrors("Digital Clone sem erro", mark);
+
+scenario("Snake Game: cobrinha teleguiada, até 10 alvos, 250 cada");
+mark = errors.length;
+const presas = [];
+for (let i = 0; i < 12; i++) presas.push(createDummy(`Presa${i}`, { x: 80292 + (i % 6) * 3, y: 64, z: 79995 + Math.floor(i / 6) * 8 }, 500000));
+dmgBefore = log.damages.length;
+useItem(yk, "yukio:snake_game");
+advanceTicks(YK.snake.maxTicks + 5, "cobra");
+const comidas = presas.filter((d) => ykHits(d, dmgBefore, 250).length === 1).length;
+check("10 alvos, 250 cada", comidas === 10, String(comidas));
+check("ninguém toma duas vezes", presas.every((d) => ykHits(d, dmgBefore).length <= 1));
+check("verde de jogo antigo", log.particles.some((p) => p.particleId === "yukio:cobra") && log.particles.some((p) => p.particleId === "yukio:cobra_cabeca"));
+for (const d of presas) d.kill();
+noNewErrors("Snake sem erro", mark);
+
+scenario("Awakening: Digital Radial Invaders desfaz a arena (1500)");
+mark = errors.length;
+yk.setDynamicProperty(DP.awakening, 100);
+yk.isSneaking = true;
+useItem(yk, "yukio:m1_invaders");
+yk.isSneaking = false;
+advanceTicks(80, "awk-yk");
+check("desperta", yk.getDynamicProperty(DP.awakened) === true);
+check("vida 1500", virtualMax(yk) === 1500, String(virtualMax(yk)));
+check(
+  "Barrel Rolls, Sonic Spin, Red Mushroom e Pac-Man",
+  JSON.stringify(slotIds(yk, 5)) === JSON.stringify(["yukio:m1_radial", "yukio:barrel_rolls", "yukio:sonic_spin", "yukio:red_mushroom", "yukio:pac_man"]),
+  JSON.stringify(slotIds(yk, 5))
+);
+check("a arena some e o terreno volta", blockAt(80300, 63, 80000) === "minecraft:grass_block" && blockAt(80300 + h, 66, 80000) === "minecraft:air" && blockAt(80302, 65, 80000) === "minecraft:stone");
+presoArena.teleport({ x: 80400, y: 64, z: 80000 });
+advanceTicks(4, "livre");
+check("sem arena, ninguém é puxado", presoArena.location.x === 80400);
+presoArena.kill();
+noNewErrors("Awakening sem erro", mark);
+
+scenario("m1 desperto: lâminas teleguiadas e um barril do Donkey Kong a cada 5 golpes (50)");
+mark = errors.length;
+yk.teleport({ x: 80500, y: 64, z: 80000 });
+yk._view = { x: 0, y: 0, z: 1 }; // olhando pra outro lado: a lâmina vai sozinha
+const alvoRad = createDummy("AlvoRadial", { x: 80508, y: 64, z: 80000 }, 500000);
+dmgBefore = log.damages.length;
+for (let i = 0; i < 5; i++) {
+  useItem(yk, "yukio:m1_radial");
+  advanceTicks(10, "radial");
+}
+advanceTicks(15, "barril-cai");
+check("5 lâminas teleguiadas de 25", ykHits(alvoRad, dmgBefore, 25).length === 5, String(ykHits(alvoRad, dmgBefore).length));
+check("no 5º golpe cai um barril: 50", ykHits(alvoRad, dmgBefore, 50).length === 1);
+check("o barril some depois de explodir", ykEntities("yukio:barril").length === 0);
+noNewErrors("m1 desperto sem erro", mark);
+
+scenario("Barrel Rolls: 3 fileiras de 3 barris atravessando (100 por fileira = 300)");
+mark = errors.length;
+// chão pros barris rolarem (no stub o mundo é só ar e eles desceriam pro vazio)
+for (let x = 80496; x <= 80530; x++) for (let z = 79996; z <= 80004; z++) stone(x, 63, z);
+yk._view = { x: 1, y: 0, z: 0 };
+dmgBefore = log.damages.length;
+useItem(yk, "yukio:barrel_rolls");
+advanceTicks(3, "barris");
+check("3 barris lado a lado", ykEntities("yukio:barril").length === 3);
+advanceTicks(60, "barris-rolam");
+check("3 golpes de 100", ykHits(alvoRad, dmgBefore, 100).length === 3, JSON.stringify(ykHits(alvoRad, dmgBefore).map((d) => virtualDamage(alvoRad, d))));
+check("atravessam: o alvo não segura o barril", ykEntities("yukio:barril").length === 0);
+noNewErrors("Barrel Rolls sem erro", mark);
+
+scenario("Sonic Spin: o Showdown da Yoruichi como bola azul (350)");
+mark = errors.length;
+const camsAntes = log.cameras.length;
+dmgBefore = log.damages.length;
+useItem(yk, "yukio:sonic_spin");
+advanceTicks(2, "sonic");
+check("fica invisível (é a bola)", yk.getEffect("invisibility") !== undefined);
+check("câmera de cima", log.cameras.slice(camsAntes).some((c) => c.preset === "minecraft:free"));
+advanceTicks(YK.sonic.passes * YK.sonic.ticksPerPass + 5, "sonic-fim");
+const totalSonic = ykHits(alvoRad, dmgBefore).reduce((n, d) => n + virtualDamage(alvoRad, d), 0);
+check("350 no total", Math.abs(totalSonic - 350) < 1, String(totalSonic));
+check("bola azul e rastro de energia", log.particles.some((p) => p.particleId === "yukio:sonic") && log.particles.some((p) => p.particleId === "yukio:energia"));
+check("a câmera volta no fim", log.cameras.slice(camsAntes).at(-1)?.preset === undefined);
+check("e ele aparece de novo", yk.getEffect("invisibility") === undefined);
+alvoRad.kill();
+noNewErrors("Sonic sem erro", mark);
+
+scenario("Red Mushroom: anda sozinho; o Yukio cura 500, qualquer outro toma 250");
+mark = errors.length;
+yk.teleport({ x: 80700, y: 64, z: 80000 });
+yk._view = { x: 1, y: 0, z: 0 };
+for (let x = 80685; x <= 80715; x++) for (let z = 79985; z <= 80015; z++) stone(x, 63, z);
+useItem(yk, "yukio:red_mushroom");
+advanceTicks(2, "cogumelo");
+const cog = ykEntities("yukio:cogumelo")[0];
+check("o cogumelo aparece", !!cog);
+// a direção é sorteada: mede o caminho andado, não a distância do ponto inicial
+let andouCog = 0;
+for (let i = 0; i < 30; i++) {
+  const antes = { ...cog.location };
+  advanceTicks(1, "cogumelo-anda");
+  andouCog += Math.hypot(cog.location.x - antes.x, cog.location.z - antes.z);
+}
+check("ele anda sozinho", andouCog > 2, andouCog.toFixed(2));
+const comeCog = createDummy("ComeCogumelo", { ...cog.location }, 500000);
+dmgBefore = log.damages.length;
+for (let i = 0; i < 4 && cog.isValid; i++) {
+  comeCog.teleport({ ...cog.location });
+  advanceTicks(1, "encosta");
+}
+check("outro encosta: 250", ykHits(comeCog, dmgBefore, 250).length === 1);
+check("e o cogumelo some", ykEntities("yukio:cogumelo").length === 0);
+comeCog.kill();
+ykCd(yk, "yukio:red_mushroom");
+setVirtualHp(yk, 600);
+useItem(yk, "yukio:red_mushroom");
+advanceTicks(2, "cogumelo2");
+const cog2 = ykEntities("yukio:cogumelo")[0];
+for (let i = 0; i < 4 && cog2.isValid; i++) {
+  yk.teleport({ ...cog2.location });
+  advanceTicks(1, "yukio-encosta");
+}
+check("o Yukio encosta: +500", Math.abs(virtualHp(yk) - 1100) < 2, String(virtualHp(yk)));
+noNewErrors("Red Mushroom sem erro", mark);
+
+scenario("Pac-Man: vai reto comendo tudo; tier 3 ou menos morre, acima toma 500");
+mark = errors.length;
+yk.teleport({ x: 80900, y: 64, z: 80000 });
+yk._view = { x: 1, y: 0, z: 0 };
+const fracoPac = createDummy("FracoPac", { x: 80915, y: 64, z: 80000 }, 500);
+const fortePac = await newPlayerAs("FortePac", { x: 80925, y: 64, z: 80001 }, "ichigo_sf");
+fortePac.teleport({ x: 80925, y: 64, z: 80001 });
+fullHp(fortePac);
+for (let y = 64; y <= 66; y++) stone(80910, y, 80000);
+dmgBefore = log.damages.length;
+useItem(yk, "yukio:pac_man");
+advanceTicks(3, "pacman");
+check("o Pac-Man aparece", ykEntities("yukio:pacman").length === 1);
+advanceTicks(40, "pacman-come");
+check("tier 0 (mob) morre no toque", !fracoPac.isValid || hp(fracoPac).currentValue <= 0);
+check("tier 4 toma 500", ykHits(fortePac, dmgBefore, 500).length === 1, JSON.stringify(ykHits(fortePac, dmgBefore).map((d) => virtualDamage(fortePac, d))));
+check("come os blocos no caminho", [64, 65, 66].every((y) => blockAt(80910, y, 80000) === "minecraft:air"));
+advanceTicks(30, "pacman-fim");
+check("some no fim do caminho", ykEntities("yukio:pacman").length === 0);
+advanceTicks(game.KOMAMURA.restoreTicks + 40, "pacman-terreno");
+check("o terreno volta", [64, 65, 66].every((y) => blockAt(80910, y, 80000) === "minecraft:stone"));
+fortePac.teleport({ x: 81500, y: 64, z: 81500 });
+noNewErrors("Pac-Man sem erro", mark);
+
+scenario("Yukio: desativar some com tudo (arena, clones, cogumelo)");
+mark = errors.length;
+useItem(yk, "yukio:red_mushroom");
+ykCd(yk, "yukio:red_mushroom");
+useItem(yk, "yukio:red_mushroom");
+advanceTicks(2, "antes-desativar");
+queueFormResponse(deactivateButtonIndex());
+useItem(yk, "multiversal:character_selector");
+await settleForms();
+advanceTicks(15, "desativar-yk");
+check("nenhuma entidade do Yukio sobrando", ["yukio:clone", "yukio:barril", "yukio:cogumelo", "yukio:pacman"].every((t) => ykEntities(t).length === 0));
+check("sem itens do Yukio", !inv(yk).slots.some((s) => s?.typeId?.startsWith("yukio:")));
+noNewErrors("desativar sem erro", mark);
+
 /* ================= estabilidade longa ================= */
 
 scenario("Estabilidade: 2000 ticks livres");

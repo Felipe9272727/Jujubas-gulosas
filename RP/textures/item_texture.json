@@ -889,6 +889,36 @@
     },
     "ichigosf:tensa_coat": {
       "textures": "textures/items/ichigosf_tensa_coat"
+    },
+    "yukio:m1_invaders": {
+      "textures": "textures/items/yukio_m1_invaders"
+    },
+    "yukio:m1_radial": {
+      "textures": "textures/items/yukio_m1_radial"
+    },
+    "yukio:saving": {
+      "textures": "textures/items/yukio_saving"
+    },
+    "yukio:chat_room": {
+      "textures": "textures/items/yukio_chat_room"
+    },
+    "yukio:digital_clone": {
+      "textures": "textures/items/yukio_digital_clone"
+    },
+    "yukio:snake_game": {
+      "textures": "textures/items/yukio_snake_game"
+    },
+    "yukio:barrel_rolls": {
+      "textures": "textures/items/yukio_barrel_rolls"
+    },
+    "yukio:sonic_spin": {
+      "textures": "textures/items/yukio_sonic_spin"
+    },
+    "yukio:red_mushroom": {
+      "textures": "textures/items/yukio_red_mushroom"
+    },
+    "yukio:pac_man": {
+      "textures": "textures/items/yukio_pac_man"
     }
   }
 }

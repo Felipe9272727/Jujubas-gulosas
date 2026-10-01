@@ -1,0 +1,30 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "yukio:pacman",
+      "min_engine_version": "1.13.0",
+      "materials": {
+        "default": "entity_alphatest"
+      },
+      "textures": {
+        "default": "textures/entity/yukio_pacman"
+      },
+      "geometry": {
+        "default": "geometry.yukio_pacman"
+      },
+      "animations": {
+        "acao": "animation.yukio.pacman.come"
+      },
+      "scripts": {
+        "scale": "4.5",
+        "animate": [
+          "acao"
+        ]
+      },
+      "render_controllers": [
+        "controller.render.default"
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "yukio:sonic_spin",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "yukio:sonic_spin",
+      "minecraft:display_name": {
+        "value": "Sonic Spin"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false,
+      "minecraft:cooldown": {
+        "category": "yukio_sonic_spin",
+        "duration": 30
+      }
+    }
+  }
+}
