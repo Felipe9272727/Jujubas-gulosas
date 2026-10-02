@@ -126,6 +126,11 @@ try {
     "yukio:barril",
     "yukio:cogumelo",
     "yukio:pacman",
+    // clones, armas, missil e meteoro do Gremmy: so visual (o dano e do script)
+    "gremmy:clone",
+    "gremmy:ak47",
+    "gremmy:missil",
+    "gremmy:meteoro",
     "urahara:blood_shield",
     "urahara:kin_cross",
     "yoruichi:afterimage",
@@ -1155,6 +1160,18 @@ const CHARACTERS = {
       },
     },
   },
+  gremmy: {
+    id: "gremmy",
+    name: "Gremmy Thoumeaux",
+    health: 4000,
+    // sem awakening: no lugar dele, a Concentração (ver GREMMY)
+    items: {
+      0: "gremmy:m1_ak47",
+      1: "gremmy:imaginacao",
+      2: "gremmy:criar_clones",
+      3: "gremmy:imaginacao_maxima",
+    },
+  },
   komamura: {
     id: "komamura",
     name: "Sajin Komamura",
@@ -1278,6 +1295,7 @@ const CHARACTER_RACE_TIER = {
   komamura: { race: "shinigami", tier: 4 },
   ichigo_sf: { race: "hybrid", tier: 4 },
   yukio: { race: "fullbringer", tier: 3 },
+  gremmy: { race: "quincy", tier: 6 },
   tsukishima: { race: "fullbringer", tier: 3 },
   chad: { race: "fullbringer", tier: 3 },
   orihime: { race: "fullbringer", tier: 2 },
@@ -1303,7 +1321,7 @@ const CHARACTER_RACE_TIER = {
 // ReferenceError, que o anti-lag dos loops engolia em silencio.
 function tierOfPlayer(entity) {
   if (!entity?.getDynamicProperty) return 0;
-  return CHARACTER_RACE_TIER[activeCharacterId(entity)]?.tier ?? 0;
+  return CHARACTER_RACE_TIER[realCharacterId(entity)]?.tier ?? 0;
 }
 
 // Jurisdição dos mais fortes: tiers altos (7/8/9) reduzem o dano recebido de
@@ -1528,6 +1546,8 @@ function dealDamage(target, amount, source, options) {
       amount = amount * STARKK_DAMAGE_MULTIPLIER;
     }
   } catch (e) {}
+  // Morra do Gremmy: qualquer golpe durante a carga desfaz
+  if (source) gremmyInterruptOnHit(target, source);
   // clone da Illusion's Mastery: area e skill passam direto por ele; so o golpe
   // corpo a corpo (entityHitEntity) conta como "acertar o clone"
   if (target?.typeId === AIZEN.cloneType || target?.typeId === "yoruichi:afterimage") return;
@@ -1572,7 +1592,10 @@ function dealDamage(target, amount, source, options) {
 
   // Jokenpo do Shunsui: quem perdeu toma mais dano por um tempo
   const marked =
-    markMultiplierOf(target) * vulnerabilityMultiplierOf(target) * fragilityMultiplierOf(target);
+    markMultiplierOf(target) *
+    vulnerabilityMultiplierOf(target) *
+    fragilityMultiplierOf(target) *
+    cookieMultiplierOf(target); // Ossos de Cookie do Gremmy: o triplo
 
   const guarded = !options?.breaksBlock && !options?.ignoresReduction && isBlocking(target);
   if (guarded) showBlockSpark(target);
@@ -1805,6 +1828,17 @@ const SKILL_COOLDOWN_TICKS = {
   "yukio:sonic_spin": 600, // 30s
   "yukio:red_mushroom": 600, // 30s
   "yukio:pac_man": 900, // 45s
+  "gremmy:criar_clones": 300, // 15s
+  "gremmy:imaginacao.copiar": 300, // 15s
+  "gremmy:imaginacao.empurrar": 600, // 30s
+  "gremmy:imaginacao.outra_dimensao": 600, // 30s
+  "gremmy:imaginacao.bullet_barrage": 400, // 20s
+  "gremmy:imaginacao.ossos_de_cookie": 1000, // 50s
+  "gremmy:imaginacao_maxima.meteoro": 600, // 30s
+  "gremmy:imaginacao_maxima.buraco_negro": 900, // 45s
+  "gremmy:imaginacao_maxima.cancer": 500, // 25s
+  "gremmy:imaginacao_maxima.mais_forte": 500, // 25s
+  "gremmy:imaginacao_maxima.morra": 1800, // 90s
 };
 
 const SKILL_NAMES = {
@@ -2007,6 +2041,17 @@ const SKILL_NAMES = {
   "yukio:sonic_spin": "Sonic Spin",
   "yukio:red_mushroom": "Red Mushroom",
   "yukio:pac_man": "Pac-Man",
+  "gremmy:criar_clones": "Criar Clones",
+  "gremmy:imaginacao.copiar": "Copiar",
+  "gremmy:imaginacao.empurrar": "Empurrar",
+  "gremmy:imaginacao.outra_dimensao": "Mandar para outra Dimensão",
+  "gremmy:imaginacao.bullet_barrage": "Bullet Barrage",
+  "gremmy:imaginacao.ossos_de_cookie": "Ossos de Cookie",
+  "gremmy:imaginacao_maxima.meteoro": "Meteoro",
+  "gremmy:imaginacao_maxima.buraco_negro": "Buraco Negro",
+  "gremmy:imaginacao_maxima.cancer": "Câncer",
+  "gremmy:imaginacao_maxima.mais_forte": "Ser o mais forte",
+  "gremmy:imaginacao_maxima.morra": "Morra",
 };
 
 // dano aumentado
@@ -2246,6 +2291,12 @@ const DAMAGE = {
   mushroom: 250,
   mushroomHeal: 500,
   pacMan: 500,
+  // Gremmy Thoumeaux
+  gremmyShot: 47,
+  gremmyMissile: 200,
+  bulletBarrageTick: 10,
+  meteoro: 2000,
+  buracoNegroTick: 20,
 };
 
 // duracao do buff de dano do Sakura's Coating - nao foi especificada, assumi 30s
@@ -2618,7 +2669,8 @@ function getInv(player) {
 let characterCacheTick = -1;
 const characterCache = new Map(); // id da entidade -> id do personagem
 
-function activeCharacterId(entity) {
+// o personagem escolhido de verdade (o que trava os itens, mostra a HUD e da o tier)
+function realCharacterId(entity) {
   const now = system.currentTick;
   if (now !== characterCacheTick) {
     characterCache.clear();
@@ -2629,6 +2681,19 @@ function activeCharacterId(entity) {
   const value = entity.getDynamicProperty(DP.character);
   characterCache.set(key, value);
   return value;
+}
+
+// Copiar do Gremmy: por uns segundos ele "e" o dono da skill copiada pros loops
+// dela (ver castCopiar). Fora isso, o ativo e o real.
+const characterBorrow = new Map(); // id -> { characterId, until, timer }
+
+function activeCharacterId(entity) {
+  const real = realCharacterId(entity);
+  if (characterBorrow.size && real === "gremmy") {
+    const borrow = characterBorrow.get(entity.id);
+    if (borrow) return borrow.characterId;
+  }
+  return real;
 }
 
 function setActiveCharacterId(player, characterId) {
@@ -3448,6 +3513,8 @@ function activateCharacter(player, characterId) {
 }
 
 function deactivateCharacter(player) {
+  // skill copiada pelo Gremmy acaba antes: daqui pra baixo o personagem e o real
+  endBorrow(player);
   // os itens travados precisam ser lidos ANTES dos resets: o chad.reset volta o braco
   // pro direito e, sem isso, os itens do Izquierda ficavam no inventario
   const prevCharacter = getActiveCharacter(player);
@@ -3472,6 +3539,8 @@ function deactivateCharacter(player) {
   if (character.id === "komamura") komamuraCleanup(player.id);
   if (character.id === "ichigo_sf") ichigoSfCleanup(player.id);
   if (character.id === "yukio") yukioCleanup(player.id);
+  if (character.id === "gremmy") gremmyCleanup(player.id);
+  cancerMarks.delete(player.id); // Câncer dura ate resetar
 
   if (isMasked(player)) {
     try {
@@ -3949,6 +4018,7 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     const inv = getInv(player);
     forceGiveLockedItem(inv, SELECTOR_SLOT, SELECTOR_ITEM);
   } else {
+    endBorrow(player);
     soiClearNigeki(player.id);
     aizenCleanup(player.id);
     if (getActiveCharacter(player)?.id === "aizen_hogyoku") resetHogyoku(player);
@@ -3959,6 +4029,9 @@ world.afterEvents.playerSpawn.subscribe((ev) => {
     komamuraCleanup(player.id);
     ichigoSfCleanup(player.id);
     yukioCleanup(player.id);
+    gremmyCleanup(player.id);
+    cancerMarks.delete(player.id); // ... ou morrer
+    cookieBones.delete(player.id);
     unohanaHeals.delete(player.id);
     clearDots(player.id);
     ukitakeAbsorb.delete(player.id);
@@ -4050,7 +4123,7 @@ system.runInterval(()=>{
    Uso de itens
    --------------------------------------------------------- */
 
-world.afterEvents.itemUse.subscribe((ev) => {
+function handleItemUse(ev) {
   const { source: player, itemStack } = ev;
   if (!player || player.typeId !== "minecraft:player") return;
 
@@ -4849,8 +4922,20 @@ world.afterEvents.itemUse.subscribe((ev) => {
     case "yukio:pac_man":
       castPacMan(player);
       break;
+    case "gremmy:m1_ak47":
+      gremmyThrowBurst(player);
+      break;
+    case "gremmy:imaginacao":
+    case "gremmy:imaginacao_maxima":
+      if (player.isSneaking) openGremmyBook(player, itemStack.typeId);
+      else castGremmyBook(player, itemStack.typeId);
+      break;
+    case "gremmy:criar_clones":
+      castCriarClones(player);
+      break;
   }
-});
+}
+world.afterEvents.itemUse.subscribe(handleItemUse);
 
 /* ---------------------------------------------------------
    Skills do Ichigo
@@ -20138,15 +20223,12 @@ function castMomentumsSlash(player) {
     player.addEffect("slowness", cfg.ticks, { amplifier: 255, showParticles: false });
   } catch (e) {}
   const perCut = DAMAGE.momentumsSlash / cfg.cuts;
-  const gap = Math.floor(cfg.ticks / cfg.cuts);
+  // um corte agora e um a cada 10 ticks (menos que isso a invulnerabilidade
+  // pos-dano do alvo comeria os cortes seguintes): 0, 10, 20, 30 e 40
+  const gap = 10;
   let cut = 0;
-  const run = sfTrack(
-    player,
-    system.runInterval(() => {
-      if (!sfAlive(player) || cut >= cfg.cuts) {
-        sfStop(player, run);
-        return;
-      }
+  const strike = () => {
+    {
       cut++;
       const dim = player.dimension;
       const l = player.location;
@@ -20158,6 +20240,17 @@ function castMomentumsSlash(player) {
       }
       sfSound(dim, "item.trident.riptide_3", l, 0.9, 1.5 + cut * 0.05);
       damageNearbyEntities(player, { x: l.x, y: l.y + 1, z: l.z }, cfg.radius, perCut);
+    }
+  };
+  strike();
+  const run = sfTrack(
+    player,
+    system.runInterval(() => {
+      if (!sfAlive(player) || cut >= cfg.cuts) {
+        sfStop(player, run);
+        return;
+      }
+      strike();
     }, gap)
   );
 }
@@ -20303,11 +20396,23 @@ function castRushAndCut(player) {
   const cfg = ICHIGO_SF.rush;
   world.sendMessage(`§b${player.name}: §f§lRush and Cut!`);
   let tick = 0;
+  // 5 por tick, somado e aplicado a cada 10 ticks (a invulnerabilidade pos-dano
+  // do alvo comeria 9 de cada 10 golpes de tick em tick)
+  const pool = new Map();
+  const flush = () => {
+    for (const { entity, amount } of pool.values()) {
+      try {
+        dealDamage(entity, amount * dmgMultiplier(player), player);
+      } catch (e) {}
+    }
+    pool.clear();
+  };
   const run = sfTrack(
     player,
     system.runInterval(() => {
       if (!sfAlive(player) || tick >= cfg.ticks) {
         sfStop(player, run);
+        flush();
         return;
       }
       tick++;
@@ -20334,7 +20439,13 @@ function castRushAndCut(player) {
         sfSlashAt(dim, { x: l.x + Math.cos(a) * r, y: l.y + 0.3 + Math.random() * 1.8, z: l.z + Math.sin(a) * r }, i % 2 ? "ichigosf:corte" : "ichigosf:faisca");
       }
       if (tick % 4 === 0) sfSound(dim, "item.trident.riptide_1", l, 0.7, 1.7);
-      damageNearbyEntities(player, { x: l.x, y: l.y + 1, z: l.z }, cfg.radius, DAMAGE.rushAndCutTick);
+      for (const entity of dim.getEntities({ location: { x: l.x, y: l.y + 1, z: l.z }, maxDistance: cfg.radius })) {
+        if (entity.id === player.id || !entity.getComponent("minecraft:health")) continue;
+        const entry = pool.get(entity.id) ?? { entity, amount: 0 };
+        entry.amount += DAMAGE.rushAndCutTick;
+        pool.set(entity.id, entry);
+      }
+      if (tick % 10 === 0) flush();
     }, 1)
   );
 }
@@ -21518,6 +21629,1274 @@ system.runInterval(() => {
 }, 40);
 
 /* ---------------------------------------------------------
+   Gremmy Thoumeaux - Tier 6 (Quincy), "V: The Visionary"
+   Tudo que ele imagina vira real. No lugar do awakening tem a Concentração
+   (0-100%): sobe 5% a cada 3s (+5% por clone) e as skills gastam dela. As
+   skills de verdade ficam em dois menus (Imaginação média e máxima), igual
+   aos livros da Unohana: agachar + usar escolhe, usar lança a escolhida.
+   --------------------------------------------------------- */
+
+const GREMMY = {
+  id: "gremmy",
+  concentration: { dp: "mv:gremmy_conc", everyTicks: 60, gain: 5, perClone: 5 },
+  aimRange: 40,
+  m1: { shots: 5, gapTicks: 2, range: 40, hitRadius: 0.9, throwGapTicks: 14, missileEveryHits: 4, flushAfterTicks: 10 },
+  missile: { speed: 1.3, maxTicks: 60, radius: 2.5, hitRadius: 1.4 },
+  books: {
+    "gremmy:imaginacao": {
+      title: "Imaginação — skills médias",
+      color: "§f",
+      dp: "mv:gremmy_media",
+      spells: [
+        { key: "gremmy:imaginacao.copiar", name: "Copiar", cost: 10 },
+        { key: "gremmy:imaginacao.empurrar", name: "Empurrar", cost: 15 },
+        { key: "gremmy:imaginacao.outra_dimensao", name: "Mandar para outra Dimensão", cost: 50 },
+        { key: "gremmy:imaginacao.bullet_barrage", name: "Bullet Barrage", cost: 15 },
+        { key: "gremmy:imaginacao.ossos_de_cookie", name: "Ossos de Cookie", cost: 50 },
+      ],
+    },
+    "gremmy:imaginacao_maxima": {
+      title: "Imaginação — ataques massivos",
+      color: "§d",
+      dp: "mv:gremmy_maxima",
+      spells: [
+        { key: "gremmy:imaginacao_maxima.meteoro", name: "Meteoro (2 clones)", cost: 75 },
+        { key: "gremmy:imaginacao_maxima.buraco_negro", name: "Buraco Negro", cost: 75 },
+        { key: "gremmy:imaginacao_maxima.cancer", name: "Câncer", cost: 80 },
+        { key: "gremmy:imaginacao_maxima.mais_forte", name: "Ser o mais forte", cost: 90 },
+        { key: "gremmy:imaginacao_maxima.morra", name: "Morra", cost: 100 },
+      ],
+    },
+  },
+  clonesCost: 10,
+  clones: { max: 6, spacing: 1.3 },
+  copy: { borrowTicks: 300 },
+  push: { ticks: 15, strength: 7, lift: 0.6 },
+  exile: { base: { x: 300000, y: 120, z: 300000 }, spacing: 64, half: 4, returnTier: 5, returnTicks: 300, holdTicks: 100 },
+  barrage: { ticks: 200, guns: 6, range: 36, radius: 2.5, flushTicks: 10 },
+  cookie: { ticks: 400, multiplier: 3 },
+  meteor: { clones: 2, height: 70, back: 30, fallTicks: 60, radius: 18, crater: 7, range: 80, scale: 14 },
+  blackHole: { ticks: 100, radius: 50, pull: 0.9, flushTicks: 10, range: 40 },
+  cancer: { fraction: 0.5 },
+  strongest: { multiplier: 2, zarakiFraction: 0.8 },
+  morra: { chargeTicks: 200, radius: 50, killBelowTier: 7 },
+  entities: { clone: "gremmy:clone", ak47: "gremmy:ak47", missil: "gremmy:missil", meteoro: "gremmy:meteoro" },
+};
+
+// particulas do Gremmy (as chaves terminam em Particle: o validador acha por elas)
+const GR_FX = {
+  tracerParticle: "gremmy:tracer",
+  claraoParticle: "gremmy:clarao",
+  fogoParticle: "gremmy:fogo",
+  fumacaParticle: "gremmy:fumaca",
+  vazioParticle: "gremmy:vazio",
+  discoParticle: "gremmy:disco",
+  cookieParticle: "gremmy:cookie",
+  cancerParticle: "gremmy:cancer",
+  imaginacaoParticle: "gremmy:imaginacao",
+};
+
+// os personagens que contam como "Zaraki" pro Ser o mais forte
+const ZARAKI_IDS = new Set(["kenpachi"]);
+
+function isGremmy(entity) {
+  try {
+    return entity?.typeId === "minecraft:player" && realCharacterId(entity) === GREMMY.id;
+  } catch (e) {
+    return false;
+  }
+}
+
+function gremmyAlive(player) {
+  return !isDownOrGone(player) && isGremmy(player);
+}
+
+function grFx(dim, name, at) {
+  try {
+    dim.spawnParticle(name, at);
+  } catch (e) {}
+}
+
+function grSound(dim, name, at, volume = 1, pitch = 1) {
+  try {
+    dim.playSound(name, at, { volume, pitch });
+  } catch (e) {}
+}
+
+const gremmyRuns = new Map(); // id -> Set de intervals/timeouts
+const gremmyEntities = new Map(); // id da entidade -> { entity, ownerId }
+const gremmyClones = new Map(); // id do Gremmy -> [clones, na ordem esquerda, direita, esquerda...]
+const gremmyShotHits = new Map(); // id -> acertos do m1 (missil a cada 4)
+const gremmyLastBurst = new Map(); // id -> tick da ultima rajada por uso do item
+const gremmyStrongest = new Map(); // id -> dano por tiro (Ser o mais forte)
+const gremmyCharging = new Map(); // id -> carga do Morra
+const cookieBones = new Map(); // id do alvo -> tick limite (Ossos de Cookie)
+const cancerMarks = new Map(); // id do alvo -> { entity } (Câncer)
+
+function grTrack(player, id) {
+  let set = gremmyRuns.get(player.id);
+  if (!set) {
+    set = new Set();
+    gremmyRuns.set(player.id, set);
+  }
+  set.add(id);
+  return id;
+}
+
+function grStop(player, id) {
+  system.clearRun(id);
+  gremmyRuns.get(player.id)?.delete(id);
+}
+
+function grSpawn(player, type, at, yaw = 0) {
+  try {
+    const entity = player.dimension.spawnEntity(type, at);
+    entity.teleport(at, { keepVelocity: false, rotation: { x: 0, y: yaw } });
+    gremmyEntities.set(entity.id, { entity, ownerId: player.id });
+    return entity;
+  } catch (e) {
+    return undefined;
+  }
+}
+
+function grRemove(entity) {
+  if (!entity) return;
+  gremmyEntities.delete(entity.id);
+  try {
+    entity.remove();
+  } catch (e) {}
+}
+
+function grCanHit(player, entity) {
+  try {
+    if (!entity || entity.id === player.id) return false;
+    if (!entity.isValid || !entity.getComponent("minecraft:health")) return false;
+    if (isDownOrGone(entity)) return false;
+    if (gremmyEntities.has(entity.id)) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function grHit(player, entity, amount, options) {
+  try {
+    dealDamage(entity, amount * dmgMultiplier(player), player, options);
+  } catch (e) {}
+}
+
+// dano continuo somado: a cada `flush` o total de cada alvo entra de uma vez
+// (golpe a golpe por tick esbarraria na invulnerabilidade pos-dano do alvo)
+function grPool(pool, entity, amount) {
+  const entry = pool.get(entity.id) ?? { entity, amount: 0 };
+  entry.amount += amount;
+  pool.set(entity.id, entry);
+}
+
+function grFlush(player, pool, options) {
+  for (const { entity, amount } of pool.values()) {
+    if (amount > 0) grHit(player, entity, amount, options);
+  }
+  pool.clear();
+}
+
+/* ---------- Concentração ---------- */
+
+function concentrationOf(player) {
+  const value = Number(player.getDynamicProperty(GREMMY.concentration.dp));
+  return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+}
+
+function setConcentration(player, value) {
+  player.setDynamicProperty(GREMMY.concentration.dp, Math.max(0, Math.min(100, Math.round(value))));
+}
+
+function gremmyCloneCount(player) {
+  return (gremmyClones.get(player.id) ?? []).filter((c) => {
+    try {
+      return c.isValid;
+    } catch (e) {
+      return false;
+    }
+  }).length;
+}
+
+system.runInterval(() => {
+  const cfg = GREMMY.concentration;
+  for (const player of world.getPlayers()) {
+    if (!isGremmy(player) || isDownOrGone(player)) continue;
+    const gain = cfg.gain + cfg.perClone * gremmyCloneCount(player);
+    setConcentration(player, concentrationOf(player) + gain);
+  }
+}, GREMMY.concentration.everyTicks);
+
+function gremmyHud(player) {
+  const c = concentrationOf(player);
+  const clones = gremmyCloneCount(player);
+  const strongest = gremmyStrongest.has(player.id) ? " §6✦mais forte" : "";
+  return `   §f✦ Concentração: ${c}%${clones ? ` §7(${clones} clone${clones > 1 ? "s" : ""})` : ""}${strongest}`;
+}
+
+// confere a concentração ANTES do cooldown (sem concentração nao gasta nada)
+function gremmyStart(player, key, cost) {
+  const c = concentrationOf(player);
+  if (c < cost) {
+    player.sendMessage(`§7Concentração insuficiente: §f${c}%§7 de §f${cost}%§7.`);
+    return false;
+  }
+  if (!tryUseSkill(player, key)) return false;
+  setConcentration(player, c - cost);
+  return true;
+}
+
+// quem ele esta mirando (o primeiro na linha do olhar)
+function gremmyAim(player, range = GREMMY.aimRange, filter) {
+  try {
+    return player
+      .getEntitiesFromViewDirection({ maxDistance: range })
+      .map((hit) => hit.entity)
+      .find((e) => grCanHit(player, e) && (!filter || filter(e)));
+  } catch (e) {
+    return undefined;
+  }
+}
+
+/* ---------- os menus de Imaginação ---------- */
+
+function gremmyBookSpell(player, book) {
+  const index = Number(player.getDynamicProperty(book.dp));
+  return book.spells[index >= 0 && index < book.spells.length ? index : 0];
+}
+
+function openGremmyBook(player, itemId) {
+  const book = GREMMY.books[itemId];
+  if (!book) return;
+  const current = gremmyBookSpell(player, book);
+  const now = system.currentTick;
+  const form = new ActionFormData()
+    .title(book.title)
+    .body(`${book.color}Concentração: ${concentrationOf(player)}%§r\n§7Usar o item lança a escolhida; agachar + usar abre este menu.`);
+  for (const spell of book.spells) {
+    const key = cdKeyForSkill(spell.key);
+    const duration = SKILL_COOLDOWN_TICKS[spell.key];
+    const last = tickOf(player, key);
+    const waiting = onCooldown(player, key, duration, now) ? `§c${Math.ceil((duration - (now - (last ?? now))) / 20)}s` : "§apronto";
+    form.button(`${spell === current ? `${book.color}▶ ` : ""}${spell.name}\n§8${spell.cost}% • ${duration / 20}s • ${waiting}`);
+  }
+  form.show(player).then((res) => {
+    if (res.canceled || res.selection === undefined) return;
+    const spell = book.spells[res.selection];
+    if (!spell) return;
+    player.setDynamicProperty(book.dp, res.selection);
+    player.sendMessage(`${book.color}Imaginação escolhida: §f${spell.name}`);
+  });
+}
+
+function castGremmyBook(player, itemId) {
+  const book = GREMMY.books[itemId];
+  if (!book) return;
+  if (isFrozen(player) || isMayuriParalyzed(player)) {
+    player.sendMessage("§7Você está paralisado e não consegue usar skills.");
+    return;
+  }
+  const spell = gremmyBookSpell(player, book);
+  switch (spell.key) {
+    case "gremmy:imaginacao.copiar":
+      return castCopiar(player, spell);
+    case "gremmy:imaginacao.empurrar":
+      return castEmpurrar(player, spell);
+    case "gremmy:imaginacao.outra_dimensao":
+      return castOutraDimensao(player, spell);
+    case "gremmy:imaginacao.bullet_barrage":
+      return castBulletBarrage(player, spell);
+    case "gremmy:imaginacao.ossos_de_cookie":
+      return castOssosDeCookie(player, spell);
+    case "gremmy:imaginacao_maxima.meteoro":
+      return castMeteoro(player, spell);
+    case "gremmy:imaginacao_maxima.buraco_negro":
+      return castBuracoNegro(player, spell);
+    case "gremmy:imaginacao_maxima.cancer":
+      return castCancer(player, spell);
+    case "gremmy:imaginacao_maxima.mais_forte":
+      return castMaisForte(player, spell);
+    case "gremmy:imaginacao_maxima.morra":
+      return castMorra(player, spell);
+  }
+}
+
+function imaginationBurst(dim, at, n = 10) {
+  for (let i = 0; i < n; i++) {
+    grFx(dim, GR_FX.imaginacaoParticle, { x: at.x + (Math.random() - 0.5) * 1.4, y: at.y + Math.random() * 2, z: at.z + (Math.random() - 0.5) * 1.4 });
+  }
+}
+
+/* ---------- m1: AK-47 e o missil ---------- */
+
+function gremmyShotDamage(player) {
+  return gremmyStrongest.get(player.id) ?? DAMAGE.gremmyShot;
+}
+
+function gremmyMuzzle(player) {
+  const head = player.getHeadLocation();
+  const f = forwardDirection(player);
+  const r = rightOf(f);
+  return { x: head.x + r.x * 0.35 + f.x * 0.6, y: head.y - 0.45, z: head.z + r.z * 0.35 + f.z * 0.6 };
+}
+
+function gremmyTracer(dim, from, to) {
+  const d = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
+  const n = Math.min(40, Math.max(2, Math.ceil(d / 1.2)));
+  for (let i = 1; i <= n; i++) {
+    const k = i / n;
+    grFx(dim, GR_FX.tracerParticle, { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, z: from.z + (to.z - from.z) * k });
+  }
+}
+
+// o primeiro que estiver na linha do tiro
+function gremmyRayHit(player, from, dir, range, radius) {
+  let best;
+  let bestAlong = Infinity;
+  const mid = { x: from.x + dir.x * range * 0.5, y: from.y + dir.y * range * 0.5, z: from.z + dir.z * range * 0.5 };
+  for (const entity of player.dimension.getEntities({ location: mid, maxDistance: range * 0.5 + radius + 1.5 })) {
+    if (!grCanHit(player, entity)) continue;
+    const l = entity.location;
+    const rel = { x: l.x - from.x, y: l.y + 1 - from.y, z: l.z - from.z };
+    const along = rel.x * dir.x + rel.y * dir.y + rel.z * dir.z;
+    if (along < 0 || along > range) continue;
+    const off = Math.hypot(rel.x - dir.x * along, rel.y - dir.y * along, rel.z - dir.z * along);
+    if (off > radius + 0.3) continue;
+    if (along < bestAlong) {
+      bestAlong = along;
+      best = entity;
+    }
+  }
+  return best;
+}
+
+// rajada de AK-47. `target`: tiros mirados nele (golpe corpo a corpo); sem alvo,
+// os tiros vao pra onde ele olha. O dano soma e entra no fim da rajada
+function gremmyBurst(player, target, shots, alreadyHit = false) {
+  const cfg = GREMMY.m1;
+  const dim = player.dimension;
+  const pool = new Map();
+  let fired = 0;
+  let tick = 0;
+  if (alreadyHit && target) gremmyCountHit(player, target);
+  const run = grTrack(
+    player,
+    system.runInterval(() => {
+      tick++;
+      if (!gremmyAlive(player)) {
+        grStop(player, run);
+        return;
+      }
+      if (fired < shots && tick % cfg.gapTicks === 1) {
+        fired++;
+        try {
+          const from = gremmyMuzzle(player);
+          let dir;
+          if (target && !isDownOrGone(target)) {
+            const t = target.location;
+            dir = unitVector({ x: t.x - from.x, y: t.y + 1 - from.y, z: t.z - from.z });
+          } else {
+            dir = unitVector(player.getViewDirection());
+          }
+          // um pouco de coice: o tiro sai levemente torto
+          dir = unitVector({ x: dir.x + (Math.random() - 0.5) * 0.03, y: dir.y + (Math.random() - 0.5) * 0.03, z: dir.z + (Math.random() - 0.5) * 0.03 });
+          const victim = gremmyRayHit(player, from, dir, cfg.range, cfg.hitRadius);
+          let end = { x: from.x + dir.x * cfg.range, y: from.y + dir.y * cfg.range, z: from.z + dir.z * cfg.range };
+          if (victim) {
+            const v = victim.location;
+            end = { x: v.x, y: v.y + 1, z: v.z };
+            grPool(pool, victim, gremmyShotDamage(player));
+            gremmyCountHit(player, victim);
+          }
+          grFx(dim, GR_FX.claraoParticle, from);
+          gremmyTracer(dim, from, end);
+          grSound(dim, "firework.blast", from, 0.9, 1.7 + Math.random() * 0.2);
+        } catch (e) {}
+      }
+      // o golpe corpo a corpo ja entrou: o resto espera a invulnerabilidade passar
+      const flushAt = Math.max(shots * cfg.gapTicks, alreadyHit ? cfg.flushAfterTicks : 0);
+      if (tick >= flushAt) {
+        grStop(player, run);
+        grFlush(player, pool);
+      }
+    }, 1)
+  );
+}
+
+function gremmyThrowBurst(player) {
+  const now = system.currentTick;
+  if (now - (gremmyLastBurst.get(player.id) ?? -Infinity) < GREMMY.m1.throwGapTicks) return;
+  gremmyLastBurst.set(player.id, now);
+  gremmyBurst(player, undefined, GREMMY.m1.shots);
+}
+
+// o golpe direto: ele ja entrou com o dano do primeiro tiro, os outros 4 seguem
+function gremmyMelee(player, target) {
+  const now = system.currentTick;
+  gremmyLastBurst.set(player.id, now);
+  gremmyBurst(player, target, GREMMY.m1.shots - 1, true);
+}
+
+function gremmyCountHit(player, target) {
+  const n = (gremmyShotHits.get(player.id) ?? 0) + 1;
+  gremmyShotHits.set(player.id, n);
+  if (n % GREMMY.m1.missileEveryHits === 0) launchMissile(player, target);
+}
+
+function launchMissile(player, target) {
+  const cfg = GREMMY.missile;
+  const dim = player.dimension;
+  let pos = gremmyMuzzle(player);
+  pos = { x: pos.x, y: pos.y + 0.6, z: pos.z };
+  const missile = grSpawn(player, GREMMY.entities.missil, pos, yawToward(pos, target.location));
+  grSound(dim, "firework.launch", pos, 1.2, 0.8);
+  let ticks = 0;
+  const run = grTrack(
+    player,
+    system.runInterval(() => {
+      ticks++;
+      const explode = (at) => {
+        grStop(player, run);
+        grRemove(missile);
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2;
+          grFx(dim, i % 3 ? GR_FX.fogoParticle : "minecraft:large_explosion", { x: at.x + Math.cos(a) * 1.2, y: at.y + Math.random(), z: at.z + Math.sin(a) * 1.2 });
+        }
+        grSound(dim, "random.explode", at, 1.4, 1.1);
+        for (const entity of dim.getEntities({ location: at, maxDistance: cfg.radius })) {
+          if (grCanHit(player, entity)) grHit(player, entity, DAMAGE.gremmyMissile);
+        }
+      };
+      if (!gremmyAlive(player) || ticks > cfg.maxTicks) {
+        grStop(player, run);
+        grRemove(missile);
+        return;
+      }
+      try {
+        const alvo = isDownOrGone(target) ? undefined : target.location;
+        const aim = alvo ? { x: alvo.x, y: alvo.y + 1, z: alvo.z } : pos;
+        const d = Math.hypot(aim.x - pos.x, aim.y - pos.y, aim.z - pos.z);
+        if (!alvo || d <= cfg.hitRadius + cfg.speed) {
+          explode(aim);
+          return;
+        }
+        const next = {
+          x: pos.x + ((aim.x - pos.x) / d) * cfg.speed,
+          y: pos.y + ((aim.y - pos.y) / d) * cfg.speed,
+          z: pos.z + ((aim.z - pos.z) / d) * cfg.speed,
+        };
+        grFx(dim, GR_FX.fumacaParticle, pos);
+        grFx(dim, GR_FX.fogoParticle, pos);
+        pos = next;
+        missile?.teleport(pos, { keepVelocity: false, rotation: { x: 0, y: yawToward(pos, aim) } });
+      } catch (e) {
+        grStop(player, run);
+        grRemove(missile);
+      }
+    }, 1)
+  );
+}
+
+/* ---------- Criar Clones ---------- */
+
+function castCriarClones(player) {
+  const list = (gremmyClones.get(player.id) ?? []).filter((c) => c.isValid);
+  if (list.length >= GREMMY.clones.max) {
+    player.sendMessage(`§7Já são ${GREMMY.clones.max} clones: a imaginação não segura mais.`);
+    return;
+  }
+  if (!gremmyStart(player, "gremmy:criar_clones", GREMMY.clonesCost)) return;
+  const l = player.location;
+  const clone = grSpawn(player, GREMMY.entities.clone, l, player.getRotation().y);
+  if (!clone) return;
+  try {
+    clone.nameTag = player.name;
+  } catch (e) {}
+  list.push(clone);
+  gremmyClones.set(player.id, list);
+  imaginationBurst(player.dimension, l, 12);
+  grSound(player.dimension, "random.orb", l, 1, 1.2);
+  player.sendMessage(`§fClone imaginado. §7(${list.length}) — +${GREMMY.concentration.perClone}% de concentração a cada 3s cada.`);
+  placeClones(player);
+}
+
+// lado: o 1º à esquerda, o 2º à direita, o 3º mais à esquerda...
+function cloneSlot(index) {
+  const side = index % 2 === 0 ? -1 : 1;
+  return side * GREMMY.clones.spacing * (Math.floor(index / 2) + 1);
+}
+
+function placeClones(player) {
+  const list = gremmyClones.get(player.id);
+  if (!list?.length) return;
+  const l = player.location;
+  const f = forwardDirection(player);
+  const r = rightOf(f);
+  const yaw = player.getRotation().y;
+  list.forEach((clone, index) => {
+    const lat = cloneSlot(index);
+    try {
+      clone.teleport({ x: l.x + r.x * lat, y: l.y, z: l.z + r.z * lat }, { dimension: player.dimension, keepVelocity: false, rotation: { x: 0, y: yaw } });
+    } catch (e) {}
+  });
+}
+
+system.runInterval(() => {
+  for (const [id, list] of gremmyClones) {
+    const player = world.getPlayers().find((p) => p.id === id);
+    if (!player || !isGremmy(player)) continue;
+    const alive = list.filter((c) => {
+      try {
+        return c.isValid;
+      } catch (e) {
+        return false;
+      }
+    });
+    if (alive.length !== list.length) gremmyClones.set(id, alive);
+    placeClones(player);
+  }
+}, 2);
+
+function consumeClones(player, count) {
+  const list = gremmyClones.get(player.id) ?? [];
+  for (let i = 0; i < count; i++) {
+    const clone = list.pop();
+    if (!clone) break;
+    try {
+      imaginationBurst(clone.dimension, clone.location, 8);
+    } catch (e) {}
+    grRemove(clone);
+  }
+}
+
+/* ---------- Copiar (pega emprestada uma skill do alvo) ---------- */
+
+// Pra lançar a skill de outro personagem do jeito que ela é, o Gremmy "vira"
+// aquele personagem só pros loops da skill: getActiveCharacter devolve o
+// emprestado por GREMMY.copy.borrowTicks. O que é dele de verdade (itens
+// travados, HUD, tier, concentração) lê realCharacterId e não muda.
+function castCopiar(player, spell) {
+  const target = gremmyAim(player, GREMMY.aimRange, (e) => e.typeId === "minecraft:player" && !!realCharacterId(e));
+  if (!target) {
+    player.sendMessage("§7Mire em alguém com habilidades para copiar.");
+    return;
+  }
+  const character = CHARACTERS[realCharacterId(target)];
+  if (!character || character.id === GREMMY.id) {
+    player.sendMessage("§7Não dá pra copiar a própria imaginação.");
+    return;
+  }
+  const items = Object.values(getActiveItemsForPlayer(target, character));
+  const skills = items.filter((id) => !MELEE_WEAPONS[id] && (id in SKILL_COOLDOWN_TICKS || UNOHANA.books[id]));
+  if (!skills.length) {
+    player.sendMessage("§7Esse alvo não tem nenhuma habilidade para copiar agora.");
+    return;
+  }
+  if (concentrationOf(player) < spell.cost) {
+    player.sendMessage(`§7Concentração insuficiente: §f${concentrationOf(player)}%§7 de §f${spell.cost}%§7.`);
+    return;
+  }
+  const key = cdKeyForSkill(spell.key);
+  if (onCooldown(player, key, SKILL_COOLDOWN_TICKS[spell.key], system.currentTick)) {
+    tryUseSkill(player, spell.key); // so pra mostrar quanto falta
+    return;
+  }
+  const form = new ActionFormData().title(`Copiar — ${character.name}`).body("§7Qual habilidade imaginar?");
+  for (const id of skills) form.button(SKILL_NAMES[id] ?? UNOHANA.books[id]?.title ?? id);
+  form.show(player).then((res) => {
+    if (res.canceled || res.selection === undefined) return;
+    const chosen = skills[res.selection];
+    if (!chosen || !gremmyAlive(player)) return;
+    if (!gremmyStart(player, spell.key, spell.cost)) return;
+    world.sendMessage(`§f${player.name} §7imaginou §f${SKILL_NAMES[chosen] ?? chosen}§7 de ${character.name}.`);
+    imaginationBurst(player.dimension, player.location, 10);
+    const cdKey = cdKeyForSkill(chosen);
+    // a skill copiada tem cooldown proprio no Gremmy: o copiar ja e o limite
+    player.setDynamicProperty(cdKey, undefined);
+    borrowCharacter(player, character.id, GREMMY.copy.borrowTicks);
+    try {
+      handleItemUse({ source: player, itemStack: new ItemStack(chosen, 1) });
+    } catch (e) {}
+    // nao saiu (a skill exige algo que ele nao tem): devolve a concentracao
+    if (player.getDynamicProperty(cdKey) === undefined && !UNOHANA.books[chosen]) {
+      endBorrow(player);
+      setConcentration(player, concentrationOf(player) + spell.cost);
+      player.sendMessage("§7A imaginação não pegou: a concentração voltou.");
+    }
+  });
+}
+
+function borrowCharacter(player, characterId, ticks) {
+  endBorrow(player);
+  const borrow = { characterId, until: system.currentTick + ticks };
+  characterBorrow.set(player.id, borrow);
+  characterCache.delete(player.id);
+  borrow.timer = system.runTimeout(() => {
+    if (characterBorrow.get(player.id) === borrow) endBorrow(player);
+  }, ticks);
+}
+
+function endBorrow(player) {
+  const borrow = characterBorrow.get(player.id);
+  if (!borrow) return;
+  characterBorrow.delete(player.id);
+  characterCache.delete(player.id);
+  try {
+    system.clearRun(borrow.timer);
+  } catch (e) {}
+  runtimeCleanupFor(player.id, borrow.characterId);
+}
+
+/* ---------- Empurrar ---------- */
+
+function castEmpurrar(player, spell) {
+  const target = gremmyAim(player);
+  if (!target) {
+    player.sendMessage("§7Mire em alguém para empurrar.");
+    return;
+  }
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  const cfg = GREMMY.push;
+  const f = forwardDirection(player);
+  world.sendMessage(`§f${player.name}: §f§lEmpurrar!`);
+  grSound(player.dimension, "mob.enderdragon.flap", target.location, 1.6, 0.6);
+  let tick = 0;
+  const run = grTrack(
+    player,
+    system.runInterval(() => {
+      if (tick++ >= cfg.ticks || isDownOrGone(target)) {
+        grStop(player, run);
+        return;
+      }
+      try {
+        target.applyKnockback({ x: f.x * cfg.strength, z: f.z * cfg.strength }, tick === 1 ? cfg.lift * 2 : cfg.lift);
+        const l = target.location;
+        grFx(target.dimension, GR_FX.imaginacaoParticle, { x: l.x, y: l.y + 1, z: l.z });
+      } catch (e) {}
+    }, 1)
+  );
+}
+
+/* ---------- Mandar para outra Dimensão ---------- */
+
+const gremmyExiles = new Map(); // id do exilado -> { from, dim, until }
+
+function castOutraDimensao(player, spell) {
+  const target = gremmyAim(player);
+  if (!target) {
+    player.sendMessage("§7Mire em alguém para mandar para outra dimensão.");
+    return;
+  }
+  let end;
+  try {
+    end = world.getDimension("the_end");
+  } catch (e) {}
+  if (!end) return;
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  const cfg = GREMMY.exile;
+  const n = Number(world.getDynamicProperty("mv:gremmy_exiles")) || 0;
+  world.setDynamicProperty("mv:gremmy_exiles", n + 1);
+  // cada exilio numa plataforma propria, longe da ilha principal do End
+  const spot = { x: cfg.base.x + (n % 16) * cfg.spacing + 0.5, y: cfg.base.y, z: cfg.base.z + Math.floor(n / 16) * cfg.spacing + 0.5 };
+  const from = { ...target.location };
+  const fromDim = target.dimension;
+  world.sendMessage(`§f${player.name}: §5§lVá para outra dimensão.`);
+  imaginationBurst(fromDim, from, 14);
+  try {
+    target.teleport(spot, { dimension: end, keepVelocity: false });
+  } catch (e) {
+    return;
+  }
+  const exile = { from, fromDim, until: system.currentTick + cfg.returnTicks };
+  gremmyExiles.set(target.id, exile);
+  try {
+    if (target.typeId === "minecraft:player") {
+      target.sendMessage(
+        tierOfPlayer(target) >= cfg.returnTier
+          ? "§5Você foi mandado para o vazio. Em 15s sua força te traz de volta."
+          : "§5Você foi mandado para o vazio... para sempre."
+      );
+    }
+  } catch (e) {}
+  // a plataforma so pode ser posta quando o chunk carregar (o jogador chega
+  // primeiro): ate la ele fica parado no ar, no ponto da plataforma
+  let tick = 0;
+  let built = false;
+  const run = system.runInterval(() => {
+    tick++;
+    if (isDownOrGone(target) || target.dimension.id !== end.id) {
+      system.clearRun(run);
+      return;
+    }
+    if (!built) {
+      try {
+        const probe = end.getBlock({ x: Math.floor(spot.x), y: spot.y - 1, z: Math.floor(spot.z) });
+        if (probe) {
+          for (let dx = -cfg.half; dx <= cfg.half; dx++) {
+            for (let dz = -cfg.half; dz <= cfg.half; dz++) {
+              end.getBlock({ x: Math.floor(spot.x) + dx, y: spot.y - 1, z: Math.floor(spot.z) + dz })?.setType("minecraft:obsidian");
+            }
+          }
+          built = true;
+        }
+      } catch (e) {}
+      if (!built) {
+        try {
+          target.teleport(spot, { dimension: end, keepVelocity: false });
+        } catch (e) {}
+        if (tick > cfg.holdTicks) system.clearRun(run);
+        return;
+      }
+    }
+    // tier 5+ volta depois de 15s; o resto fica la
+    if (tierOfPlayer(target) < cfg.returnTier) {
+      system.clearRun(run);
+      return;
+    }
+    if (system.currentTick < exile.until) return;
+    system.clearRun(run);
+    gremmyExiles.delete(target.id);
+    try {
+      target.teleport(from, { dimension: fromDim, keepVelocity: false });
+      target.sendMessage("§fVocê voltou do vazio.");
+    } catch (e) {}
+  }, 1);
+}
+
+/* ---------- Bullet Barrage ---------- */
+
+function castBulletBarrage(player, spell) {
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  const cfg = GREMMY.barrage;
+  world.sendMessage(`§f${player.name}: §f§lBullet Barrage!`);
+  const dim = player.dimension;
+  const guns = [];
+  for (let i = 0; i < cfg.guns; i++) guns.push(grSpawn(player, GREMMY.entities.ak47, player.location, player.getRotation().y));
+  const pool = new Map();
+  let tick = 0;
+  const run = grTrack(
+    player,
+    system.runInterval(() => {
+      tick++;
+      if (!gremmyAlive(player) || tick > cfg.ticks) {
+        grStop(player, run);
+        grFlush(player, pool);
+        for (const g of guns) grRemove(g);
+        return;
+      }
+      try {
+        const l = player.location;
+        const f = forwardDirection(player);
+        const r = rightOf(f);
+        const yaw = player.getRotation().y;
+        const view = unitVector(player.getViewDirection());
+        // as armas flutuam num leque atras e em volta dele, todas viradas pra mira
+        const muzzles = guns.map((gun, i) => {
+          const a = (i / (cfg.guns - 1) - 0.5) * 2; // -1..1
+          const at = { x: l.x + r.x * a * 2.4 - f.x * 0.6, y: l.y + 1.6 + (1 - Math.abs(a)) * 1.2, z: l.z + r.z * a * 2.4 - f.z * 0.6 };
+          try {
+            gun?.teleport(at, { keepVelocity: false, rotation: { x: 0, y: yaw } });
+          } catch (e) {}
+          return { x: at.x + f.x * 0.8, y: at.y + 0.2, z: at.z + f.z * 0.8 };
+        });
+        const eye = player.getHeadLocation();
+        // tracos: dois por tick, de armas sorteadas ate a linha da mira
+        for (let k = 0; k < 2; k++) {
+          const m = muzzles[Math.floor(Math.random() * muzzles.length)];
+          const d = 8 + Math.random() * (cfg.range - 8);
+          const end = {
+            x: eye.x + view.x * d + (Math.random() - 0.5) * cfg.radius,
+            y: eye.y + view.y * d + (Math.random() - 0.5) * cfg.radius,
+            z: eye.z + view.z * d + (Math.random() - 0.5) * cfg.radius,
+          };
+          grFx(dim, GR_FX.claraoParticle, m);
+          if (tick % 2 === 0) gremmyTracer(dim, m, end);
+        }
+        if (tick % 3 === 0) grSound(dim, "firework.blast", l, 1, 1.5 + Math.random() * 0.4);
+        // quem esta na linha de fogo toma 10 por tick (somado de 10 em 10)
+        const mid = { x: eye.x + view.x * cfg.range * 0.5, y: eye.y + view.y * cfg.range * 0.5, z: eye.z + view.z * cfg.range * 0.5 };
+        for (const entity of dim.getEntities({ location: mid, maxDistance: cfg.range * 0.5 + cfg.radius + 1 })) {
+          if (!grCanHit(player, entity)) continue;
+          const e = entity.location;
+          const rel = { x: e.x - eye.x, y: e.y + 1 - eye.y, z: e.z - eye.z };
+          const along = rel.x * view.x + rel.y * view.y + rel.z * view.z;
+          if (along < 0 || along > cfg.range) continue;
+          if (Math.hypot(rel.x - view.x * along, rel.y - view.y * along, rel.z - view.z * along) > cfg.radius) continue;
+          grPool(pool, entity, DAMAGE.bulletBarrageTick);
+        }
+        if (tick % cfg.flushTicks === 0) grFlush(player, pool);
+      } catch (e) {}
+    }, 1)
+  );
+}
+
+/* ---------- Ossos de Cookie ---------- */
+
+function cookieMultiplierOf(entity) {
+  const until = cookieBones.get(entity?.id);
+  if (until === undefined) return 1;
+  if (system.currentTick < until) return GREMMY.cookie.multiplier;
+  cookieBones.delete(entity.id);
+  return 1;
+}
+
+function castOssosDeCookie(player, spell) {
+  const target = gremmyAim(player);
+  if (!target) {
+    player.sendMessage("§7Mire em alguém para transformar os ossos em cookie.");
+    return;
+  }
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  const cfg = GREMMY.cookie;
+  cookieBones.set(target.id, system.currentTick + cfg.ticks);
+  world.sendMessage(`§f${player.name}: §6§lSeus ossos agora são cookies.`);
+  try {
+    if (target.typeId === "minecraft:player") target.sendMessage("§6Seus ossos viraram cookies: você toma o triplo de dano por 20s.");
+  } catch (e) {}
+  grSound(target.dimension, "random.eat", target.location, 1.2, 0.7);
+  let tick = 0;
+  const run = grTrack(
+    player,
+    system.runInterval(() => {
+      tick += 5;
+      if (tick > cfg.ticks || isDownOrGone(target) || !cookieBones.has(target.id)) {
+        grStop(player, run);
+        return;
+      }
+      try {
+        const l = target.location;
+        grFx(target.dimension, GR_FX.cookieParticle, { x: l.x + (Math.random() - 0.5) * 0.8, y: l.y + 0.3 + Math.random() * 1.5, z: l.z + (Math.random() - 0.5) * 0.8 });
+      } catch (e) {}
+    }, 5)
+  );
+}
+
+/* ---------- Meteoro ---------- */
+
+function gremmyGroundPoint(player, range) {
+  try {
+    const hit = player.getBlockFromViewDirection({ maxDistance: range });
+    if (hit?.block) {
+      const b = hit.block.location;
+      return { x: b.x + 0.5, y: b.y + 1, z: b.z + 0.5 };
+    }
+  } catch (e) {}
+  const target = gremmyAim(player, range);
+  if (target) return { ...target.location };
+  const l = player.location;
+  const f = forwardDirection(player);
+  return { x: l.x + f.x * 30, y: l.y, z: l.z + f.z * 30 };
+}
+
+function castMeteoro(player, spell) {
+  const cfg = GREMMY.meteor;
+  if (gremmyCloneCount(player) < cfg.clones) {
+    player.sendMessage(`§7O Meteoro precisa de ${cfg.clones} clones (Criar Clones).`);
+    return;
+  }
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  consumeClones(player, cfg.clones);
+  const dim = player.dimension;
+  const impact = gremmyGroundPoint(player, cfg.range);
+  const f = forwardDirection(player);
+  // vem do ceu, por tras dele, numa diagonal ate o ponto
+  const start = { x: impact.x - f.x * cfg.back, y: impact.y + cfg.height, z: impact.z - f.z * cfg.back };
+  const half = cfg.scale * 0.5; // o centro do modelo fica meia-altura acima da origem
+  const meteor = grSpawn(player, GREMMY.entities.meteoro, { x: start.x, y: start.y - half, z: start.z }, player.getRotation().y);
+  world.sendMessage(`§f${player.name}: §c§lMeteoro.`);
+  grSound(dim, "mob.wither.spawn", impact, 2, 0.5);
+  let tick = 0;
+  const run = grTrack(
+    player,
+    system.runInterval(() => {
+      tick++;
+      const k = Math.min(1, tick / cfg.fallTicks);
+      const c = { x: start.x + (impact.x - start.x) * k, y: start.y + (impact.y - start.y) * k, z: start.z + (impact.z - start.z) * k };
+      try {
+        meteor?.teleport({ x: c.x, y: c.y - half, z: c.z }, { keepVelocity: false });
+      } catch (e) {}
+      // rastro de fogo e fumaca saindo da rocha
+      for (let i = 0; i < 6; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = half * (0.6 + Math.random() * 0.5);
+        grFx(dim, i % 2 ? GR_FX.fogoParticle : GR_FX.fumacaParticle, { x: c.x + Math.cos(a) * r, y: c.y + (Math.random() - 0.2) * half, z: c.z + Math.sin(a) * r });
+      }
+      if (tick % 10 === 0) shakeNear(dim, impact, 60, 0.15 + k * 0.3, 0.6);
+      if (k < 1) return;
+      grStop(player, run);
+      grRemove(meteor);
+      meteorImpact(player, dim, impact);
+    }, 1)
+  );
+}
+
+function meteorImpact(player, dim, at) {
+  const cfg = GREMMY.meteor;
+  grSound(dim, "random.explode", at, 4, 0.4);
+  grSound(dim, "ambient.weather.thunder", at, 4, 0.5);
+  shakeNear(dim, at, 80, 1, 2);
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    const r = cfg.radius * (0.3 + Math.random() * 0.7);
+    grFx(dim, i % 4 === 0 ? "minecraft:large_explosion" : i % 2 ? GR_FX.fogoParticle : GR_FX.fumacaParticle, {
+      x: at.x + Math.cos(a) * r,
+      y: at.y + Math.random() * 4,
+      z: at.z + Math.sin(a) * r,
+    });
+  }
+  const ledger = [];
+  komamuraCrater(ledger, dim, { x: at.x, y: at.y - 1, z: at.z }, cfg.crater, new Set());
+  scheduleRestore(ledger);
+  for (const entity of dim.getEntities({ location: at, maxDistance: cfg.radius })) {
+    if (grCanHit(player, entity)) grHit(player, entity, DAMAGE.meteoro, { breaksBlock: true });
+  }
+}
+
+/* ---------- Buraco Negro ---------- */
+
+function castBuracoNegro(player, spell) {
+  const cfg = GREMMY.blackHole;
+  const target = gremmyAim(player, cfg.range);
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  const dim = player.dimension;
+  let center;
+  if (target) {
+    const t = target.location;
+    center = { x: t.x, y: t.y + 1.5, z: t.z };
+  } else {
+    const p = gremmyGroundPoint(player, cfg.range);
+    center = { x: p.x, y: p.y + 1.5, z: p.z };
+  }
+  world.sendMessage(`§f${player.name}: §5§lBuraco Negro.`);
+  grSound(dim, "mob.wither.spawn", center, 2, 0.3);
+  const pool = new Map();
+  let tick = 0;
+  const run = grTrack(
+    player,
+    system.runInterval(() => {
+      tick++;
+      if (!gremmyAlive(player) || tick > cfg.ticks) {
+        grStop(player, run);
+        grFlush(player, pool);
+        return;
+      }
+      // o miolo preto, o disco girando e a poeira caindo pra dentro
+      for (let i = 0; i < 8; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const b = Math.random() * Math.PI;
+        grFx(dim, GR_FX.vazioParticle, { x: center.x + Math.cos(a) * Math.sin(b) * 1.2, y: center.y + Math.cos(b) * 1.2, z: center.z + Math.sin(a) * Math.sin(b) * 1.2 });
+      }
+      const spin = tick * 0.25;
+      for (let i = 0; i < 10; i++) {
+        const a = spin + (i / 10) * Math.PI * 2;
+        const r = 2.4 + (i % 3) * 0.5;
+        grFx(dim, GR_FX.discoParticle, { x: center.x + Math.cos(a) * r, y: center.y + Math.sin(a * 2) * 0.15, z: center.z + Math.sin(a) * r });
+      }
+      if (tick % 20 === 0) grSound(dim, "portal.portal", center, 1.6, 0.4);
+      // puxa todo mundo (menos o Gremmy) e machuca 20 por tick
+      for (const entity of dim.getEntities({ location: center, maxDistance: cfg.radius })) {
+        if (!grCanHit(player, entity)) continue;
+        try {
+          const l = entity.location;
+          const dx = center.x - l.x;
+          const dz = center.z - l.z;
+          const d = Math.hypot(dx, dz);
+          if (d > 0.8) {
+            const s = cfg.pull * Math.min(1.6, 0.4 + d / 20);
+            entity.applyKnockback({ x: (dx / d) * s, z: (dz / d) * s }, center.y - l.y > 1 ? 0.25 : 0.05);
+          }
+          if (tick % 2 === 0) grFx(dim, GR_FX.discoParticle, { x: l.x + dx * 0.3, y: l.y + 1, z: l.z + dz * 0.3 });
+        } catch (e) {}
+        grPool(pool, entity, DAMAGE.buracoNegroTick);
+      }
+      if (tick % cfg.flushTicks === 0) grFlush(player, pool);
+    }, 1)
+  );
+}
+
+/* ---------- Câncer ---------- */
+
+function castCancer(player, spell) {
+  const target = gremmyAim(player);
+  if (!target) {
+    player.sendMessage("§7Mire em alguém para imaginar o câncer.");
+    return;
+  }
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  cancerMarks.set(target.id, { entity: target });
+  world.sendMessage(`§f${player.name}: §4§lCâncer.`);
+  try {
+    if (target.typeId === "minecraft:player") target.sendMessage("§4Sua vida máxima caiu pela metade até você resetar ou morrer.");
+  } catch (e) {}
+  capCancer(target);
+}
+
+function capCancer(entity) {
+  try {
+    const max = maxVirtualHealth(entity);
+    const cap = max * GREMMY.cancer.fraction;
+    if (virtualHealth(entity) > cap) setVirtualHealth(entity, cap);
+  } catch (e) {}
+}
+
+system.runInterval(() => {
+  for (const [id, mark] of cancerMarks) {
+    let valid = false;
+    try {
+      valid = mark.entity.isValid && !isDownOrGone(mark.entity);
+    } catch (e) {}
+    if (!valid) {
+      cancerMarks.delete(id);
+      continue;
+    }
+    capCancer(mark.entity);
+    if (system.currentTick % 20 === 0) {
+      try {
+        const l = mark.entity.location;
+        grFx(mark.entity.dimension, GR_FX.cancerParticle, { x: l.x, y: l.y + 1.2, z: l.z });
+      } catch (e) {}
+    }
+  }
+}, 4);
+
+/* ---------- Ser o mais forte ---------- */
+
+function castMaisForte(player, spell) {
+  const target = gremmyAim(player, GREMMY.aimRange, (e) => e.typeId === "minecraft:player" && !!realCharacterId(e));
+  if (!target) {
+    player.sendMessage("§7Mire em alguém para ser mais forte que ele.");
+    return;
+  }
+  const character = CHARACTERS[realCharacterId(target)];
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  if (ZARAKI_IDS.has(character?.id)) {
+    // ninguem imagina ser mais forte que o Zaraki: a imaginacao volta contra ele
+    world.sendMessage(`§f${player.name} §7tentou imaginar ser mais forte que §c${character.name}§7... e não conseguiu.`);
+    grHit(player, player, (maxVirtualHealth(player) * GREMMY.strongest.zarakiFraction) / Math.max(0.01, dmgMultiplier(player)), {
+      ignoresReduction: true,
+      breaksBlock: true,
+    });
+    return;
+  }
+  const m1 = getActiveItemsForPlayer(target, character)[0];
+  const base = MELEE_WEAPONS[m1]?.baseDamage ?? DAMAGE.gremmyShot;
+  const perShot = base * GREMMY.strongest.multiplier;
+  gremmyStrongest.set(player.id, perShot);
+  world.sendMessage(`§f${player.name}: §6§lEu sou o mais forte. §r§7(m1 = ${perShot} por tiro, o dobro do de ${character.name})`);
+  imaginationBurst(player.dimension, player.location, 16);
+}
+
+/* ---------- Morra ---------- */
+
+function castMorra(player, spell) {
+  if (gremmyCharging.has(player.id)) return;
+  if (!gremmyStart(player, spell.key, spell.cost)) return;
+  const cfg = GREMMY.morra;
+  const dim = player.dimension;
+  world.sendMessage(`§f${player.name} §7fecha os olhos e imagina... §0§lMORRA§r§7. (10s sem ser tocado)`);
+  paralyzeFor(player, cfg.chargeTicks, "§5Carregando o Morra: não tome nenhum golpe por 10s.");
+  const charge = { tick: 0 };
+  gremmyCharging.set(player.id, charge);
+  charge.run = grTrack(
+    player,
+    system.runInterval(() => {
+      if (gremmyCharging.get(player.id) !== charge) {
+        grStop(player, charge.run);
+        return;
+      }
+      if (!gremmyAlive(player)) {
+        cancelMorra(player, undefined);
+        return;
+      }
+      charge.tick++;
+      const l = player.location;
+      // a escuridao fecha em volta dele enquanto carrega
+      const r = cfg.radius * (1 - charge.tick / cfg.chargeTicks) * 0.2 + 1;
+      for (let i = 0; i < 4; i++) {
+        const a = Math.random() * Math.PI * 2;
+        grFx(dim, GR_FX.vazioParticle, { x: l.x + Math.cos(a) * r, y: l.y + 0.2 + Math.random() * 2, z: l.z + Math.sin(a) * r });
+      }
+      if (charge.tick % 20 === 0) {
+        try {
+          player.onScreenDisplay.setActionBar(`§0§lMORRA §r§7${Math.ceil((cfg.chargeTicks - charge.tick) / 20)}s`);
+        } catch (e) {}
+        grSound(dim, "mob.warden.heartbeat", l, 1.5, 0.8);
+      }
+      if (charge.tick < cfg.chargeTicks) return;
+      gremmyCharging.delete(player.id);
+      grStop(player, charge.run);
+      ginRelease(player);
+      executeMorra(player);
+    }, 1)
+  );
+}
+
+// qualquer golpe (ou dano) durante a carga desfaz o Morra
+function cancelMorra(player, reason) {
+  const charge = gremmyCharging.get(player.id);
+  if (!charge) return;
+  gremmyCharging.delete(player.id);
+  grStop(player, charge.run);
+  try {
+    ginRelease(player);
+    if (reason) {
+      player.sendMessage(`§7O Morra se desfez: ${reason}.`);
+      world.sendMessage(`§7A imaginação de §f${player.name}§7 foi interrompida.`);
+    }
+  } catch (e) {}
+}
+
+function gremmyInterruptOnHit(target, source) {
+  if (!target || !gremmyCharging.has(target.id)) return;
+  if (source && source.id === target.id) return;
+  cancelMorra(target, "você foi atingido");
+}
+
+function executeMorra(player) {
+  const cfg = GREMMY.morra;
+  const dim = player.dimension;
+  const l = player.location;
+  world.sendMessage(`§f${player.name}: §0§lMORRA.`);
+  grSound(dim, "mob.wither.death", l, 3, 0.5);
+  let tooStrong = 0;
+  for (const entity of dim.getEntities({ location: l, maxDistance: cfg.radius })) {
+    if (!grCanHit(player, entity)) continue;
+    if (tierOfPlayer(entity) >= cfg.killBelowTier) {
+      tooStrong++;
+      continue;
+    }
+    try {
+      const e = entity.location;
+      for (let i = 0; i < 6; i++) grFx(dim, GR_FX.vazioParticle, { x: e.x + (Math.random() - 0.5), y: e.y + Math.random() * 2, z: e.z + (Math.random() - 0.5) });
+      entity.kill();
+    } catch (e) {}
+  }
+  // alguem forte demais estava no raio: quem morre no lugar dele e o Gremmy
+  if (tooStrong > 0) {
+    world.sendMessage(`§7Alguém forte demais estava ali. §f${player.name}§7 morreu no lugar.`);
+    try {
+      player.kill();
+    } catch (e) {}
+  }
+}
+
+// fim do emprestimo do Copiar: o que a skill copiada deixou rodando no id do
+// Gremmy e desfeito (cada limpeza mexe so no estado daquele personagem)
+function runtimeCleanupFor(playerId, characterId) {
+  try {
+    switch (characterId) {
+      case "aizen":
+      case "aizen_hogyoku":
+        aizenCleanup(playerId);
+        break;
+      case "ichigo_dangai":
+        dangaiCleanupId(playerId);
+        break;
+      case "yamamoto":
+        yamamotoCleanup(playerId);
+        break;
+      case "unohana":
+        unohanaCleanup(playerId, true);
+        break;
+      case "komamura":
+        komamuraCleanup(playerId);
+        break;
+      case "ichigo_sf":
+        ichigoSfCleanup(playerId);
+        break;
+      case "yukio":
+        yukioCleanup(playerId);
+        break;
+      case "isshin":
+        isshin.leave(playerId);
+        break;
+      case "urahara":
+        urahara.leave(playerId);
+        break;
+      case "yoruichi":
+        yoruichi.leave(playerId);
+        break;
+      case "tsukishima":
+        tsukishima.leave(playerId);
+        break;
+      case "chad":
+        chad.leave(playerId);
+        break;
+      case "orihime":
+        orihime.leave(playerId);
+        break;
+      case "ichigo_fullbringer":
+        ichigoFB.leave(playerId);
+        break;
+      case "shinji":
+        shinji.cleanupId(playerId);
+        break;
+    }
+    removeZonesOwnedBy(playerId);
+    soiClearNigeki(playerId);
+  } catch (e) {}
+}
+
+// dano que nao passa pelo dealDamage (queda, mob, fogo) tambem desfaz o Morra
+world.afterEvents.entityHurt.subscribe((ev) => {
+  try {
+    if (gremmyCharging.has(ev.hurtEntity?.id)) cancelMorra(ev.hurtEntity, "você tomou dano");
+  } catch (e) {}
+});
+
+/* ---------- limpeza ---------- */
+
+function gremmyCleanup(playerId) {
+  const player = world.getPlayers().find((p) => p.id === playerId);
+  if (player) {
+    endBorrow(player);
+    if (gremmyCharging.has(playerId)) cancelMorra(player, undefined);
+    try {
+      player.setDynamicProperty(GREMMY.concentration.dp, 0);
+    } catch (e) {}
+  } else {
+    characterBorrow.delete(playerId);
+    gremmyCharging.delete(playerId);
+  }
+  const set = gremmyRuns.get(playerId);
+  if (set) for (const id of set) system.clearRun(id);
+  gremmyRuns.delete(playerId);
+  gremmyShotHits.delete(playerId);
+  gremmyLastBurst.delete(playerId);
+  gremmyStrongest.delete(playerId);
+  gremmyClones.delete(playerId);
+  for (const [id, info] of gremmyEntities) {
+    if (info.ownerId !== playerId) continue;
+    gremmyEntities.delete(id);
+    try {
+      info.entity.remove();
+    } catch (e) {}
+  }
+}
+
+// sobra de sessao anterior (o mundo fechou com um clone ou meteoro no ar)
+system.runInterval(() => {
+  for (const id of ["overworld", "nether", "the_end"]) {
+    let dim;
+    try {
+      dim = world.getDimension(id);
+    } catch (e) {
+      continue;
+    }
+    for (const type of Object.values(GREMMY.entities)) {
+      try {
+        for (const entity of dim.getEntities({ type })) {
+          if (!gremmyEntities.has(entity.id)) entity.remove();
+        }
+      } catch (e) {}
+    }
+  }
+}, 40);
+
+/* ---------------------------------------------------------
    m1 (hit basico com a zangetsu) - particula de corte
    --------------------------------------------------------- */
 
@@ -21548,6 +22927,13 @@ const MELEE_WEAPONS = {
     particle: "komamura:corte",
     dot: null,
     giant: true,
+  },
+  // AK-47 do Gremmy: o golpe e o 1º tiro de uma rajada de 5 (47 cada)
+  "gremmy:m1_ak47": {
+    baseDamage: DAMAGE.gremmyShot,
+    particle: "gremmy:clarao",
+    dot: null,
+    gremmy: true,
   },
   // laminas digitais do Yukio (usar o m1 arremessa; no Awakening, teleguiadas)
   "yukio:m1_invaders": {
@@ -21930,6 +23316,8 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
         tsukishima.mark(damagingEntity, hitEntity);
         baseDamage = tsukishima.m1Damage(damagingEntity, hitEntity, baseDamage);
       }
+      // Ser o mais forte: o tiro do Gremmy vira o dobro do m1 do alvo escolhido
+      if (weapon.gremmy) baseDamage = gremmyShotDamage(damagingEntity);
       const totalDamage = baseDamage * dmgMultiplier(damagingEntity);
       try {
         const before = hitEntity.getComponent("minecraft:health")?.currentValue ?? 0;
@@ -21950,6 +23338,7 @@ world.afterEvents.entityHitEntity.subscribe((ev) => {
       if (weapon.tenken) komamuraTenkenHit(damagingEntity);
       if (weapon.giant) komamuraGiantSweep(damagingEntity, hitEntity);
       if (weapon.yukio) yukioMelee(damagingEntity, hitEntity, !!weapon.yukioAwakened);
+      if (weapon.gremmy) gremmyMelee(damagingEntity, hitEntity);
       // m1 com estouro (o Zangetsu do Vasto Lorde)
       if (weapon.blast) {
         try {
@@ -22397,7 +23786,7 @@ system.runInterval(() => {
     const hierroTag = isHierro(player) ? " §7🛡 HIERRO" : "";
 
     // quem nao tem awakening nem super ataque (o Nnoitra) nao ganha medidor
-    const character = getActiveCharacter(player);
+    const character = CHARACTERS[realCharacterId(player)];
     const canAwaken = !character || !!character.awakening || !!character.superAttack;
     let awakeningPart = canAwaken
       ? `   §b⚡ Awakening: ${awakening}%${awakenedTag}${senkeiTag}`
@@ -22412,6 +23801,7 @@ system.runInterval(() => {
     if (character?.id === "tsukishima") awakeningPart = tsukishima.hud(player);
     if (character?.id === "chad") awakeningPart += chad.hud(player);
     if (character?.id === "orihime") awakeningPart += orihime.hud(player);
+    if (character?.id === "gremmy") awakeningPart = gremmyHud(player);
 
     // so manda pro cliente quando o texto muda (ou a cada 1,5s pra nao sumir)
     const barText =
@@ -22436,7 +23826,8 @@ system.runInterval(() => {
     const inv = getInv(player);
     forceGiveLockedItem(inv, SELECTOR_SLOT, SELECTOR_ITEM);
 
-    const character = getActiveCharacter(player);
+    // o real: o Copiar do Gremmy nao troca a hotbar dele
+    const character = CHARACTERS[realCharacterId(player)];
 
     // roda mesmo sem personagem: e assim que a peca sobrando some da mochila
     sweepFormArmor(player, mugetsuArmorOf(player) ?? activeFormOf(player, character)?.armorPiece);
@@ -22687,6 +24078,9 @@ world.afterEvents.playerLeave.subscribe((ev) => {
   komamuraCleanup(playerId);
   ichigoSfCleanup(playerId);
   yukioCleanup(playerId);
+  gremmyCleanup(playerId);
+  cancerMarks.delete(playerId);
+  cookieBones.delete(playerId);
 });
 
 
@@ -22859,6 +24253,7 @@ const TSUKISHIMA_ATTACK_POOL = [
   { id: "komamura", name: "Komamura", skills: [["M1 Tenken", DAMAGE.tenkenM1], ["Destructive Slash", DAMAGE.destructiveSlash]] },
   { id: "ichigo_sf", name: "Ichigo (SF)", skills: [["M1 Zangetsu", DAMAGE.sfM1], ["Duality Tenshou", DAMAGE.dualityTenshou]] },
   { id: "yukio", name: "Yukio", skills: [["M1 Lâminas digitais", DAMAGE.yukioM1], ["Snake Game", DAMAGE.snakeGame]] },
+  { id: "gremmy", name: "Gremmy", skills: [["M1 AK-47", DAMAGE.gremmyShot], ["Míssil", DAMAGE.gremmyMissile]] },
 ];
 
 const tsukishima = createTsukishima({
@@ -22934,6 +24329,7 @@ export {
   STARKK_DAMAGE_MULTIPLIER,
   ICHIGO_SF,
   YUKIO,
+  GREMMY,
   // efeitos negativos pro Diagnóstico da Unohana ter o que limpar na simulacao
   applyBurn,
   applyDeterioration,

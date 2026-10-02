@@ -979,7 +979,8 @@ export const world = {
     return world.getPlayers();
   },
   getDimension(id) {
-    const d = dimensions.get(id);
+    // o jogo aceita "the_end" e "minecraft:the_end"
+    const d = dimensions.get(id) ?? dimensions.get(`minecraft:${id}`);
     if (!d) throw new Error(`dimensao desconhecida: ${id}`);
     return d;
   },

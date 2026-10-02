@@ -40,6 +40,11 @@ o tier abre os personagens daquela raça naquele tier.
 | 5 | Yammy Llargo | 1000 | Ira (6000) |
 | 6 | Coyote Starkk | 5000 | Los Lobos (5000); todo dano dele ×1,6 |
 
+### Quincy
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 6 | **Gremmy Thoumeaux** | 4000 | sem awakening: Concentração (Imaginação média e massiva) |
+
 ### Fullbringer
 | Tier | Personagem | Vida | Awakening / super |
 |---|---|---|---|
@@ -91,6 +96,7 @@ tools/
   komamura_model.py     partes do Myō'ō e a armadura do Bankai do Komamura
   tensa_sf_model.py     casaco da Tensa Zangetsu do Ichigo (SF)
   yukio_model.py        barril, cogumelo, Pac-Man e a skin do clone do Yukio
+  gremmy_model.py       AK-47, míssil, meteoro e a skin do clone do Gremmy
   gen_model.py          renderiza os modelos em .geo.json
   vanilla_sounds.txt    IDs de som do Bedrock, pra validar os sons do script
   validate.py           JSON, itens, texturas, manifests, versões, sons, entidades

@@ -7,6 +7,7 @@ Gera as geometrias feitas por codigo:
     tools/komamura_model.py      -> RP/models/entity/komamura_*.geo.json (4)
     tools/tensa_sf_model.py      -> RP/models/entity/tensa_sf.geo.json
     tools/yukio_model.py         -> RP/models/entity/yukio_*.geo.json (3)
+    tools/gremmy_model.py        -> RP/models/entity/gremmy_*.geo.json (3)
 
     python3 tools/gen_model.py           # escreve os .geo.json
     python3 tools/gen_model.py --check   # so confere se batem com o disco
@@ -27,6 +28,7 @@ import komamura_model  # noqa: E402
 import mugetsu_model  # noqa: E402
 import tensa_sf_model  # noqa: E402
 import yukio_model  # noqa: E402
+import gremmy_model  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 MODELS = ROOT / "RP" / "models" / "entity"
@@ -36,6 +38,7 @@ TARGETS = {
     MODELS / "mugetsu.geo.json": mugetsu_model.build_geometry,
     MODELS / "tensa_sf.geo.json": tensa_sf_model.build_geometry,
     **{MODELS / f"{name}.geo.json": build for name, build in yukio_model.geometry_builders().items()},
+    **{MODELS / f"{name}.geo.json": build for name, build in gremmy_model.geometry_builders().items()},
     **{MODELS / f"{name}.geo.json": build for name, build in komamura_model.geometry_builders().items()},
 }
 

@@ -1,0 +1,20 @@
+{
+  "format_version": "1.26.40",
+  "minecraft:item": {
+    "description": {
+      "identifier": "gremmy:imaginacao",
+      "menu_category": {
+        "category": "equipment"
+      }
+    },
+    "components": {
+      "minecraft:icon": "gremmy:imaginacao",
+      "minecraft:display_name": {
+        "value": "Imaginação (média)"
+      },
+      "minecraft:max_stack_size": 1,
+      "minecraft:hand_equipped": true,
+      "minecraft:should_despawn": false
+    }
+  }
+}

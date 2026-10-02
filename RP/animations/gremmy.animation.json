@@ -1,0 +1,138 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.gremmy.clone.parado": {
+      "loop": true,
+      "animation_length": 2.0,
+      "bones": {
+        "rightArm": {
+          "rotation": {
+            "0.0": [
+              -10,
+              0,
+              8
+            ],
+            "1.0": [
+              -14,
+              0,
+              10
+            ],
+            "2.0": [
+              -10,
+              0,
+              8
+            ]
+          }
+        },
+        "leftArm": {
+          "rotation": {
+            "0.0": [
+              -10,
+              0,
+              -8
+            ],
+            "1.0": [
+              -14,
+              0,
+              -10
+            ],
+            "2.0": [
+              -10,
+              0,
+              -8
+            ]
+          }
+        },
+        "head": {
+          "rotation": {
+            "0.0": [
+              0,
+              0,
+              0
+            ],
+            "1.0": [
+              4,
+              6,
+              0
+            ],
+            "2.0": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    },
+    "animation.gremmy.ak47.recuo": {
+      "loop": true,
+      "animation_length": 0.15,
+      "bones": {
+        "root": {
+          "position": {
+            "0.0": [
+              0,
+              0,
+              0
+            ],
+            "0.05": [
+              0,
+              0.3,
+              1.2
+            ],
+            "0.15": [
+              0,
+              0,
+              0
+            ]
+          }
+        }
+      }
+    },
+    "animation.gremmy.missil.gira": {
+      "loop": true,
+      "animation_length": 0.5,
+      "bones": {
+        "root": {
+          "rotation": {
+            "0.0": [
+              0,
+              0,
+              0
+            ],
+            "0.5": [
+              0,
+              0,
+              360
+            ]
+          }
+        }
+      }
+    },
+    "animation.gremmy.meteoro.gira": {
+      "loop": true,
+      "animation_length": 4.0,
+      "bones": {
+        "root": {
+          "rotation": {
+            "0.0": [
+              0,
+              0,
+              0
+            ],
+            "2.0": [
+              -180,
+              40,
+              0
+            ],
+            "4.0": [
+              -360,
+              80,
+              0
+            ]
+          }
+        }
+      }
+    }
+  }
+}

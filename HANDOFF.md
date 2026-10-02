@@ -5,7 +5,7 @@ commitado e enviado.
 
 - **Repo**: `Felipe9272727/Jujubas-gulosas`, branch `claude/blissful-keller-vni5lv`
 - **Build**: `python3 tools/build.py` → `dist/BleachBattlegrounds.mcaddon`
-- **Estado**: 1336 checks na simulação, zero exceções. Packs na versão 1.29.0.
+- **Estado**: 1417 checks na simulação, zero exceções. Packs na versão 1.30.0.
 - **Base**: a partir da 1.20.0 o repo parte da **1.19.25 (TosenVisored)** que o
   usuário mandou em `.mcaddon` — ela descende da 1.14.0 daqui (mesmos UUIDs) e foi
   desenvolvida fora deste branch. Foi importada byte a byte no commit
@@ -55,6 +55,7 @@ tools/
   hollow_model.py       modelo dos attachables do Ichigo Vizard
   tensa_sf_model.py     casaco da Tensa Zangetsu (Ichigo SF)
   yukio_model.py        barril, cogumelo, Pac-Man e a skin do clone (Yukio)
+  gremmy_model.py       AK-47, míssil, meteoro e a skin do clone (Gremmy)
   mugetsu_model.py      cabelo, faixas e hakama do Mugetsu (Ichigo Dangai)
   komamura_model.py     braço, punho, guarda e armadura do Myō'ō (Komamura)
   gen_textures.py       grids -> PNG (e --check)
@@ -65,7 +66,7 @@ tools/
   build.py              pipeline + empacotamento
 sim/
   stubs/                @minecraft/server e server-ui falsos
-  run.mjs               ~6900 linhas, 1336 checks
+  run.mjs               ~7300 linhas, 1417 checks
   profile.mjs           conta chamadas nativas por loop e por skill (o "lag")
 ```
 
@@ -130,6 +131,11 @@ menu**. Tabela gerada do registro do `main.js`:
 | 4 | Barragan Louisenbairn | 3000 | Arrogante |
 | 5 | Yammy Llargo | 1000 | Ira (6000) |
 | 6 | Coyote Starkk | 5000 | Los Lobos (5000); todo dano dele ×1,6 |
+
+### Quincy
+| Tier | Personagem | Vida | Awakening / super |
+|---|---|---|---|
+| 6 | **Gremmy Thoumeaux** | 4000 | sem awakening: Concentração (Imaginação média e massiva) |
 
 ### Fullbringer
 | Tier | Personagem | Vida | Awakening / super |
@@ -288,6 +294,16 @@ Balanceamento vive em `DAMAGE` e `SKILL_COOLDOWN_TICKS`, no topo do `main.js`.
    de quem é de tier **estritamente menor** (`TIER_DAMAGE_REDUCTION`, dentro do
    `dealDamage`). Não soma com quem já tem `damageTakenMultiplier` no
    personagem. Teste de dano em personagem tier 7+ tem que contar com isso.
+21. **Invulnerabilidade pós-dano.** Depois de um golpe o alvo fica ~10 ticks
+   ignorando golpe igual ou menor. Dano "por tick" (ou golpes a menos de 10
+   ticks um do outro no mesmo alvo) tem que ser **somado e aplicado de 10 em 10
+   ticks**: Rush and Cut, Bullet Barrage, Buraco Negro, Kurohitsugi, Several
+   Cuts, a rajada do Gremmy. O Momentum's Slash corta de 10 em 10.
+22. **Personagem emprestado (Copiar do Gremmy).** `getActiveCharacter` pode
+   devolver outro personagem por uns segundos (`characterBorrow`). O que é
+   identidade de verdade — itens travados, HUD, tier, as próprias skills do
+   Gremmy — lê `realCharacterId`. Código novo que precise do personagem
+   escolhido (e não do que está agindo) usa `realCharacterId`.
 
 ## Disputa da tecla agachar + m1
 
@@ -816,6 +832,33 @@ fechando: duas metades animadas). Barril/cogumelo/Pac-Man ficam fora das buscas
   e cura 500, outro encosta e toma 250), **Pac-Man** (escala 4,5, vai reto na
   mira 50 blocos comendo blocos e gente: tier ≤ 3 morre, acima toma 500).
 
+## Gremmy Thoumeaux
+
+Tier 6, Quincy (o primeiro da raça), 4000 de vida. Config em `GREMMY`, prefixo
+`gremmy:`. **Sem awakening**: no lugar, a Concentração (`mv:gremmy_conc`,
+0–100), +5% a cada 3s e +5% por clone, na HUD. Cada skill confere a
+concentração **antes** do cooldown (`gremmyStart`): sem concentração não gasta
+nada.
+
+- **m1 AK-47**: o golpe direto é o 1º tiro de uma rajada de 5 (47 cada); usar o
+  item atira pra onde ele olha. A cada 4 acertos sai um míssil teleguiado (200).
+- **Imaginação** (média) e **Imaginação massiva**: dois livros no molde dos da
+  Unohana (`GREMMY.books`; agachar + usar escolhe, usar lança).
+  - Copiar: menu com as skills do alvo; a escolhida é lançada pelo
+    `handleItemUse` (o handler do itemUse virou função nomeada) com o Gremmy
+    "sendo" o personagem copiado por 15s (`borrowCharacter`). No fim,
+    `runtimeCleanupFor` desfaz o que a skill deixou no id dele.
+  - Empurrar, Outra Dimensão (End, plataforma montada quando o chunk carrega),
+    Bullet Barrage (entidades `gremmy:ak47`), Ossos de Cookie
+    (`cookieMultiplierOf` no `marked` do `dealDamage`).
+  - Meteoro (entidade `gremmy:meteoro`, escala 14 ≈ 14 blocos), Buraco Negro
+    (só partícula; puxa com knockback), Câncer (`cancerMarks`: corta a vida
+    na metade da máxima a cada 4 ticks), Ser o mais forte (`gremmyStrongest`) e
+    Morra (`paralyzeFor` + `gremmyInterruptOnHit` no `dealDamage` e no
+    `entityHurt`).
+- **Criar Clones**: `gremmy:clone` (skin do Gremmy no humanoide do jogo),
+  reposicionados a cada 2 ticks ao lado dele (esquerda, direita, alternando).
+
 ## Animações
 
 `RP/animations/vizard.animation.json` define cinco animações e cada ataque tem
@@ -982,6 +1025,19 @@ Tunar à vontade — estão em `DAMAGE` e `SKILL_COOLDOWN_TICKS`.
 | Sonic Spin | 5 passadas de 70 (350); câmera de cima como a da Yoruichi |
 | Red Mushroom | some depois de 20s ou no primeiro toque |
 | Pac-Man | 50 blocos, raio 3,2; come o terreno (volta em 1 minuto); "morre" = dano de toda a vida, ignorando redução |
+| m1 do Gremmy | rajada de 5 tiros (1 a cada 2 ticks, 40 blocos); o golpe direto é o 1º tiro; os outros somam e entram 10 ticks depois; míssil teleguiado de 200 em raio 2,5 |
+| Concentração | começa em 0 a cada ativação e zera ao resetar; teto 100% |
+| Copiar | menu com as skills que o alvo tem na hotbar agora; o Gremmy "é" o personagem copiado por 15s; se a skill não sair a concentração volta |
+| Empurrar | 15 empurrões de 7 seguidos (~100 blocos); sem dano |
+| Outra Dimensão | plataforma 9×9 de obsidiana no End, x/z ≥ 300000; tier 5+ volta pro ponto de onde saiu; mob fica lá |
+| Bullet Barrage | 6 AK-47 flutuando em leque; linha de fogo de 36 blocos com 2,5 de raio |
+| Ossos de Cookie | 20s |
+| Criar Clones | no máximo 6; invulneráveis; somem no reset/morte ou no Meteoro |
+| Meteoro | cai em 3s de 70 blocos de altura; raio 18; cratera de raio 7 (volta em 1 minuto) |
+| Buraco Negro | no alvo mirado (sem alvo: no chão da mira); o dano vale pra todos nos 50 blocos |
+| Câncer | vale pra mob também; acaba no reset ou na morte |
+| Ser o mais forte | cada tiro do m1 = 2× o m1 base do alvo, até resetar/morrer; Zaraki = `kenpachi` (80% da vida máxima) |
+| Morra | a concentração e o cooldown vão no começo da carga (interrompido, perde); mata com `kill()` (passa por qualquer defesa) |
 
 ## Próximos passos sugeridos
 

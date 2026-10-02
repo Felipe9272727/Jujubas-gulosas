@@ -4682,3 +4682,124 @@ TEXTURES.update({
         "grid": ["...cc...", "..cCCc..", ".cCCCCc.", "cCCCCCCc", "cCCCCCCc", ".cCCCCc.", "..cCCc..", "...cc..."],
     },
 })
+
+# ---------------------------------------------------------------------------
+# Gremmy Thoumeaux: entidades (tools/gremmy_model.py), ícones e partículas
+# ---------------------------------------------------------------------------
+from gremmy_model import TEXTURE_SPECS as _GREMMY_TEXTURES  # noqa: E402
+
+for _name, _spec in _GREMMY_TEXTURES.items():
+    TEXTURES[f"entity/{_name}"] = _spec
+
+_GR = {
+    "k": (36, 38, 44, 255),
+    "K": (70, 72, 80, 255),
+    "w": (150, 86, 40, 255),     # madeira
+    "W": (110, 62, 28, 255),
+    "o": (190, 96, 30, 255),     # carregador
+    "s": (245, 246, 250, 255),
+    "S": (200, 206, 220, 255),
+    "y": (255, 214, 90, 255),    # cabelo / imaginação dourada
+    "Y": (220, 170, 60, 255),
+    "p": (170, 90, 230, 255),
+    "P": (110, 40, 170, 255),
+    "r": (210, 40, 40, 255),
+    "b": (90, 140, 230, 255),
+}
+
+
+def _gr_ak(x, y):
+    # a AK de lado, cano pra direita
+    if y in (6, 7) and 9 <= x <= 15:
+        return "K" if y == 6 else "k"                     # cano e guarda-mão
+    if y in (6, 7, 8) and 5 <= x <= 10:
+        return "k"                                         # culatra
+    if 9 <= x <= 12 and y in (8,):
+        return "w"                                         # guarda-mão de madeira
+    if 0 <= x <= 4 and 6 <= y <= 9 and y - 6 <= (4 - x) // 2 + 2:
+        return "w" if y < 9 else "W"                       # coronha
+    if x in (7, 8) and 9 <= y <= 12:
+        return "o" if y < 12 or x == 8 else None           # carregador curvo
+    if x in (9,) and y in (11, 12):
+        return "o"
+    if x == 5 and 9 <= y <= 11:
+        return "W"                                         # empunhadura
+    if (x, y) == (14, 5):
+        return "k"
+    return None
+
+
+def _gr_imagination(color, accent):
+    def f(x, y):
+        dx, dy = x - 7.5, y - 7.5
+        r = (dx * dx + dy * dy) ** 0.5
+        # um cérebro estilizado (o corpo de verdade do Gremmy) com brilho em volta
+        if r <= 5:
+            if (x + y) % 4 == 0 or (x - y) % 5 == 0:
+                return accent
+            return color
+        if 6 <= r <= 6.8 and (x * 3 + y) % 3 == 0:
+            return "y"
+        return None
+    return f
+
+
+def _gr_clones(x, y):
+    for ox, col in ((1, "s"), (6, "S"), (11, "s")):
+        u = x - ox
+        if 0 <= u <= 3 and 1 <= y <= 3:
+            return "y"
+        if 0 <= u <= 3 and 4 <= y <= 9:
+            return col
+        if u in (0, 3) and 10 <= y <= 14:
+            return "k"
+    return None
+
+
+TEXTURES.update({
+    "items/gremmy_m1_ak47": {"palette": _GR, "grid": _draw(_gr_ak)},
+    "items/gremmy_imaginacao": {"palette": _GR, "grid": _draw(_gr_imagination("s", "S"))},
+    "items/gremmy_imaginacao_maxima": {"palette": _GR, "grid": _draw(_gr_imagination("p", "P"))},
+    "items/gremmy_criar_clones": {"palette": _GR, "grid": _draw(_gr_clones)},
+    # risco de bala (amarelo quente)
+    "particle/gremmy_tracer": {
+        "palette": {"y": (255, 230, 120, 255), "Y": (255, 180, 60, 200)},
+        "grid": ["........", "...YY...", "..YyyY..", ".YyyyyY.", ".YyyyyY.", "..YyyY..", "...YY...", "........"],
+    },
+    # clarão do cano
+    "particle/gremmy_clarao": {
+        "palette": {"w": (255, 250, 220, 255), "y": (255, 210, 80, 230), "o": (255, 140, 30, 160)},
+        "grid": ["o..o..o.", ".oyyyo..", ".ywwwy.o", "oywwwwyo", ".ywwwy..", ".oyyyo..", "o..o..o.", "........"],
+    },
+    "particle/gremmy_fogo": {
+        "palette": {"r": (220, 60, 20, 170), "o": (255, 140, 30, 230), "y": (255, 230, 120, 255)},
+        "grid": ["..rrrr..", ".roooor.", "rooyyoor", "royyyyor", "royyyyor", "rooyyoor", ".roooor.", "..rrrr.."],
+    },
+    "particle/gremmy_fumaca": {
+        "palette": {"g": (70, 66, 64, 140), "G": (50, 46, 44, 200)},
+        "grid": ["..gggg..", ".gGGGGg.", "gGGGGGGg", "gGGGGGGg", "gGGGGGGg", "gGGGGGGg", ".gGGGGg.", "..gggg.."],
+    },
+    # buraco negro: o miolo preto de borda roxa e o disco
+    "particle/gremmy_vazio": {
+        "palette": {"k": (2, 2, 4, 255), "p": (80, 20, 120, 200)},
+        "grid": ["..pppp..", ".pkkkkp.", "pkkkkkkp", "pkkkkkkp", "pkkkkkkp", "pkkkkkkp", ".pkkkkp.", "..pppp.."],
+    },
+    "particle/gremmy_disco": {
+        "palette": {"p": (170, 80, 230, 200), "o": (255, 160, 80, 230), "w": (255, 230, 200, 255)},
+        "grid": ["........", "..pppp..", ".poooop.", "poowwoop", "poowwoop", ".poooop.", "..pppp..", "........"],
+    },
+    # cookie com gotas de chocolate
+    "particle/gremmy_cookie": {
+        "palette": {"c": (210, 150, 80, 255), "C": (170, 110, 50, 255), "k": (70, 40, 20, 255)},
+        "grid": ["..CCCC..", ".CcckcC.", "CckcccCC", "CcccckcC", "CckcccCC", "CccckccC", ".CcccCC.", "..CCCC.."],
+    },
+    "particle/gremmy_cancer": {
+        "palette": {"r": (120, 10, 20, 200), "R": (60, 0, 10, 255)},
+        "grid": ["...rr...", "..rRRr..", ".rRRRRr.", "rRRRRRRr", "rRRRRRRr", ".rRRRRr.", "..rRRr..", "...rr..."],
+    },
+    # brilho de imaginação (dourado)
+    "particle/gremmy_imaginacao": {
+        "palette": {"y": (255, 220, 110, 220), "w": (255, 250, 230, 255)},
+        "grid": ["...y....", "...w....", "..ywy...", "ywwwwwy.", "..ywy...", "...w....", "...y....", "........"],
+    },
+})

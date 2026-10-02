@@ -919,6 +919,18 @@
     },
     "yukio:pac_man": {
       "textures": "textures/items/yukio_pac_man"
+    },
+    "gremmy:m1_ak47": {
+      "textures": "textures/items/gremmy_m1_ak47"
+    },
+    "gremmy:imaginacao": {
+      "textures": "textures/items/gremmy_imaginacao"
+    },
+    "gremmy:imaginacao_maxima": {
+      "textures": "textures/items/gremmy_imaginacao_maxima"
+    },
+    "gremmy:criar_clones": {
+      "textures": "textures/items/gremmy_criar_clones"
     }
   }
 }

@@ -6446,8 +6446,8 @@ const kbAntes = log.knockbacks.length;
 dmgBefore = log.damages.length;
 useItem(sf, "ichigosf:rush_and_cut");
 advanceTicks(SF.rush.ticks + 10, "rush");
-const golpesRush = sfHits(alvoDu, dmgBefore, 5).length;
-check("~200 golpes de 5 em quem está perto", golpesRush >= 195 && golpesRush <= 201, String(golpesRush));
+const golpesRush = sfHits(alvoDu, dmgBefore, 50).length;
+check("5 por tick em 10s, somado em 20 rajadas de 50 (a invulnerabilidade não come nada)", golpesRush === 20, String(golpesRush));
 check("o Ichigo desliza pra frente", log.knockbacks.slice(kbAntes).filter((k) => k.target === sf.name && k.horizontal.x > 0).length >= 90);
 advanceTicks(10, "rush-acabou");
 dmgBefore = log.damages.length;
@@ -6806,6 +6806,337 @@ await settleForms();
 advanceTicks(15, "desativar-yk");
 check("nenhuma entidade do Yukio sobrando", ["yukio:clone", "yukio:barril", "yukio:cogumelo", "yukio:pacman"].every((t) => ykEntities(t).length === 0));
 check("sem itens do Yukio", !inv(yk).slots.some((s) => s?.typeId?.startsWith("yukio:")));
+noNewErrors("desativar sem erro", mark);
+
+/* ================= Gremmy Thoumeaux ================= */
+
+const GR = game.GREMMY;
+function grHits(target, since, amount) {
+  return log.damages.slice(since).filter((d) => d.target === target.name && (amount === undefined || Math.abs(virtualDamage(target, d) - amount) < 0.6));
+}
+function grTotal(target, since) {
+  return grHits(target, since).reduce((n, d) => n + virtualDamage(target, d), 0);
+}
+function conc(p) {
+  return p.getDynamicProperty(GR.concentration.dp) ?? 0;
+}
+function fullConc(p) {
+  p.setDynamicProperty(GR.concentration.dp, 100);
+}
+function grEntities(type) {
+  return [...overworld.getEntities({ type })];
+}
+function grCd(p, key) {
+  p.setDynamicProperty("mv:cd_" + key.replace(":", "_"), undefined);
+}
+async function grCast(p, book, index) {
+  await chooseSpell(p, book, index);
+  useItem(p, book);
+  await settleForms();
+}
+
+scenario("Gremmy Thoumeaux: ativação (Quincy, Tier 6)");
+mark = errors.length;
+const gr = await newPlayerAs("GremmyPlayer", { x: 90000, y: 64, z: 90000 }, "gremmy");
+noNewErrors("ativar o Gremmy sem erro", mark);
+check("registro: Quincy, Tier 6", RACE_TIER.gremmy?.race === "quincy" && RACE_TIER.gremmy?.tier === 6);
+check("vida máxima 4000", virtualMax(gr) === 4000, String(virtualMax(gr)));
+check(
+  "AK-47, Imaginação, Criar Clones e Imaginação Massiva nos slots 0-3",
+  JSON.stringify(slotIds(gr, 4)) === JSON.stringify(["gremmy:m1_ak47", "gremmy:imaginacao", "gremmy:criar_clones", "gremmy:imaginacao_maxima"]),
+  JSON.stringify(slotIds(gr, 4))
+);
+check("sem awakening: começa com 0% de concentração", conc(gr) === 0);
+advanceTicks(GR.concentration.everyTicks, "concentra");
+check("+5% a cada 3s", conc(gr) === 5, String(conc(gr)));
+advanceTicks(10, "hud");
+check("a HUD mostra a concentração", log.actionBars?.some?.((a) => a.player === gr.name && a.text.includes("Concentração")) ?? true);
+
+scenario("m1: rajada de 5 tiros de AK-47 (47 cada) e um míssil (200) a cada 4 acertos");
+mark = errors.length;
+gr._view = { x: 1, y: 0, z: 0 };
+const alvoAk = createDummy("AlvoAK", { x: 90002, y: 64, z: 90000 }, 500000);
+dmgBefore = log.damages.length;
+hitWith(gr, alvoAk, "gremmy:m1_ak47");
+check("o golpe já entra com o 1º tiro: 47", grHits(alvoAk, dmgBefore, 47).length === 1);
+advanceTicks(12, "rajada");
+check("os outros 4 tiros somados depois da invulnerabilidade: 188", grHits(alvoAk, dmgBefore, 188).length === 1, JSON.stringify(grHits(alvoAk, dmgBefore).map((d) => virtualDamage(alvoAk, d))));
+check("traçantes e clarão do cano", log.particles.some((p) => p.particleId === "gremmy:tracer") && log.particles.some((p) => p.particleId === "gremmy:clarao"));
+advanceTicks(30, "missil");
+check("o míssil sai no 4º acerto: 200", grHits(alvoAk, dmgBefore, 200).length === 1);
+check("e some depois de explodir", grEntities("gremmy:missil").length === 0);
+dmgBefore = log.damages.length;
+useItem(gr, "gremmy:m1_ak47");
+useItem(gr, "gremmy:m1_ak47");
+advanceTicks(15, "rajada-uso");
+check("usar o item atira pra onde ele olha: 5 x 47", grHits(alvoAk, dmgBefore, 235).length === 1, JSON.stringify(grHits(alvoAk, dmgBefore).map((d) => virtualDamage(alvoAk, d))));
+noNewErrors("m1 sem erro", mark);
+
+scenario("Criar Clones: um à esquerda, depois à direita, e mais concentração por clone");
+mark = errors.length;
+gr.setDynamicProperty(GR.concentration.dp, 5);
+useItem(gr, "gremmy:criar_clones");
+check("sem 10% não cria nem gasta o cooldown", grEntities("gremmy:clone").length === 0 && gr.getDynamicProperty("mv:cd_gremmy_criar_clones") === undefined);
+fullConc(gr);
+gr.teleport({ x: 90100, y: 64, z: 90000 });
+gr._view = { x: 1, y: 0, z: 0 };
+for (let i = 0; i < 3; i++) {
+  grCd(gr, "gremmy:criar_clones");
+  useItem(gr, "gremmy:criar_clones");
+}
+advanceTicks(2, "clones");
+const clonesGr = grEntities("gremmy:clone");
+check("3 clones, 10% cada", clonesGr.length === 3 && conc(gr) === 70, `${clonesGr.length} / ${conc(gr)}`);
+const lados = clonesGr.map((c) => Math.round((c.location.z - 90000) * 10) / 10).sort((a, b) => a - b);
+check("esquerda, direita e mais à esquerda", JSON.stringify(lados) === JSON.stringify([-2.6, -1.3, 1.3]), JSON.stringify(lados));
+check("com o nome dele", clonesGr.every((c) => c.nameTag === gr.name));
+gr.teleport({ x: 90110, y: 64, z: 90000 });
+advanceTicks(2, "segue");
+check("os clones seguem ao lado", grEntities("gremmy:clone").every((c) => Math.abs(c.location.x - 90110) < 0.01));
+gr.setDynamicProperty(GR.concentration.dp, 0);
+advanceTicks(GR.concentration.everyTicks, "ganho-clones");
+check("com 3 clones ganha 20% a cada 3s", conc(gr) === 20, String(conc(gr)));
+noNewErrors("clones sem erro", mark);
+
+scenario("Imaginação: agachar + usar abre o menu com as 5 skills médias");
+mark = errors.length;
+const formsGr = shownForms.length;
+await chooseSpell(gr, "gremmy:imaginacao", 1);
+check("5 opções", shownForms[formsGr]?.buttons?.length === 5, JSON.stringify(shownForms[formsGr]?.buttons));
+check("a escolha fica salva", gr.getDynamicProperty("mv:gremmy_media") === 1);
+const formsGr2 = shownForms.length;
+await chooseSpell(gr, "gremmy:imaginacao_maxima", 0);
+check("o massivo também tem 5", shownForms[formsGr2]?.buttons?.length === 5);
+noNewErrors("menus sem erro", mark);
+
+scenario("Empurrar: manda o alvo mirado pra muito longe (15%)");
+mark = errors.length;
+gr.teleport({ x: 90200, y: 64, z: 90000 });
+gr._view = { x: 1, y: 0, z: 0 };
+const empurrado = createDummy("Empurrado", { x: 90206, y: 64, z: 90000 }, 500000);
+fullConc(gr);
+const kbGr = log.knockbacks.length;
+await grCast(gr, "gremmy:imaginacao", 1);
+advanceTicks(20, "empurra");
+const empurroes = log.knockbacks.slice(kbGr).filter((k) => k.target === empurrado.name);
+check("15 empurrões fortes pra frente", empurroes.length === GR.push.ticks && empurroes.every((k) => k.horizontal.x >= GR.push.strength - 0.01), String(empurroes.length));
+check("gasta 15%", conc(gr) === 85, String(conc(gr)));
+empurrado.kill();
+noNewErrors("Empurrar sem erro", mark);
+
+scenario("Mandar para outra Dimensão: plataforma de obsidiana no End (tier 5+ volta em 15s)");
+mark = errors.length;
+const theEnd = world.getDimension("the_end");
+gr.teleport({ x: 90300, y: 64, z: 90000 });
+gr._view = { x: 1, y: 0, z: 0 };
+const exilado = await newPlayerAs("ExiladoGr", { x: 90305, y: 64, z: 90000 }, "grimmjow");
+exilado.teleport({ x: 90305, y: 64, z: 90000 });
+fullConc(gr);
+await grCast(gr, "gremmy:imaginacao", 2);
+advanceTicks(5, "exilio");
+check("vai pro End", exilado.dimension.id === theEnd.id);
+const pe = exilado.location;
+check("em cima de uma plataforma de obsidiana", theEnd.getBlock({ x: Math.floor(pe.x), y: Math.floor(pe.y) - 1, z: Math.floor(pe.z) }).typeId === "minecraft:obsidian");
+check("gasta 50%", conc(gr) === 50, String(conc(gr)));
+advanceTicks(GR.exile.returnTicks + 20, "exilio-fica");
+check("tier 2 fica lá pra sempre", exilado.dimension.id === theEnd.id);
+const forte = await newPlayerAs("ForteExilado", { x: 90305, y: 64, z: 90003 }, "isshin");
+forte.teleport({ x: 90305, y: 64, z: 90000 });
+exilado.teleport({ x: 90500, y: 64, z: 90500 }, { dimension: overworld });
+grCd(gr, "gremmy:imaginacao.outra_dimensao");
+fullConc(gr);
+await grCast(gr, "gremmy:imaginacao", 2);
+advanceTicks(5, "exilio-forte");
+check("o tier 5 também vai", forte.dimension.id === theEnd.id);
+advanceTicks(GR.exile.returnTicks + 5, "volta");
+check("e volta 15s depois pro mesmo lugar", forte.dimension.id === overworld.id && Math.abs(forte.location.x - 90305) < 0.01, `${forte.dimension.id} ${forte.location.x}`);
+forte.teleport({ x: 91500, y: 64, z: 91500 });
+noNewErrors("Outra Dimensão sem erro", mark);
+
+scenario("Bullet Barrage: inúmeras AK-47 fuzilando onde ele olha por 10s (10 por tick)");
+mark = errors.length;
+gr.teleport({ x: 90400, y: 64, z: 90000 });
+gr._view = { x: 1, y: 0, z: 0 };
+const fuzilado = createDummy("Fuzilado", { x: 90415, y: 64, z: 90000 }, 500000);
+const foraDaMira = createDummy("ForaDaMira", { x: 90400, y: 64, z: 90015 }, 500000);
+fullConc(gr);
+dmgBefore = log.damages.length;
+await grCast(gr, "gremmy:imaginacao", 3);
+advanceTicks(3, "armas");
+check("as AK-47 aparecem em volta dele", grEntities("gremmy:ak47").length === GR.barrage.guns);
+advanceTicks(GR.barrage.ticks + 5, "barrage");
+check("10 por tick em 10s = 2000 (somado de 10 em 10 ticks)", Math.abs(grTotal(fuzilado, dmgBefore) - 2000) < 1 && grHits(fuzilado, dmgBefore, 100).length === 20, `${grTotal(fuzilado, dmgBefore)} em ${grHits(fuzilado, dmgBefore).length}`);
+check("só na linha de fogo", grHits(foraDaMira, dmgBefore).length === 0);
+check("as armas somem no fim", grEntities("gremmy:ak47").length === 0);
+foraDaMira.kill();
+noNewErrors("Bullet Barrage sem erro", mark);
+
+scenario("Ossos de Cookie: o alvo toma o triplo de todo dano");
+mark = errors.length;
+fullConc(gr);
+await grCast(gr, "gremmy:imaginacao", 4);
+gr.teleport({ x: 90413, y: 64, z: 90000 });
+advanceTicks(20, "cookie");
+dmgBefore = log.damages.length;
+hitWith(gr, fuzilado, "gremmy:m1_ak47");
+check("o 1º tiro (47) entra triplicado: 141", grHits(fuzilado, dmgBefore, 141).length === 1, JSON.stringify(grHits(fuzilado, dmgBefore).map((d) => virtualDamage(fuzilado, d))));
+check("cookies caindo", log.particles.some((p) => p.particleId === "gremmy:cookie"));
+advanceTicks(GR.cookie.ticks, "cookie-fim");
+dmgBefore = log.damages.length;
+hitWith(gr, fuzilado, "gremmy:m1_ak47");
+check("passa depois de 20s", grHits(fuzilado, dmgBefore, 47).length === 1);
+advanceTicks(30, "rajada-acaba");
+fuzilado.kill();
+noNewErrors("Ossos de Cookie sem erro", mark);
+
+scenario("Copiar: escolhe uma skill do alvo e lança como se fosse dele");
+mark = errors.length;
+gr.teleport({ x: 90600, y: 64, z: 90000 });
+gr._view = { x: 1, y: 0, z: 0 };
+const copiadoGr = await newPlayerAs("CopiadoGr", { x: 90606, y: 64, z: 90000 }, "ichigo_sf");
+copiadoGr.teleport({ x: 90606, y: 64, z: 90000 });
+copiadoGr._view = { x: 1, y: 0, z: 0 };
+fullConc(gr);
+await chooseSpell(gr, "gremmy:imaginacao", 0);
+dmgBefore = log.damages.length;
+queueFormResponse(3); // Duality Tenshou (Momentum, Counter, AutoAcceptance, Duality)
+useItem(gr, "gremmy:imaginacao");
+await settleForms();
+advanceTicks(20, "copiou");
+check("o Duality copiadoGr acerta o próprio Ichigo: 800", grHits(copiadoGr, dmgBefore, 800).length === 1, JSON.stringify(grHits(copiadoGr, dmgBefore).map((d) => virtualDamage(copiadoGr, d))));
+check("gasta 10%", conc(gr) === 90, String(conc(gr)));
+check("a hotbar dele não muda", JSON.stringify(slotIds(gr, 4)) === JSON.stringify(["gremmy:m1_ak47", "gremmy:imaginacao", "gremmy:criar_clones", "gremmy:imaginacao_maxima"]), JSON.stringify(slotIds(gr, 4)));
+check("continua tier 6 durante a cópia", game.CHARACTER_RACE_TIER.gremmy.tier === 6);
+advanceTicks(GR.copy.borrowTicks, "copia-acaba");
+noNewErrors("Copiar sem erro", mark);
+
+scenario("Câncer: vida máxima pela metade até resetar ou morrer");
+mark = errors.length;
+fullConc(gr);
+fullHp(copiadoGr);
+await grCast(gr, "gremmy:imaginacao_maxima", 2);
+advanceTicks(8, "cancer");
+check("a vida cai pra metade", virtualHp(copiadoGr) <= virtualMax(copiadoGr) * 0.5 + 1, `${virtualHp(copiadoGr)} / ${virtualMax(copiadoGr)}`);
+fullHp(copiadoGr);
+advanceTicks(8, "cura-nao-passa");
+check("curar não passa da metade", virtualHp(copiadoGr) <= virtualMax(copiadoGr) * 0.5 + 1, String(virtualHp(copiadoGr)));
+check("gasta 80%", conc(gr) === 20, String(conc(gr)));
+noNewErrors("Câncer sem erro", mark);
+
+scenario("Ser o mais forte: o tiro dele vira o dobro do m1 do alvo (Zaraki devolve 80% da vida)");
+mark = errors.length;
+fullConc(gr);
+await grCast(gr, "gremmy:imaginacao_maxima", 3);
+const porTiro = game.MELEE_WEAPONS["ichigosf:m1_zangetsu"].baseDamage * 2;
+dmgBefore = log.damages.length;
+gr.teleport({ x: 90604, y: 64, z: 90000 });
+const vitimaForte = createDummy("VitimaForte", { x: 90605, y: 64, z: 90000 }, 500000);
+hitWith(gr, vitimaForte, "gremmy:m1_ak47");
+check(`m1 do Ichigo SF (75) x2 = ${porTiro} por tiro`, grHits(vitimaForte, dmgBefore, porTiro).length === 1, JSON.stringify(grHits(vitimaForte, dmgBefore).map((d) => virtualDamage(vitimaForte, d))));
+advanceTicks(40, "rajada-forte");
+vitimaForte.kill();
+const zaraki = await newPlayerAs("ZarakiGr", { x: 90606, y: 64, z: 90002 }, "kenpachi");
+zaraki.teleport({ x: 90606, y: 64, z: 90000 });
+copiadoGr.teleport({ x: 92000, y: 64, z: 92000 });
+grCd(gr, "gremmy:imaginacao_maxima.mais_forte");
+fullConc(gr);
+fullHp(gr);
+dmgBefore = log.damages.length;
+await grCast(gr, "gremmy:imaginacao_maxima", 3);
+check("no Zaraki: ele toma 80% da própria vida", grHits(gr, dmgBefore, 3200).length === 1, JSON.stringify(grHits(gr, dmgBefore).map((d) => virtualDamage(gr, d))));
+zaraki.teleport({ x: 92100, y: 64, z: 92100 });
+fullHp(gr);
+noNewErrors("Ser o mais forte sem erro", mark);
+
+scenario("Meteoro: gasta 2 clones, cai do céu e explode (2000, menos nele)");
+mark = errors.length;
+gr.teleport({ x: 90800, y: 64, z: 90000 });
+gr._view = { x: 1, y: 0, z: 0 };
+const alvoMeteoro = createDummy("AlvoMeteoro", { x: 90830, y: 64, z: 90000 }, 500000);
+const vizinhoMeteoro = createDummy("VizinhoMeteoro", { x: 90838, y: 64, z: 90005 }, 500000);
+for (let x = 90825; x <= 90835; x++) stone(x, 63, 90000);
+fullConc(gr);
+dmgBefore = log.damages.length;
+await grCast(gr, "gremmy:imaginacao_maxima", 0);
+advanceTicks(3, "meteoro");
+check("o meteoro aparece", grEntities("gremmy:meteoro").length === 1);
+check("gasta 2 clones", grEntities("gremmy:clone").length === 1);
+check("rastro de fogo", log.particles.some((p) => p.particleId === "gremmy:fogo"));
+advanceTicks(GR.meteor.fallTicks + 5, "impacto");
+check("2000 em quem estava no ponto e em volta", grHits(alvoMeteoro, dmgBefore, 2000).length === 1 && grHits(vizinhoMeteoro, dmgBefore, 2000).length === 1);
+check("o Gremmy não toma", grHits(gr, dmgBefore).length === 0);
+check("abre uma cratera", [90828, 90830, 90832].some((x) => blockAt(x, 63, 90000) === "minecraft:air"));
+check("o meteoro some no impacto", grEntities("gremmy:meteoro").length === 0);
+fullConc(gr);
+grCd(gr, "gremmy:imaginacao_maxima.meteoro");
+useItem(gr, "gremmy:imaginacao_maxima");
+check("com 1 clone não sai", grEntities("gremmy:meteoro").length === 0 && conc(gr) === 100);
+alvoMeteoro.kill();
+vizinhoMeteoro.kill();
+noNewErrors("Meteoro sem erro", mark);
+
+scenario("Buraco Negro: puxa todo mundo em 50 blocos e machuca 20 por tick por 5s");
+mark = errors.length;
+gr.teleport({ x: 91000, y: 64, z: 90000 });
+gr._view = { x: 1, y: 0, z: 0 };
+const centroBn = createDummy("CentroBN", { x: 91020, y: 64, z: 90000 }, 500000);
+const longeBn = createDummy("LongeBN", { x: 91020, y: 64, z: 90040 }, 500000);
+fullConc(gr);
+dmgBefore = log.damages.length;
+const kbBn = log.knockbacks.length;
+await grCast(gr, "gremmy:imaginacao_maxima", 1);
+advanceTicks(GR.blackHole.ticks + 5, "buraco");
+const puxoes = log.knockbacks.slice(kbBn).filter((k) => k.target === longeBn.name);
+check("puxa quem está a 40 blocos pro centro", puxoes.length > 50 && puxoes.every((k) => k.horizontal.z < 0));
+check("20 por tick em 5s = 2000", Math.abs(grTotal(longeBn, dmgBefore) - 2000) < 1, String(grTotal(longeBn, dmgBefore)));
+check("menos no Gremmy", grHits(gr, dmgBefore).length === 0);
+check("miolo preto e o disco", log.particles.some((p) => p.particleId === "gremmy:vazio") && log.particles.some((p) => p.particleId === "gremmy:disco"));
+centroBn.kill();
+longeBn.kill();
+noNewErrors("Buraco Negro sem erro", mark);
+
+scenario("Morra: 10s carregando sem tomar golpe; mata abaixo do tier 7, senão ele morre");
+mark = errors.length;
+gr.teleport({ x: 93000, y: 64, z: 93000 });
+const atrapalha = await newPlayerAs("AtrapalhaMorra", { x: 93003, y: 64, z: 93000 }, "grimmjow");
+atrapalha.teleport({ x: 93030, y: 64, z: 93000 });
+const condenados = [0, 1, 2].map((i) => createDummy(`Condenado${i}`, { x: 93010 + i * 10, y: 64, z: 93005 }, 500000));
+fullConc(gr);
+await grCast(gr, "gremmy:imaginacao_maxima", 4);
+advanceTicks(40, "carga");
+check("fica paralisado carregando", (gr.getEffect("slowness")?.amplifier ?? 0) >= 100);
+atrapalha.teleport({ x: 93002, y: 64, z: 93000 });
+hitWith(atrapalha, gr, "grimmjow:m1_zanpakuto");
+advanceTicks(GR.morra.chargeTicks, "carga-cancelada");
+check("um golpe desfaz a carga: ninguém morre", condenados.every((d) => d.isValid) && atrapalha.isValid);
+check("e a paralisia sai", (gr.getEffect("slowness")?.amplifier ?? 0) < 100);
+atrapalha.teleport({ x: 93030, y: 64, z: 93000 });
+grCd(gr, "gremmy:imaginacao_maxima.morra");
+fullConc(gr);
+await grCast(gr, "gremmy:imaginacao_maxima", 4);
+advanceTicks(GR.morra.chargeTicks + 5, "morra");
+check("10s depois todo mundo abaixo do tier 7 no raio morre", condenados.every((d) => !d.isValid) && !atrapalha.isValid);
+check("o Gremmy sobrevive (ninguém de tier 7)", gr.isValid);
+const gr2 = await newPlayerAs("GremmyDois", { x: 95000, y: 64, z: 95000 }, "gremmy");
+const yamaGr = await newPlayerAs("YamamotoMorra", { x: 95010, y: 64, z: 95000 }, "yamamoto");
+yamaGr.teleport({ x: 95010, y: 64, z: 95000 });
+gr2.teleport({ x: 95000, y: 64, z: 95000 });
+fullConc(gr2);
+await grCast(gr2, "gremmy:imaginacao_maxima", 4);
+advanceTicks(GR.morra.chargeTicks + 5, "morra-tier7");
+check("com um tier 7 no raio, quem morre é o Gremmy", !gr2.isValid && yamaGr.isValid);
+yamaGr.teleport({ x: 96000, y: 64, z: 96000 });
+noNewErrors("Morra sem erro", mark);
+
+scenario("Gremmy: desativar some com os clones e zera a concentração");
+mark = errors.length;
+queueFormResponse(deactivateButtonIndex());
+useItem(gr, "multiversal:character_selector");
+await settleForms();
+advanceTicks(15, "desativar-gr");
+check("nenhuma entidade do Gremmy sobrando", ["gremmy:clone", "gremmy:ak47", "gremmy:missil", "gremmy:meteoro"].every((t) => grEntities(t).length === 0));
+check("concentração zerada", conc(gr) === 0);
+check("sem itens do Gremmy", !inv(gr).slots.some((s) => s?.typeId?.startsWith("gremmy:")));
 noNewErrors("desativar sem erro", mark);
 
 /* ================= estabilidade longa ================= */
